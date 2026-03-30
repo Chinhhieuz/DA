@@ -174,11 +174,11 @@ const generateResetPasswordToken = async (email) => {
             },
             body: JSON.stringify({
                 sender: { 
-                    name: 'He Thong Admin', 
+                    name: 'Hỗ trợ Kỹ thuật DA', 
                     email: process.env.EMAIL_USER 
                 },
                 to: [{ email: account.email }],
-                subject: 'Yêu cầu đặt lại khôi phục mật khẩu',
+                subject: `Khôi phục mật khẩu - Hệ thống DA`,
                 htmlContent: `
                     <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; padding: 20px; border-radius: 8px;">
                         <h2 style="color: #dc2626; text-align: center;">Khôi phục mật khẩu</h2>
