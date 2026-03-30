@@ -159,39 +159,50 @@ const generateResetPasswordToken = async (email) => {
     const resetUrl = `${baseUrl}/?view=reset-password&token=${resetToken}`;
 
     try {
-        // Cấu hình Transporter cho Gmail (Sử dụng Mật khẩu ứng dụng vừa tạo)
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: (process.env.EMAIL_PASS || '').replace(/\s+/g, '') // Xóa khoảng trắng trong mã
-            }
+        const brevoApiKey = process.env.BREVO_API_KEY;
+        if (!brevoApiKey) {
+            throw new Error('Thiếu BREVO_API_KEY trong file .env');
+        }
+
+        // Gửi qua HTTP API (Không lo bị chặn Port, tốc độ cực nhanh)
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                'api-key': brevoApiKey,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                sender: { 
+                    name: 'He Thong Admin', 
+                    email: process.env.EMAIL_USER 
+                },
+                to: [{ email: account.email }],
+                subject: 'Yêu cầu đặt lại khôi phục mật khẩu',
+                htmlContent: `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; padding: 20px; border-radius: 8px;">
+                        <h2 style="color: #dc2626; text-align: center;">Khôi phục mật khẩu</h2>
+                        <p>Chào bạn,</p>
+                        <p>Hệ thống đã ghi nhận một thông báo yêu cầu khôi phục mật khẩu từ bạn.</p>
+                        <p>Vui lòng <strong>Nhấn vào nút bên dưới</strong> để đặt lại mật khẩu (Lưu ý: Liên kết chỉ tồn tại trong vòng 60 phút):</p>
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="${resetUrl}" style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Đổi mật khẩu ngay</a>
+                        </div>
+                        <p>Nếu bạn gặp khó khăn, bạn có thể copy và dán đường link này vào trình duyệt:</p>
+                        <p style="word-break: break-all; color: #0066cc;">${resetUrl}</p>
+                        <hr style="border: 0; border-top: 1px solid #ccc; margin-top: 30px;">
+                        <p style="font-size: 13px; color: #777;">Nếu bạn không yêu cầu điều này, xin hãy bỏ qua bức thư để giữ an toàn cho tài khoản.</p>
+                    </div>
+                `
+            })
         });
 
-        const mailOptions = {
-            from: `"He Thong Admin" <${process.env.EMAIL_USER}>`,
-            to: account.email,
-            subject: 'Yêu cầu đặt lại phân quyền mật khẩu',
-            html: `
-                <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; padding: 20px; border-radius: 8px;">
-                    <h2 style="color: #dc2626; text-align: center;">Khôi phục mật khẩu</h2>
-                    <p>Chào bạn,</p>
-                    <p>Hệ thống đã ghi nhận một thông báo yêu cầu khôi phục mật khẩu từ bạn.</p>
-                    <p>Vui lòng <strong>Nhấn vào nút bên dưới</strong> để đặt lại mật khẩu (Lưu ý: Liên kết chỉ tồn tại trong vòng 60 phút):</p>
-                    <div style="text-align: center; margin: 30px 0;">
-                        <a href="${resetUrl}" style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Đổi mật khẩu ngay</a>
-                    </div>
-                    <p>Nếu bạn gặp khó khăn, bạn có thể copy và dán đường link này vào trình duyệt:</p>
-                    <p style="word-break: break-all; color: #0066cc;">${resetUrl}</p>
-                    <hr style="border: 0; border-top: 1px solid #ccc; margin-top: 30px;">
-                    <p style="font-size: 13px; color: #777;">Nếu bạn không yêu cầu điều này, xin hãy bỏ qua bức thư để giữ an toàn cho tài khoản.</p>
-                </div>
-            `
-        };
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Lỗi từ máy chủ Brevo API');
+        }
 
-        await transporter.sendMail(mailOptions);
-        console.log(`✅ Đã gửi email khôi phục thành công đến: ${account.email}`);
-
+        console.log(`✅ Mail đã gửi qua Brevo API thành công đến: ${account.email}`);
         return { message: 'Thành công! Kiểm tra hộp thư (hoặc thư rác) của bạn để lấy link đổi mật khẩu.' };
     } catch (error) {
         console.error('Error sending email:', error);
