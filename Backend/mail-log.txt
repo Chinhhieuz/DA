@@ -1,0 +1,26 @@
+{
+  "accepted": [
+    "chinhhieu0102@gmail.com"
+  ],
+  "rejected": [],
+  "ehlo": [
+    "SIZE 35882577",
+    "8BITMIME",
+    "AUTH LOGIN PLAIN XOAUTH2 PLAIN-CLIENTTOKEN OAUTHBEARER XOAUTH",
+    "ENHANCEDSTATUSCODES",
+    "PIPELINING",
+    "CHUNKING",
+    "SMTPUTF8"
+  ],
+  "envelopeTime": 918,
+  "messageTime": 796,
+  "messageSize": 333,
+  "response": "250 2.0.0 OK  1774886238 d9443c01a7336-2b24264256asm84788235ad.13 - gsmtp",
+  "envelope": {
+    "from": "chinhhieu0102@gmail.com",
+    "to": [
+      "chinhhieu0102@gmail.com"
+    ]
+  },
+  "messageId": "<b1c77bb8-5fb1-0213-0d20-dbc6012c657b@gmail.com>"
+}
