@@ -14,11 +14,12 @@ import {
   XCircle,
   AlertTriangle,
   Lock,
-  MessageSquare,
+  Search,
+  Pencil,
+  Tag,
   Mail,
   Inbox,
-  Search,
-  Pencil
+  Eye
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { API_URL, API_BASE_URL } from '@/lib/api';
@@ -48,6 +49,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [viewingPost, setViewingPost] = useState<any>(null);
   const [editFormData, setEditFormData] = useState({
     username: '', email: '', password: '', full_name: '', mssv: '', role: 'User'
   });
@@ -388,7 +390,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
             {tab === 'posts' && 'Duyệt bài'}
             {tab === 'locked' && 'Tài khoản bị khóa'}
             {tab === 'hidden' && 'Bài viết vi phạm'}
-            {tab === 'communities' && 'Cộng đồng'}
+            {tab === 'communities' && 'Chủ đề bài viết'}
             {tab === 'users' && 'Người dùng'}
             {tab === 'feedback' && 'Góp ý'}
           </button>
@@ -414,6 +416,14 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                     <p className="text-xs text-muted-foreground">Người tố cáo: <span className="font-semibold">@{report.reporter?.username}</span></p>
                   </div>
                   <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-primary hover:bg-primary/10 border border-primary/20"
+                      onClick={() => setViewingPost(report.post)}
+                    >
+                      <Eye className="h-4 w-4 mr-1" /> Xem bài
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -462,6 +472,14 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                     )}
                   </div>
                   <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setViewingPost(post)}
+                      className="text-primary hover:bg-primary/10"
+                    >
+                      <Eye className="h-4 w-4 mr-1" /> Xem
+                    </Button>
                     <Button
                       size="sm"
                       onClick={() => handlePostAction(post._id, 'approve')}
@@ -564,8 +582,16 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                     <div className="flex flex-col gap-2">
                       <Button
                         size="sm"
+                        variant="ghost"
+                        className="text-primary hover:bg-primary/10 border border-primary/20"
+                        onClick={() => setViewingPost(post)}
+                      >
+                        <Eye className="h-4 w-4 mr-1" /> Xem
+                      </Button>
+                      <Button
+                        size="sm"
                         variant="outline"
-                        className="border-blue-200 text-blue-600 hover:bg-blue-50"
+                        className="border-green-200 text-green-600 hover:bg-green-50"
                         onClick={() => handleRestorePost(post._id)}
                       >
                         <CheckCircle2 className="h-4 w-4 mr-1" /> Khôi phục
@@ -582,34 +608,34 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
           <div className="p-6 space-y-8">
             <div className="max-w-xl">
               <div className="flex items-center gap-3 mb-6">
-                <Users className="h-6 w-6 text-primary" />
-                <h3 className="text-lg font-semibold text-foreground">Tạo nhóm cộng đồng mới</h3>
+                <Tag className="h-6 w-6 text-primary" />
+                <h3 className="text-lg font-semibold text-foreground">Quản lý chủ đề bài viết mới</h3>
               </div>
               <form onSubmit={handleCreateCommunity} className="space-y-4 bg-muted/30 p-4 rounded-xl border border-border">
                 <div className="space-y-2">
-                  <Label htmlFor="comName">Tên cộng đồng *</Label>
-                  <Input id="comName" required placeholder="VD: Hội Sinh Viên, CLB Cờ Vua..." value={comFormData.name} onChange={e => setComFormData({ ...comFormData, name: e.target.value })} />
+                  <Label htmlFor="comName">Tên chủ đề *</Label>
+                  <Input id="comName" required placeholder="VD: Công nghệ, Học tập, Giải trí..." value={comFormData.name} onChange={e => setComFormData({ ...comFormData, name: e.target.value })} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="comDesc">Mô tả</Label>
-                  <textarea id="comDesc" className="flex min-h-[80px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-primary/20 transition-all outline-none" placeholder="Giới thiệu ngắn gọn về nhóm..." value={comFormData.description} onChange={e => setComFormData({ ...comFormData, description: e.target.value })} />
+                  <Label htmlFor="comDesc">Mô tả chủ đề</Label>
+                  <textarea id="comDesc" className="flex min-h-[80px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-primary/20 transition-all outline-none" placeholder="Giới thiệu ngắn gọn về chủ đề này..." value={comFormData.description} onChange={e => setComFormData({ ...comFormData, description: e.target.value })} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="comIcon">Biểu tượng (Emoji)</Label>
-                  <Input id="comIcon" placeholder="👥, 🎮, 🎨..." value={comFormData.icon} onChange={e => setComFormData({ ...comFormData, icon: e.target.value })} />
+                  <Input id="comIcon" placeholder="📚, 🎮, 🎨..." value={comFormData.icon} onChange={e => setComFormData({ ...comFormData, icon: e.target.value })} />
                 </div>
-                <Button type="submit" className="w-full">Tạo Nhóm Ngay</Button>
+                <Button type="submit" className="w-full">Thêm Chủ Đề Ngay</Button>
               </form>
             </div>
 
             <div className="space-y-4">
               <h3 className="font-semibold text-foreground flex items-center gap-2">
-                Danh sách cộng đồng hiện có
+                Danh sách chủ đề hiện có
                 <Badge variant="secondary" className="ml-2">{communities.length}</Badge>
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {communities.length === 0 ? (
-                  <div className="col-span-full p-8 text-center text-muted-foreground border border-dashed rounded-xl">Chưa có cộng đồng nào được tạo.</div>
+                  <div className="col-span-full p-8 text-center text-muted-foreground border border-dashed rounded-xl">Chưa có chủ đề nào được tạo.</div>
                 ) : communities.map((com) => (
                   <Card key={com._id} className="p-4 flex items-center justify-between group hover:border-primary/50 transition-colors">
                     <div className="flex items-center gap-3 overflow-hidden">
@@ -860,6 +886,106 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
           </div>
         )}
       </Card>
+
+      {/* Dialog chi tiết bài đăng */}
+      <Dialog open={!!viewingPost} onOpenChange={(open) => !open && setViewingPost(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">{viewingPost?.title}</DialogTitle>
+            <DialogDescription>
+              Đăng bởi @{viewingPost?.author?.username} • {viewingPost && new Date(viewingPost.created_at).toLocaleString('vi-VN')}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            <div className="bg-muted/30 p-4 rounded-xl border border-border">
+               <p className="whitespace-pre-wrap text-foreground/90 leading-relaxed">
+                  {viewingPost?.content}
+               </p>
+            </div>
+
+            {/* Hiển thị tất cả ảnh nếu có */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+               {viewingPost?.image_urls?.map((url: string, i: number) => (
+                  <img 
+                    key={i} 
+                    src={getImageUrl(url)} 
+                    className="w-full h-auto rounded-xl border border-border shadow-sm object-cover aspect-video" 
+                    alt={`Ảnh ${i+1}`}
+                  />
+               ))}
+               {!viewingPost?.image_urls && viewingPost?.image_url && (
+                  <img 
+                    src={getImageUrl(viewingPost.image_url)} 
+                    className="w-full h-auto rounded-xl border border-border shadow-sm object-cover max-h-[400px] col-span-full" 
+                    alt="Ảnh bài đăng"
+                  />
+               )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-border pt-6">
+               <div className="flex items-center gap-3">
+                  <Avatar className="h-10 w-10 border border-border">
+                    <AvatarImage src={getImageUrl(viewingPost?.author?.avatar_url)} />
+                    <AvatarFallback>{viewingPost?.author?.username?.[0]}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">{viewingPost?.author?.display_name || viewingPost?.author?.username}</p>
+                    <p className="text-xs text-muted-foreground">ID tác giả: {viewingPost?.author?._id}</p>
+                  </div>
+               </div>
+               
+               <div className="flex gap-3">
+                  {activeTab === 'posts' && (
+                    <>
+                      <Button
+                        onClick={() => {
+                          handlePostAction(viewingPost._id, 'approve');
+                          setViewingPost(null);
+                        }}
+                        className="bg-green-600 hover:bg-green-700 text-white font-bold"
+                      >
+                        <CheckCircle2 className="h-4 w-4 mr-2" /> Duyệt bài ngay
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          handlePostAction(viewingPost._id, 'reject');
+                          setViewingPost(null);
+                        }}
+                        className="text-red-500 border-red-100 hover:bg-red-50 font-bold"
+                      >
+                        <XCircle className="h-4 w-4 mr-2" /> Từ chối
+                      </Button>
+                    </>
+                  )}
+
+                  {activeTab === 'hidden' && (
+                    <Button
+                      onClick={() => {
+                        handleRestorePost(viewingPost._id);
+                        setViewingPost(null);
+                      }}
+                      className="bg-green-600 hover:bg-green-700 text-white font-bold"
+                    >
+                      <CheckCircle2 className="h-4 w-4 mr-2" /> Khôi phục bài viết
+                    </Button>
+                  )}
+
+                  {activeTab === 'reports' && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setViewingPost(null)}
+                      className="font-bold border-border"
+                    >
+                      Đóng
+                    </Button>
+                  )}
+               </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

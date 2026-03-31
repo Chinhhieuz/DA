@@ -445,7 +445,7 @@ export default function App() {
                     <h2 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-0.5">Bộ lọc đang hoạt động</h2>
                     <div className="flex items-center gap-2">
                        <span className="text-xl font-bold text-foreground leading-tight">{activeCommunity}</span>
-                       <Badge variant="secondary" className="bg-primary/5 text-primary border-primary/20 text-[9px] uppercase font-bold px-1.5 py-0">Cộng đồng</Badge>
+                       <Badge variant="secondary" className="bg-primary/5 text-primary border-primary/20 text-[9px] uppercase font-bold px-1.5 py-0">Chủ đề</Badge>
                     </div>
                   </div>
                 </div>
@@ -474,7 +474,7 @@ export default function App() {
               ))
             ) : (
               <div className="text-center py-20 bg-card rounded-2xl border border-dashed border-border">
-                  <p className="text-muted-foreground">Không có bài viết nào trong cộng đồng này.</p>
+                  <p className="text-muted-foreground">Không có bài viết nào trong chủ đề này.</p>
                   <Button variant="link" onClick={() => setActiveCommunity(null)} className="mt-2 text-primary">
                     Xem tất cả bài viết
                   </Button>

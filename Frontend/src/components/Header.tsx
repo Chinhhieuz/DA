@@ -237,7 +237,7 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
                            onClick={() => { onViewChange('profile'); setIsUserMenuOpen(false); }}
                          >
                            <User className="h-4 w-4" />
-                           Xem tất cả trang cá nhân
+                           Xem trang cá nhân
                          </Button>
                       </div>
                     </div>

@@ -157,7 +157,7 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
 
   const handleSubmit = async () => {
     if (!title.trim() || !community) {
-      toast.error('Vui lòng điền tiêu đề và chọn nhóm');
+      toast.error('Vui lòng điền tiêu đề và chọn chủ đề');
       return;
     }
     if (!currentUser.id) {
@@ -288,16 +288,16 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
         </div>
 
         <div className="space-y-6">
-          {/* Community Select */}
+          {/* Topic Select */}
           <div className="space-y-2">
-            <label className="text-[11px] uppercase tracking-[0.1em] font-bold text-muted-foreground px-1">Chọn cộng đồng</label>
+            <label className="text-[11px] uppercase tracking-[0.1em] font-bold text-muted-foreground px-1">Chọn chủ đề bài viết</label>
             <Select value={community} onValueChange={setCommunity}>
               <SelectTrigger className="h-12 bg-background border-border rounded-2xl focus:ring-primary/20 focus:border-primary transition-all shadow-sm text-foreground">
-                <SelectValue placeholder="Chọn nhóm để đăng bài..." />
+                <SelectValue placeholder="Chọn chủ đề để đăng bài..." />
               </SelectTrigger>
               <SelectContent className="bg-card border-border shadow-2xl rounded-2xl overflow-hidden p-1 max-h-[300px]">
                 {communities.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-muted-foreground">Đang tải cộng đồng hoặc chưa có cộng đồng nào...</div>
+                  <div className="p-4 text-center text-xs text-muted-foreground">Đang tải chủ đề hoặc chưa có chủ đề nào...</div>
                 ) : communities.map((com) => (
                   <SelectItem 
                     key={com._id} 
@@ -305,7 +305,7 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
                     className="rounded-xl py-3 focus:bg-primary/10 focus:text-primary cursor-pointer text-foreground data-[state=checked]:bg-primary/10 data-[state=checked]:text-primary"
                   >
                     <div className="flex items-center gap-2">
-                       <span className="text-lg leading-none">{com.icon || '👥'}</span>
+                       <span className="text-lg leading-none">{com.icon || '📚'}</span>
                        <span className="font-medium">{com.name}</span>
                     </div>
                   </SelectItem>
@@ -417,7 +417,7 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
                   {selectedFiles.length > 0 ? `Đang tải ${selectedFiles.length} ảnh...` : 'Đang đăng...'}
                 </span>
               ) : (
-                'Đăng lên cộng đồng'
+                'Đăng bài ngay'
               )}
             </Button>
           </div>

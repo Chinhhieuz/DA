@@ -65,14 +65,14 @@ export function SearchView({ allPosts, onPostClick, onUserClick, currentUser }: 
     <div className="space-y-4">
       <div>
         <h1 className="mb-1 text-2xl font-bold text-gray-900">Tìm kiếm</h1>
-        <p className="text-gray-600">Khám phá bài viết và cộng đồng</p>
+        <p className="text-gray-600">Khám phá bài viết và chủ đề</p>
       </div>
 
       <Card className="border-slate-200 bg-white p-4">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
           <Input
-            placeholder="Tìm kiếm bài viết, cộng đồng..."
+            placeholder="Tìm kiếm bài viết, chủ đề..."
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             className="border-slate-300 pl-10 focus:ring-primary"

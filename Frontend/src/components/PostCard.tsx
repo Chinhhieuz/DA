@@ -412,10 +412,10 @@ export function PostCard({
               <div className="mt-0.5">
                 <Badge 
                   variant="secondary" 
-                  className="bg-red-50 text-red-700 hover:bg-red-100 font-semibold px-2 py-0.5 text-[10px] tracking-wider cursor-pointer transition-colors border border-red-100"
+                  className="bg-red-50 text-red-700 hover:bg-red-100 font-semibold px-2 py-0.5 text-[10px] tracking-wider cursor-pointer transition-colors border border-red-100 uppercase"
                   onClick={(e) => { e.stopPropagation(); onCommunityClick && onCommunityClick(post.community); }}
                 >
-                  {post.community.replace(/^[rdD]\//, '')}
+                  #{post.community.replace(/^[rdD]\//, '')}
                 </Badge>
               </div>
             </div>
