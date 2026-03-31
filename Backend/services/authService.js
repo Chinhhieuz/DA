@@ -160,9 +160,22 @@ const generateResetPasswordToken = async (email) => {
 
     try {
         const brevoApiKey = process.env.BREVO_API_KEY;
+        const emailUser = process.env.EMAIL_USER;
+
         if (!brevoApiKey) {
             throw new Error('Thiếu BREVO_API_KEY trong file .env');
         }
+        if (!emailUser) {
+            throw new Error('Thiếu EMAIL_USER trong file .env (Email người gửi phải được xác thực trong Brevo)');
+        }
+
+        // Tự động kiểm tra fetch (Node 18+) hoặc báo lỗi nếu không có
+        if (typeof fetch === 'undefined') {
+            throw new Error('Môi trường Node.js hiện tại không hỗ trợ fetch. Vui lòng nâng cấp lên Node 18+ hoặc cài đặt node-fetch.');
+        }
+
+        console.log(`--- Đang gửi mail đặt lại mật khẩu đến: ${account.email} ---`);
+        console.log(`Sender: ${emailUser}`);
 
         // Gửi qua HTTP API (Không lo bị chặn Port, tốc độ cực nhanh)
         const response = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -175,7 +188,7 @@ const generateResetPasswordToken = async (email) => {
             body: JSON.stringify({
                 sender: { 
                     name: 'Hỗ trợ Kỹ thuật DA', 
-                    email: process.env.EMAIL_USER 
+                    email: emailUser 
                 },
                 to: [{ email: account.email }],
                 subject: `Khôi phục mật khẩu - Hệ thống DA`,
@@ -197,20 +210,22 @@ const generateResetPasswordToken = async (email) => {
             })
         });
 
+        const data = await response.json();
+
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Lỗi từ máy chủ Brevo API');
+            console.error('❌ Brevo API Error Detail:', JSON.stringify(data, null, 2));
+            throw new Error(data.message || data.code || 'Lỗi không xác định từ Brevo API');
         }
 
         console.log(`✅ Mail đã gửi qua Brevo API thành công đến: ${account.email}`);
         return { message: 'Thành công! Kiểm tra hộp thư (hoặc thư rác) của bạn để lấy link đổi mật khẩu.' };
     } catch (error) {
-        console.error('Error sending email:', error);
+        console.error('❌ Error sending email:', error.message);
         // Nhả lại token do không gửi được email
         account.resetPasswordToken = undefined;
         account.resetPasswordExpires = undefined;
         await account.save();
-        throw new Error(`Dịch vụ gửi Mail qua Mạng báo lỗi: ${error.message}`);
+        throw new Error(`Dịch vụ gửi Mail báo lỗi: ${error.message}`);
     }
 };
 
