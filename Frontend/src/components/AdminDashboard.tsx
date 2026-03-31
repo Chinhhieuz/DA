@@ -17,7 +17,8 @@ import {
   MessageSquare,
   Mail,
   Inbox,
-  Search
+  Search,
+  Pencil
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { API_URL, API_BASE_URL } from '@/lib/api';
@@ -45,6 +46,11 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
   const [users, setUsers] = useState<any[]>([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [editFormData, setEditFormData] = useState({
+    username: '', email: '', password: '', full_name: '', mssv: '', role: 'User'
+  });
 
   const fetchStats = async () => {
     if (!currentUser?.id) return;
@@ -283,12 +289,47 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       setFormData({ username: '', email: '', password: '', full_name: '', mssv: '', role: 'User' });
       setIsCreateOpen(false);
       fetchStats(); // Cập nhật lại stats
-      handleSearchUsers(); // Refresh the list
+      handleSearchUsers(userSearchQuery); // Refresh the list
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/admin/users/${editingUser._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...editFormData, admin_id: currentUser?.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Lỗi cập nhật tài khoản');
+      toast.success('Cập nhật tài khoản thành công!');
+      setIsEditOpen(false);
+      handleSearchUsers(userSearchQuery); // Refresh the list
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const openEditDialog = (user: any) => {
+    setEditingUser(user);
+    setEditFormData({
+      username: user.username || '',
+      email: user.email || '',
+      password: '', // Để trống nếu không muốn đổi
+      full_name: user.full_name || '',
+      mssv: user.mssv || '',
+      role: user.role || 'User'
+    });
+    setIsEditOpen(true);
   };
 
   const stats = [
@@ -651,90 +692,169 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                 <h3 className="text-lg font-medium text-foreground">Tra cứu người dùng</h3>
               </div>
               
-              <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-                <DialogTrigger asChild>
-                  <Button className="shrink-0 gap-2"><Users className="h-4 w-4" /> Tạo mới thành viên</Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px]">
-                  <DialogHeader>
-                    <DialogTitle>Tạo mới thành viên</DialogTitle>
-                    <DialogDescription>
-                      Điền thông tin bên dưới để cấp tài khoản mới cho hệ thống.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <form onSubmit={handleRegister} className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="username">Tài khoản *</Label>
-                        <Input id="username" required value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} />
+              <div className="flex gap-2">
+                <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="shrink-0 gap-2"><Users className="h-4 w-4" /> Tạo mới</Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                      <DialogTitle>Tạo mới thành viên</DialogTitle>
+                      <DialogDescription>
+                        Điền thông tin bên dưới để cấp tài khoản mới cho hệ thống.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleRegister} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="username">Tài khoản *</Label>
+                          <Input id="username" required value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="email">Email *</Label>
+                          <Input id="email" type="email" required value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="password">Mật khẩu *</Label>
+                          <Input id="password" type="password" required value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="role">Vai trò</Label>
+                          <select id="role" className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-primary/20 transition-all outline-none" value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}>
+                            <option value="User">User</option>
+                            <option value="Admin">Admin</option>
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="full_name">Họ Tên</Label>
+                          <Input id="full_name" value={formData.full_name} onChange={e => setFormData({ ...formData, full_name: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mssv">MSSV</Label>
+                          <Input id="mssv" value={formData.mssv} onChange={e => setFormData({ ...formData, mssv: e.target.value })} />
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="email">Email *</Label>
-                        <Input id="email" type="email" required value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+                      <Button type="submit" disabled={isLoading} className="mt-4 w-full">
+                        {isLoading ? 'Đang xử lý...' : 'Tạo Tài Khoản'}
+                      </Button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Edit User Dialog */}
+                <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+                  <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                      <DialogTitle>Chỉnh sửa người dùng</DialogTitle>
+                      <DialogDescription>
+                        Cập nhật thông tin cho tài khoản @{editingUser?.username}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleUpdateUser} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-username">Tài khoản</Label>
+                          <Input id="edit-username" required value={editFormData.username} onChange={e => setEditFormData({ ...editFormData, username: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-email">Email</Label>
+                          <Input id="edit-email" type="email" required value={editFormData.email} onChange={e => setEditFormData({ ...editFormData, email: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-password">Mật khẩu mới (Để trống nếu giữ nguyên)</Label>
+                          <Input id="edit-password" type="password" placeholder="••••••••" value={editFormData.password} onChange={e => setEditFormData({ ...editFormData, password: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-role">Vai trò</Label>
+                          <select id="edit-role" className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-primary/20 transition-all outline-none" value={editFormData.role} onChange={e => setEditFormData({ ...editFormData, role: e.target.value })}>
+                            <option value="User">User</option>
+                            <option value="Admin">Admin</option>
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-full_name">Họ Tên</Label>
+                          <Input id="edit-full_name" value={editFormData.full_name} onChange={e => setEditFormData({ ...editFormData, full_name: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-mssv">MSSV</Label>
+                          <Input id="edit-mssv" value={editFormData.mssv} onChange={e => setEditFormData({ ...editFormData, mssv: e.target.value })} />
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="password">Mật khẩu *</Label>
-                        <Input id="password" type="password" required value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="role">Vai trò</Label>
-                        <select id="role" className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-primary/20 transition-all outline-none" value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}>
-                          <option value="User" className="bg-card text-foreground">User</option>
-                          <option value="Admin" className="bg-card text-foreground">Admin</option>
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="full_name">Họ Tên</Label>
-                        <Input id="full_name" value={formData.full_name} onChange={e => setFormData({ ...formData, full_name: e.target.value })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="mssv">MSSV</Label>
-                        <Input id="mssv" value={formData.mssv} onChange={e => setFormData({ ...formData, mssv: e.target.value })} />
-                      </div>
-                    </div>
-                    <Button type="submit" disabled={isLoading} className="mt-4 w-full">
-                      {isLoading ? 'Đang xử lý...' : 'Tạo Tài Khoản'}
-                    </Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
+                      <Button type="submit" disabled={isLoading} className="mt-4 w-full">
+                        {isLoading ? 'Đang lưu...' : 'Lưu thay đổi'}
+                      </Button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
 
-            <div className="space-y-4 max-w-2xl">
-              <div className="flex gap-2">
+            <div className="space-y-4">
+              <div className="flex gap-2 max-w-md">
                 <Input 
-                  placeholder="Nhập tài khoản, email, mssv..." 
+                  placeholder="Tìm tài khoản, email, mssv..." 
                   value={userSearchQuery}
                   onChange={(e) => setUserSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearchUsers(userSearchQuery)}
                 />
-                <Button onClick={() => handleSearchUsers(userSearchQuery)}>Tìm kiếm</Button>
+                <Button onClick={() => handleSearchUsers(userSearchQuery)} variant="secondary">
+                  Tìm
+                </Button>
               </div>
               
-              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                {users.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center p-4">Không tìm thấy người dùng nào.</p>
-                ) : users.map(user => (
-                  <Card key={user._id} className="p-4 flex items-center gap-3 bg-muted/30 hover:bg-muted/50 transition-colors">
-                     <Avatar className="h-10 w-10 border border-border shrink-0">
-                       <AvatarImage src={getImageUrl(user.avatar_url)} />
-                       <AvatarFallback>{user.username[0]}</AvatarFallback>
-                     </Avatar>
-                     <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                           <p className="text-sm font-bold text-foreground truncate">@{user.username}</p>
-                           {user.is_locked && <Badge variant="destructive" className="px-1 py-0 text-[10px]">Đã khóa</Badge>}
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-                        {user.mssv && <p className="text-xs text-muted-foreground truncate">MSSV: {user.mssv}</p>}
-                     </div>
-                     <div className="text-right flex flex-col items-end gap-1">
-                        <Badge variant="outline" className={user.role === 'admin' ? 'border-primary text-primary bg-primary/5' : ''}>
-                          {user.role}
-                        </Badge>
-                     </div>
-                  </Card>
-                ))}
+              <div className="border rounded-xl overflow-hidden shadow-sm">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-muted/50 text-muted-foreground font-medium border-b">
+                    <tr>
+                      <th className="px-4 py-3">Người dùng</th>
+                      <th className="px-4 py-3 hidden md:table-cell">Email / MSSV</th>
+                      <th className="px-4 py-3 text-center">Vai trò</th>
+                      <th className="px-4 py-3 text-right">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {users.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground italic">Không tìm thấy người dùng nào.</td>
+                      </tr>
+                    ) : users.map(user => (
+                      <tr key={user._id} className="hover:bg-muted/30 transition-colors group">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-9 w-9 border border-border">
+                              <AvatarImage src={getImageUrl(user.avatar_url)} />
+                              <AvatarFallback>{user.username[0]}</AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                               <p className="font-bold text-foreground truncate">@{user.username}</p>
+                               <p className="text-[11px] text-muted-foreground truncate">{user.full_name || 'Chưa đặt tên'}</p>
+                            </div>
+                            {user.is_locked && <Badge variant="destructive" className="ml-1 scale-75 origin-left">Locked</Badge>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 hidden md:table-cell">
+                          <p className="text-xs font-medium text-foreground">{user.email}</p>
+                          <p className="text-[10px] text-muted-foreground">MSSV: {user.mssv || 'N/A'}</p>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <Badge variant="outline" className={user.role?.toLowerCase() === 'admin' ? 'border-primary text-primary bg-primary/5' : ''}>
+                            {user.role}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary"
+                            onClick={() => openEditDialog(user)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

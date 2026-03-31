@@ -147,4 +147,38 @@ const getUsers = async (req, res) => {
     }
 };
 
-module.exports = { getStats, unlockAccount, getLockedAccounts, getHiddenPosts, restorePost, getUsers };
+const updateUser = async (req, res) => {
+    try {
+        const { admin_id } = req.body;
+        const { id } = req.params;
+        const { username, email, full_name, mssv, role, password } = req.body;
+
+        const adminUser = await Account.findById(admin_id);
+        if (!adminUser || adminUser.role.toLowerCase() !== 'admin') {
+            return res.status(403).json({ status: 'fail', message: 'Không có quyền Admin!' });
+        }
+
+        const user = await Account.findById(id);
+        if (!user) return res.status(404).json({ status: 'fail', message: 'Người dùng không tồn tại!' });
+
+        if (username) user.username = username;
+        if (email) user.email = email;
+        if (full_name !== undefined) user.full_name = full_name;
+        if (mssv !== undefined) user.mssv = mssv;
+        if (role) user.role = role;
+
+        if (password) {
+            const bcrypt = require('bcryptjs');
+            const salt = await bcrypt.genSalt(10);
+            user.password_hash = await bcrypt.hash(password, salt);
+        }
+
+        await user.save();
+
+        return res.status(200).json({ status: 'success', message: 'Cập nhật thông tin người dùng thành công!' });
+    } catch (error) {
+        return res.status(500).json({ status: 'error', message: error.message });
+    }
+};
+
+module.exports = { getStats, unlockAccount, getLockedAccounts, getHiddenPosts, restorePost, getUsers, updateUser };

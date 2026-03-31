@@ -22,4 +22,7 @@ router.post('/posts/:id/restore', isAdmin, adminController.restorePost);
 // API Lấy danh sách người dùng (Quản lý User)
 router.get('/users', isAdmin, adminController.getUsers);
 
+// API Cập nhật thông tin người dùng
+router.put('/users/:id', isAdmin, adminController.updateUser);
+
 module.exports = router;
