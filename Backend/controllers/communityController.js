@@ -35,13 +35,30 @@ const createCommunity = async (req, res) => {
     }
 };
 
-const deleteCommunity = async (req, res) => {
+const updateCommunity = async (req, res) => {
     try {
-        await Community.findByIdAndDelete(req.params.id);
-        return res.status(200).json({ status: 'success', message: 'Đã xóa cộng đồng!' });
+        const { name, description, icon } = req.body;
+        const community = await Community.findByIdAndUpdate(
+            req.params.id,
+            { name, description, icon },
+            { new: true }
+        );
+        if (!community) return res.status(404).json({ status: 'fail', message: 'Không tìm thấy chủ đề!' });
+        return res.status(200).json({ status: 'success', data: community });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
     }
 };
 
-module.exports = { getAllCommunities, createCommunity, deleteCommunity };
+const deleteCommunity = async (req, res) => {
+    try {
+        const community = await Community.findByIdAndDelete(req.params.id);
+        if (!community) return res.status(404).json({ status: 'fail', message: 'Không tìm thấy chủ đề!' });
+        return res.status(200).json({ status: 'success', message: 'Đã xóa chủ đề thành công!' });
+    } catch (error) {
+        return res.status(500).json({ status: 'error', message: error.message });
+    }
+};
+
+module.exports = { getAllCommunities, createCommunity, deleteCommunity, updateCommunity };
+

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,13 +19,19 @@ import {
   Tag,
   Mail,
   Inbox,
-  Eye
+  Eye,
+  Clock,
+  X,
+  Plus,
+  Image as ImageIcon,
+  Maximize2,
+  Check
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { API_URL, API_BASE_URL } from '@/lib/api';
 import { getImageUrl } from '@/lib/imageUtils';
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 type AdminTab = 'reports' | 'posts' | 'users' | 'feedback' | 'locked' | 'hidden' | 'communities';
 
@@ -43,15 +49,23 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
     totalUsers: 0,
     newFeedbacks: 0
   });
-  
+
   const [users, setUsers] = useState<any[]>([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreateTopicOpen, setIsCreateTopicOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isEditTopicOpen, setIsEditTopicOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [editingTopic, setEditingTopic] = useState<any>(null);
   const [viewingPost, setViewingPost] = useState<any>(null);
+  const [viewingReport, setViewingReport] = useState<any>(null);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState({
     username: '', email: '', password: '', full_name: '', mssv: '', role: 'User'
+  });
+  const [editTopicFormData, setEditTopicFormData] = useState({
+    name: '', description: '', icon: '👥'
   });
 
   const fetchStats = async () => {
@@ -62,15 +76,15 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       console.log('[AdminDashboard] 📡 Response status:', res.status);
       const data = await res.json();
       console.log('[AdminDashboard] 📦 Dữ liệu nhận được:', data);
-      
+
       if (data.status === 'success') {
         console.log('[AdminDashboard] ✅ Cập nhật stats:', data.data);
         setAdminStats(data.data);
       } else {
         console.warn('[AdminDashboard] ⚠️ Lỗi từ server:', data.message);
       }
-    } catch (e) { 
-      console.error('[AdminDashboard] 🚨 Lỗi tải thống kê:', e); 
+    } catch (e) {
+      console.error('[AdminDashboard] 🚨 Lỗi tải thống kê:', e);
     }
   };
 
@@ -175,7 +189,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       }
     } catch (e) { toast.error('Lỗi kết nối server!'); }
   };
-  
+
   const handleFeedbackAction = async (feedbackId: string) => {
     try {
       const res = await fetch(`${API_URL}/feedback/${feedbackId}/read`, {
@@ -248,11 +262,43 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
         toast.success('Tạo cộng đồng thành công!');
         setCommunities([data.data, ...communities]);
         setComFormData({ name: '', description: '', icon: '👥' });
+        setIsCreateTopicOpen(false);
         fetchStats();
       } else {
         toast.error(data.message);
       }
     } catch (e) { toast.error('Lỗi kết nối!'); }
+  };
+
+  const handleUpdateTopic = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTopic) return;
+    try {
+      const res = await fetch(`${API_URL}/communities/${editingTopic._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...editTopicFormData, admin_id: currentUser?.id })
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        toast.success('Cập nhật chủ đề thành công!');
+        setCommunities(communities.map(c => c._id === editingTopic._id ? { ...c, ...data.data } : c));
+        setIsEditTopicOpen(false);
+        fetchStats();
+      } else {
+        toast.error(data.message);
+      }
+    } catch (e) { toast.error('Lỗi kết nối!'); }
+  };
+
+  const openEditTopicDialog = (topic: any) => {
+    setEditingTopic(topic);
+    setEditTopicFormData({
+      name: topic.name || '',
+      description: topic.description || '',
+      icon: topic.icon || '👥'
+    });
+    setIsEditTopicOpen(true);
   };
 
   const handleDeleteCommunity = async (communityId: string) => {
@@ -375,21 +421,20 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
         ))}
       </div>
 
-      {/* Tabs Layout */}
+      {/* Tabs Layout — Gộp & Tinh gọn */}
       <div className="flex overflow-x-auto no-scrollbar gap-1.5 p-1.5 bg-muted/60 rounded-xl w-full border border-border/60 shadow-inner">
-        {(['reports', 'posts', 'locked', 'hidden', 'communities', 'users', 'feedback'] as AdminTab[]).map((tab) => (
+        {(['reports', 'posts', 'locked', 'communities', 'users', 'feedback'] as AdminTab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`whitespace-nowrap px-5 py-2.5 text-[14px] font-semibold rounded-lg transition-all flex items-center justify-center shrink-0 ${activeTab === tab
-                ? 'bg-background text-primary shadow-sm dark:bg-card border border-border/50 shadow-black/5'
-                : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
+            className={`whitespace-nowrap px-5 py-2.5 text-[14px] font-semibold rounded-lg transition-all flex items-center justify-center shrink-0 ${(tab === 'reports' ? (activeTab === 'reports' || activeTab === 'hidden') : activeTab === tab)
+              ? 'bg-background text-primary shadow-sm dark:bg-card border border-border/50 shadow-black/5'
+              : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
               }`}
           >
-            {tab === 'reports' && 'Xử lý báo cáo'}
+            {tab === 'reports' && 'Kiểm duyệt nội dung'}
             {tab === 'posts' && 'Duyệt bài'}
             {tab === 'locked' && 'Tài khoản bị khóa'}
-            {tab === 'hidden' && 'Bài viết vi phạm'}
             {tab === 'communities' && 'Chủ đề bài viết'}
             {tab === 'users' && 'Người dùng'}
             {tab === 'feedback' && 'Góp ý'}
@@ -397,53 +442,244 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
         ))}
       </div>
 
-      <Card className="border-border bg-card">
-        {activeTab === 'reports' && (
+      <Card className="border-border bg-card shadow-md overflow-hidden">
+        {(activeTab === 'reports' || activeTab === 'hidden') && (
           <div className="p-0">
-            <div className="p-4 border-b border-border bg-muted/30">
-              <h3 className="font-semibold text-foreground">Danh sách báo cáo vi phạm</h3>
+            <div className="p-4 border-b border-border bg-muted/20 flex flex-col items-center gap-4">
+              <div className="flex p-1 bg-muted rounded-lg w-fit border border-border/50">
+                <button
+                  onClick={() => setActiveTab('reports')}
+                  className={`px-6 py-1.5 text-xs font-black uppercase tracking-widest rounded-md transition-all ${activeTab === 'reports' ? 'bg-background text-primary shadow-sm border border-border/40' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  Báo cáo chờ xử lý
+                </button>
+                <button
+                  onClick={() => setActiveTab('hidden')}
+                  className={`px-6 py-1.5 text-xs font-black uppercase tracking-widest rounded-md transition-all ${activeTab === 'hidden' ? 'bg-background text-primary shadow-sm border border-border/40' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  Bài viết bị ẩn
+                </button>
+              </div>
             </div>
-            <div className="divide-y divide-border">
-              {reports.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground text-sm">Hiện không có báo cáo nào đang chờ.</div>
-              ) : reports.map((report) => (
-                <div key={report._id} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-muted/30 transition-colors gap-3">
-                  <div className="space-y-1 flex-1">
-                    <p className="text-sm font-medium text-foreground border-l-2 border-red-500 pl-2">Lý do báo cáo: {report.reason}</p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                       Bài viết: <span className="italic">"{report.post?.title || 'Bài đã mất/xoá'}"</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">Người tố cáo: <span className="font-semibold">@{report.reporter?.username}</span></p>
+
+            {activeTab === 'reports' && (
+              <div className="divide-y divide-border animate-in fade-in slide-in-from-top-1 duration-300">
+                {reports.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground text-sm">Hiện không có báo cáo nào đang chờ.</div>
+                ) : reports.map((report) => (
+                  <div key={report._id} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-muted/30 transition-colors gap-3">
+                    <div className="space-y-2 flex-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="destructive" className="text-[10px] h-5 font-black uppercase tracking-tighter">Báo cáo mới</Badge>
+                        <p className="text-sm font-bold text-foreground">Lý do: {report.reason}</p>
+                      </div>
+
+                      {report.description && (
+                        <p className="text-xs text-foreground/80 bg-muted/50 p-2 rounded-lg border border-border/40 italic">
+                          "{report.description}"
+                        </p>
+                      )}
+
+                      {report.evidence_images && report.evidence_images.length > 0 && (
+                        <div className="flex gap-2 py-1">
+                          {report.evidence_images.map((img: string, idx: number) => (
+                            <div
+                              key={idx}
+                              className="h-16 w-16 rounded-lg overflow-hidden border border-border bg-muted cursor-zoom-in hover:opacity-80 transition-opacity shadow-sm"
+                              onClick={() => setZoomedImage(img)}
+                            >
+                              <img src={getImageUrl(img)} alt="Evidence" className="h-full w-full object-cover" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground font-medium">
+                        <p>Bài viết: <span className="text-foreground/80 italic font-bold">"{report.post?.title || 'Bài đã mất/xoá'}"</span></p>
+                        <p>Người tố cáo: <span className="text-foreground/80 font-bold">@{report.reporter?.username}</span></p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:bg-muted border border-border"
+                        onClick={() => setViewingReport(report)}
+                      >
+                        <FileText className="h-4 w-4 mr-1" /> Chi tiết
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-primary hover:bg-primary/10 border border-primary/20"
+                        onClick={() => setViewingPost(report.post)}
+                      >
+                        <Eye className="h-4 w-4 mr-1" /> Xem bài
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-amber-500 hover:text-amber-600 hover:bg-amber-50 border border-amber-200"
+                        onClick={() => handleReportAction(report._id, 'warn_user')}
+                      >
+                        <AlertTriangle className="h-4 w-4 mr-1" /> Cảnh cáo
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-green-500 hover:text-green-600 hover:bg-green-50 border border-green-200"
+                        onClick={() => handleReportAction(report._id, 'dismiss')}
+                      >
+                        <CheckCircle2 className="h-4 w-4 mr-1" /> Hủy báo cáo
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-primary hover:bg-primary/10 border border-primary/20"
-                      onClick={() => setViewingPost(report.post)}
-                    >
-                      <Eye className="h-4 w-4 mr-1" /> Xem bài
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-amber-500 hover:text-amber-600 hover:bg-amber-50 border border-amber-200"
-                      onClick={() => handleReportAction(report._id, 'warn_user')}
-                    >
-                      <AlertTriangle className="h-4 w-4 mr-1" /> Cảnh cáo
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-green-500 hover:text-green-600 hover:bg-green-50 border border-green-200"
-                      onClick={() => handleReportAction(report._id, 'dismiss')}
-                    >
-                      <CheckCircle2 className="h-4 w-4 mr-1" /> Hủy báo cáo
-                    </Button>
+                ))}
+              </div>
+            )}
+
+            {/* Detailed Report Modal */}
+            <Dialog open={!!viewingReport} onOpenChange={(open) => !open && setViewingReport(null)}>
+              <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden border-none shadow-2xl rounded-2xl">
+                <DialogHeader className="bg-muted/30 px-6 py-5 border-b border-border/50">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant="destructive" className="text-[10px] h-5 font-black uppercase tracking-tighter">Báo cáo chi tiết</Badge>
+                    <span className="text-xs text-muted-foreground font-medium">{viewingReport && new Date(viewingReport.created_at).toLocaleString('vi-VN')}</span>
+                  </div>
+                  <DialogTitle className="text-xl font-black text-foreground">
+                    {viewingReport?.reason}
+                  </DialogTitle>
+                  <DialogDescription className="sr-only">Nội dung chi tiết của báo cáo vi phạm cần duyệt.</DialogDescription>
+                </DialogHeader>
+
+                <div className="px-6 py-6 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                  {/* People Section */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Người tố cáo</Label>
+                      <div className="flex items-center gap-2 p-2 rounded-xl bg-muted/40 border border-border/40">
+                        <Avatar className="h-8 w-8 border border-border/50">
+                          <AvatarImage src={getImageUrl(viewingReport?.reporter?.avatar_url)} />
+                          <AvatarFallback>{viewingReport?.reporter?.username?.[0]}</AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold truncate">@{viewingReport?.reporter?.username}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{viewingReport?.reporter?.email}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Tác giả bài viết</Label>
+                      <div className="flex items-center gap-2 p-2 rounded-xl bg-muted/40 border border-border/40">
+                        <Avatar className="h-8 w-8 border border-border/50">
+                          <AvatarImage src={getImageUrl(viewingReport?.post?.author?.avatar_url)} />
+                          <AvatarFallback>{viewingReport?.post?.author?.username?.[0]}</AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold truncate">@{viewingReport?.post?.author?.username}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{viewingReport?.post?.author?.email}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Description Section */}
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Nội dung giải trình vi phạm</Label>
+                    <div className="p-4 rounded-2xl bg-red-50/30 border border-red-100/50 text-sm text-foreground/90 leading-relaxed italic">
+                      {viewingReport?.description ? `"${viewingReport.description}"` : "Không có mô tả chi tiết kèm theo."}
+                    </div>
+                  </div>
+
+                  {/* Evidence Section */}
+                  {viewingReport?.evidence_images && viewingReport.evidence_images.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Bằng chứng hình ảnh ({viewingReport.evidence_images.length})</Label>
+                      <div className="grid grid-cols-3 gap-3">
+                        {viewingReport.evidence_images.map((img: string, idx: number) => (
+                          <div
+                            key={idx}
+                            className="aspect-square rounded-2xl overflow-hidden border border-border bg-muted cursor-zoom-in group relative"
+                            onClick={() => setZoomedImage(img)}
+                          >
+                            <img src={getImageUrl(img)} alt="Evidence" className="h-full w-full object-cover transition-transform group-hover:scale-110" />
+                            <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Maximize2 className="h-5 w-5 text-white drop-shadow-md" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Post Context Section */}
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Bài viết bị tố cáo</Label>
+                    <div className="p-4 rounded-2xl border border-border bg-card shadow-sm hover:border-primary/30 transition-colors cursor-pointer" onClick={() => { setViewingPost(viewingReport.post); setViewingReport(null); }}>
+                      <p className="font-black text-sm mb-1">{viewingReport?.post?.title}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-2">{viewingReport?.post?.content}</p>
+                      <div className="mt-3 flex items-center gap-2">
+                        <Eye className="h-3.5 w-3.5 text-primary" />
+                        <span className="text-[11px] font-bold text-primary uppercase tracking-tighter">Nhấn để xem toàn bộ bài viết</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
+
+                <DialogFooter className="bg-muted/10 px-6 py-4 border-t border-border/50 flex flex-wrap sm:justify-between items-center gap-3">
+                  <Button variant="ghost" onClick={() => setViewingReport(null)} className="rounded-xl font-bold h-11">Đóng</Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      className="rounded-xl h-11 px-6 font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200"
+                      onClick={() => { handleReportAction(viewingReport._id, 'warn_user'); setViewingReport(null); }}
+                    >
+                      Cảnh cáo
+                    </Button>
+                    <Button
+                      className="rounded-xl h-11 px-8 font-black bg-green-600 hover:bg-green-700 shadow-lg shadow-green-500/20"
+                      onClick={() => { handleReportAction(viewingReport._id, 'dismiss'); setViewingReport(null); }}
+                    >
+                      Hủy báo cáo
+                    </Button>
+                  </div>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {activeTab === 'hidden' && (
+              <div className="divide-y divide-border animate-in fade-in slide-in-from-top-1 duration-300">
+                {hiddenPosts.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground text-sm">Chưa có bài viết nào bị ẩn.</div>
+                ) : hiddenPosts.map((post) => (
+                  <div key={post._id} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-muted/30 transition-colors gap-3">
+                    <div className="space-y-1 flex-1">
+                      <p className="text-sm font-bold text-foreground truncate max-w-xl">{post.title}</p>
+                      <p className="text-[11px] text-muted-foreground">Người đăng: @{post.author?.username}</p>
+                      <p className="text-[10px] text-red-500 font-bold uppercase tracking-widest mt-1">Status: Hidden / Violated Policy</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-primary hover:bg-primary/5 hover:text-primary border border-border/40"
+                        onClick={() => setViewingPost(post)}
+                      >
+                        <Eye className="h-4 w-4 mr-1" /> Chi tiết
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-green-600 hover:bg-green-50 hover:text-green-700 border border-green-100"
+                        onClick={() => handleRestorePost(post._id)}
+                      >
+                        <CheckCircle2 className="h-4 w-4 mr-1" /> Khôi phục
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -547,116 +783,144 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
           </div>
         )}
 
-        {activeTab === 'hidden' && (
-          <div className="p-0">
-            <div className="p-4 border-b border-border bg-muted/30">
-              <h3 className="font-semibold text-foreground">Kho lưu trữ bài viết vi phạm (Bằng chứng)</h3>
-            </div>
-            <div className="divide-y divide-border">
-              {hiddenPosts.length === 0 ? (
-                <div className="p-8 text-center space-y-3">
-                  <FileText className="h-12 w-12 text-muted-foreground/30 mx-auto" />
-                  <h3 className="font-medium text-foreground">Kho lưu trữ trống</h3>
-                  <p className="text-sm text-muted-foreground">Chưa có bài viết nào bị ẩn vì lý do vi phạm.</p>
-                </div>
-              ) : (
-                hiddenPosts.map((post) => (
-                  <div key={post._id} className="p-4 flex flex-col md:flex-row md:items-start justify-between hover:bg-muted/30 transition-colors gap-4">
-                    <div className="space-y-2 flex-1">
-                      <div className="flex items-center gap-2">
-                         <Avatar className="h-6 w-6 border border-border">
-                            <AvatarImage src={getImageUrl(post.author?.avatar_url)} />
-                            <AvatarFallback>{post.author?.username[0]}</AvatarFallback>
-                         </Avatar>
-                         <span className="text-xs font-bold text-foreground">@{post.author?.username}</span>
-                         <Badge variant="outline" className="text-[10px] bg-red-50 text-red-600 border-red-100">Đã ẩn</Badge>
-                      </div>
-                      <p className="text-sm font-semibold text-foreground">{post.title}</p>
-                      <p className="text-xs text-muted-foreground line-clamp-3 bg-muted/50 p-2 rounded italic">"{post.content}"</p>
-                      {post.image_url && (
-                        <div className="mt-2">
-                          <img src={post.image_url.startsWith('http') ? post.image_url : `${API_BASE_URL}${post.image_url}`} alt="Post content" className="h-20 w-20 object-cover rounded-md border border-border opacity-70 hover:opacity-100 transition-opacity" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-primary hover:bg-primary/10 border border-primary/20"
-                        onClick={() => setViewingPost(post)}
-                      >
-                        <Eye className="h-4 w-4 mr-1" /> Xem
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="border-green-200 text-green-600 hover:bg-green-50"
-                        onClick={() => handleRestorePost(post._id)}
-                      >
-                        <CheckCircle2 className="h-4 w-4 mr-1" /> Khôi phục
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
 
         {activeTab === 'communities' && (
           <div className="p-6 space-y-8">
-            <div className="max-w-xl">
-              <div className="flex items-center gap-3 mb-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
                 <Tag className="h-6 w-6 text-primary" />
-                <h3 className="text-lg font-semibold text-foreground">Quản lý chủ đề bài viết mới</h3>
+                <h3 className="text-lg font-semibold text-foreground">Quản lý chủ đề bài viết</h3>
               </div>
-              <form onSubmit={handleCreateCommunity} className="space-y-4 bg-muted/30 p-4 rounded-xl border border-border">
-                <div className="space-y-2">
-                  <Label htmlFor="comName">Tên chủ đề *</Label>
-                  <Input id="comName" required placeholder="VD: Công nghệ, Học tập, Giải trí..." value={comFormData.name} onChange={e => setComFormData({ ...comFormData, name: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="comDesc">Mô tả chủ đề</Label>
-                  <textarea id="comDesc" className="flex min-h-[80px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-primary/20 transition-all outline-none" placeholder="Giới thiệu ngắn gọn về chủ đề này..." value={comFormData.description} onChange={e => setComFormData({ ...comFormData, description: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="comIcon">Biểu tượng (Emoji)</Label>
-                  <Input id="comIcon" placeholder="📚, 🎮, 🎨..." value={comFormData.icon} onChange={e => setComFormData({ ...comFormData, icon: e.target.value })} />
-                </div>
-                <Button type="submit" className="w-full">Thêm Chủ Đề Ngay</Button>
-              </form>
+
+              <Dialog open={isCreateTopicOpen} onOpenChange={setIsCreateTopicOpen}>
+                <DialogTrigger asChild>
+                  <Button className="shrink-0 gap-2">
+                    <Plus className="h-4 w-4" /> Tạo chủ đề mới
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px]">
+                  <DialogHeader>
+                    <DialogTitle>Tạo chủ đề bài viết mới</DialogTitle>
+                    <DialogDescription>
+                      Thêm một phân loại mới để người dùng có thể chọn khi đăng bài.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleCreateCommunity} className="space-y-4 pt-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="comName">Tên chủ đề *</Label>
+                      <Input id="comName" required placeholder="VD: Công nghệ, Học tập, Giải trí..." value={comFormData.name} onChange={e => setComFormData({ ...comFormData, name: e.target.value })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="comDesc">Mô tả chủ đề</Label>
+                      <textarea id="comDesc" className="flex min-h-[100px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-primary/20 transition-all outline-none" placeholder="Giới thiệu ngắn gọn về chủ đề này..." value={comFormData.description} onChange={e => setComFormData({ ...comFormData, description: e.target.value })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="comIcon">Biểu tượng (Emoji)</Label>
+                      <Input id="comIcon" placeholder="📚, 🎮, 🎨..." value={comFormData.icon} onChange={e => setComFormData({ ...comFormData, icon: e.target.value })} />
+                    </div>
+                    <Button type="submit" className="w-full mt-4">Tạo Chủ Đề Ngay</Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </div>
 
+            {/* Edit Topic Dialog */}
+            <Dialog open={isEditTopicOpen} onOpenChange={setIsEditTopicOpen}>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle>Chỉnh sửa chủ đề</DialogTitle>
+                  <DialogDescription>
+                    Cập nhật thông tin cho chủ đề bài viết.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleUpdateTopic} className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="editComName">Tên chủ đề *</Label>
+                    <Input id="editComName" required value={editTopicFormData.name} onChange={e => setEditTopicFormData({ ...editTopicFormData, name: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editComDesc">Mô tả chủ đề</Label>
+                    <textarea id="editComDesc" className="flex min-h-[100px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-primary/20 transition-all outline-none" value={editTopicFormData.description} onChange={e => setEditTopicFormData({ ...editTopicFormData, description: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editComIcon">Biểu tượng (Emoji)</Label>
+                    <Input id="editComIcon" value={editTopicFormData.icon} onChange={e => setEditTopicFormData({ ...editTopicFormData, icon: e.target.value })} />
+                  </div>
+                  <Button type="submit" className="w-full mt-4">Lưu thay đổi</Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+
             <div className="space-y-4">
-              <h3 className="font-semibold text-foreground flex items-center gap-2">
-                Danh sách chủ đề hiện có
-                <Badge variant="secondary" className="ml-2">{communities.length}</Badge>
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {communities.length === 0 ? (
-                  <div className="col-span-full p-8 text-center text-muted-foreground border border-dashed rounded-xl">Chưa có chủ đề nào được tạo.</div>
-                ) : communities.map((com) => (
-                  <Card key={com._id} className="p-4 flex items-center justify-between group hover:border-primary/50 transition-colors">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center text-xl shrink-0">
-                        {com.icon || '👥'}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-bold text-sm text-foreground truncate">{com.name}</p>
-                        <p className="text-[10px] text-muted-foreground truncate">{com.postCount || 0} bài viết</p>
-                      </div>
-                    </div>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="text-muted-foreground hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => handleDeleteCommunity(com._id)}
-                    >
-                      <XCircle className="h-4 w-4" />
-                    </Button>
-                  </Card>
-                ))}
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-foreground flex items-center gap-2">
+                  Danh sách chủ đề hiện có
+                  <Badge variant="secondary" className="ml-2 font-black">{communities.length}</Badge>
+                </h3>
+              </div>
+
+              <div className="border rounded-xl overflow-hidden shadow-sm bg-card">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-muted/50 text-muted-foreground font-medium border-b border-border">
+                    <tr>
+                      <th className="px-6 py-4">Chủ đề</th>
+                      <th className="px-6 py-4">Số bài viết</th>
+                      <th className="px-6 py-4 hidden md:table-cell">Mô tả</th>
+                      <th className="px-6 py-4 text-right">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {communities.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground italic">
+                          Chưa có chủ đề nào được tạo.
+                        </td>
+                      </tr>
+                    ) : communities.map((com) => (
+                      <tr key={com._id} className="hover:bg-muted/20 transition-colors group">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-4">
+                            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-xl shadow-inner shrink-0 group-hover:scale-110 transition-transform">
+                              {com.icon || '👥'}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-black text-foreground truncate">{com.name}</p>
+                              <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Topic ID: {com._id.slice(-6)}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <Badge variant="outline" className="font-bold border-primary/20 text-primary">
+                            {com.postCount || 0} bài viết
+                          </Badge>
+                        </td>
+                        <td className="px-6 py-4 hidden md:table-cell">
+                          <p className="text-xs text-muted-foreground line-clamp-2 max-w-xs">{com.description || 'Không có mô tả'}</p>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-9 w-9 p-0 hover:bg-primary/10 hover:text-primary rounded-lg"
+                              onClick={() => openEditTopicDialog(com)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-9 w-9 p-0 hover:bg-red-500/10 hover:text-red-500 rounded-lg"
+                              onClick={() => handleDeleteCommunity(com._id)}
+                            >
+                              <XCircle className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -679,9 +943,9 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                   <div className="space-y-1 flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <Badge variant="outline" className={
-                        feedback.type === 'bug' ? 'text-red-500 border-red-200 bg-red-50' : 
-                        feedback.type === 'suggestion' ? 'text-blue-500 border-blue-200 bg-blue-50' : 
-                        'text-gray-500 border-gray-200 bg-gray-50'
+                        feedback.type === 'bug' ? 'text-red-500 border-red-200 bg-red-50' :
+                          feedback.type === 'suggestion' ? 'text-blue-500 border-blue-200 bg-blue-50' :
+                            'text-gray-500 border-gray-200 bg-gray-50'
                       }>
                         {feedback.type === 'bug' ? 'Lỗi' : feedback.type === 'suggestion' ? 'Góp ý' : 'Khác'}
                       </Badge>
@@ -690,8 +954,8 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                     </div>
                     <p className="text-sm text-foreground leading-relaxed">{feedback.content}</p>
                     <div className="flex items-center gap-2 mt-3 p-2 rounded-lg bg-muted/50 w-fit">
-                       <img src={getImageUrl(feedback.user?.avatar_url)} alt="Avatar" className="h-6 w-6 rounded-full border border-border" />
-                       <span className="text-xs font-medium text-muted-foreground">@{feedback.user?.username} ({feedback.user?.full_name})</span>
+                      <img src={getImageUrl(feedback.user?.avatar_url)} alt="Avatar" className="h-6 w-6 rounded-full border border-border" />
+                      <span className="text-xs font-medium text-muted-foreground">@{feedback.user?.username} ({feedback.user?.full_name})</span>
                     </div>
                   </div>
                   {feedback.status === 'new' && (
@@ -717,7 +981,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                 <Search className="h-6 w-6 text-muted-foreground/60" />
                 <h3 className="text-lg font-medium text-foreground">Tra cứu người dùng</h3>
               </div>
-              
+
               <div className="flex gap-2">
                 <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                   <DialogTrigger asChild>
@@ -740,9 +1004,13 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                           <Label htmlFor="email">Email *</Label>
                           <Input id="email" type="email" required value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
                         </div>
-                        <div className="space-y-2">
+                        <div className="space-y-2 col-span-2">
                           <Label htmlFor="password">Mật khẩu *</Label>
                           <Input id="password" type="password" required value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="full_name">Người Dùng</Label>
+                          <Input id="full_name" value={formData.full_name} onChange={e => setFormData({ ...formData, full_name: e.target.value })} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="role">Vai trò</Label>
@@ -750,14 +1018,6 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                             <option value="User">User</option>
                             <option value="Admin">Admin</option>
                           </select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="full_name">Họ Tên</Label>
-                          <Input id="full_name" value={formData.full_name} onChange={e => setFormData({ ...formData, full_name: e.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="mssv">MSSV</Label>
-                          <Input id="mssv" value={formData.mssv} onChange={e => setFormData({ ...formData, mssv: e.target.value })} />
                         </div>
                       </div>
                       <Button type="submit" disabled={isLoading} className="mt-4 w-full">
@@ -786,9 +1046,13 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                           <Label htmlFor="edit-email">Email</Label>
                           <Input id="edit-email" type="email" required value={editFormData.email} onChange={e => setEditFormData({ ...editFormData, email: e.target.value })} />
                         </div>
-                        <div className="space-y-2">
+                        <div className="space-y-2 col-span-2">
                           <Label htmlFor="edit-password">Mật khẩu mới (Để trống nếu giữ nguyên)</Label>
                           <Input id="edit-password" type="password" placeholder="••••••••" value={editFormData.password} onChange={e => setEditFormData({ ...editFormData, password: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-full_name">Người Dùng</Label>
+                          <Input id="edit-full_name" value={editFormData.full_name} onChange={e => setEditFormData({ ...editFormData, full_name: e.target.value })} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="edit-role">Vai trò</Label>
@@ -796,14 +1060,6 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                             <option value="User">User</option>
                             <option value="Admin">Admin</option>
                           </select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="edit-full_name">Họ Tên</Label>
-                          <Input id="edit-full_name" value={editFormData.full_name} onChange={e => setEditFormData({ ...editFormData, full_name: e.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="edit-mssv">MSSV</Label>
-                          <Input id="edit-mssv" value={editFormData.mssv} onChange={e => setEditFormData({ ...editFormData, mssv: e.target.value })} />
                         </div>
                       </div>
                       <Button type="submit" disabled={isLoading} className="mt-4 w-full">
@@ -817,8 +1073,8 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
 
             <div className="space-y-4">
               <div className="flex gap-2 max-w-md">
-                <Input 
-                  placeholder="Tìm tài khoản, email, mssv..." 
+                <Input
+                  placeholder="Tìm tài khoản, email, tên..."
                   value={userSearchQuery}
                   onChange={(e) => setUserSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearchUsers(userSearchQuery)}
@@ -827,13 +1083,13 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                   Tìm
                 </Button>
               </div>
-              
+
               <div className="border rounded-xl overflow-hidden shadow-sm">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-muted/50 text-muted-foreground font-medium border-b">
                     <tr>
                       <th className="px-4 py-3">Người dùng</th>
-                      <th className="px-4 py-3 hidden md:table-cell">Email / MSSV</th>
+                      <th className="px-4 py-3 hidden md:table-cell">Email</th>
                       <th className="px-4 py-3 text-center">Vai trò</th>
                       <th className="px-4 py-3 text-right">Thao tác</th>
                     </tr>
@@ -852,15 +1108,14 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                               <AvatarFallback>{user.username[0]}</AvatarFallback>
                             </Avatar>
                             <div className="min-w-0">
-                               <p className="font-bold text-foreground truncate">@{user.username}</p>
-                               <p className="text-[11px] text-muted-foreground truncate">{user.full_name || 'Chưa đặt tên'}</p>
+                              <p className="font-bold text-foreground truncate">@{user.username}</p>
+                              <p className="text-[11px] text-muted-foreground truncate">{user.full_name || 'Chưa đặt tên'}</p>
                             </div>
                             {user.is_locked && <Badge variant="destructive" className="ml-1 scale-75 origin-left">Locked</Badge>}
                           </div>
                         </td>
                         <td className="px-4 py-3 hidden md:table-cell">
                           <p className="text-xs font-medium text-foreground">{user.email}</p>
-                          <p className="text-[10px] text-muted-foreground">MSSV: {user.mssv || 'N/A'}</p>
                         </td>
                         <td className="px-4 py-3 text-center">
                           <Badge variant="outline" className={user.role?.toLowerCase() === 'admin' ? 'border-primary text-primary bg-primary/5' : ''}>
@@ -868,9 +1123,9 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary"
                             onClick={() => openEditDialog(user)}
                           >
@@ -887,102 +1142,137 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
         )}
       </Card>
 
-      {/* Dialog chi tiết bài đăng */}
+      {/* Dialog chi tiết bài đăng — Khung Vừa Phải & Chuyên nghiệp (Balanced Modal) */}
       <Dialog open={!!viewingPost} onOpenChange={(open) => !open && setViewingPost(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold">{viewingPost?.title}</DialogTitle>
-            <DialogDescription>
-              Đăng bởi @{viewingPost?.author?.username} • {viewingPost && new Date(viewingPost.created_at).toLocaleString('vi-VN')}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-6 py-4">
-            <div className="bg-muted/30 p-4 rounded-xl border border-border">
-               <p className="whitespace-pre-wrap text-foreground/90 leading-relaxed">
+        <DialogContent className="max-w-5xl w-[94vw] h-[90vh] p-0 border-none shadow-2xl bg-background rounded-3xl overflow-hidden flex flex-col z-[100] [&>button]:hidden">
+          <DialogTitle className="sr-only">Chi tiết bài viết</DialogTitle>
+          <DialogDescription className="sr-only">Mô tả và nội dung của bài viết đang được xem.</DialogDescription>
+          {/* Header */}
+          <div className="flex-shrink-0 h-16 bg-muted/40 border-b border-border/80 px-8 flex items-center justify-between sticky top-0 z-50 backdrop-blur-md">
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className="text-[10px] font-black tracking-widest uppercase py-1 px-3 rounded-full border-primary/30 text-primary bg-primary/5">
+                Moderation Context
+              </Badge>
+              {viewingPost?.community && (
+                <span className="text-xs font-black text-muted-foreground uppercase tracking-widest opacity-40">in {viewingPost.community}</span>
+              )}
+            </div>
+            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full hover:bg-red-500/10 hover:text-red-500" onClick={() => setViewingPost(null)}>
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto bg-background/50 custom-scrollbar">
+            <div className="max-w-3xl mx-auto px-6 py-12 space-y-12">
+              <header className="space-y-6 text-center">
+                <h2 className="text-4xl font-black tracking-tighter text-foreground leading-[1.1]">
+                  {viewingPost?.title}
+                </h2>
+                <div className="flex items-center justify-center gap-4 text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-50">
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>{viewingPost && new Date(viewingPost.created_at).toLocaleString('vi-VN')}</span>
+                </div>
+                <div className="h-1 w-20 bg-primary/20 mx-auto rounded-full"></div>
+              </header>
+
+              <div className="space-y-10">
+                <p className="text-xl text-foreground font-medium leading-[1.7] whitespace-pre-wrap select-text">
                   {viewingPost?.content}
-               </p>
-            </div>
+                </p>
 
-            {/* Hiển thị tất cả ảnh nếu có */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-               {viewingPost?.image_urls?.map((url: string, i: number) => (
-                  <img 
-                    key={i} 
-                    src={getImageUrl(url)} 
-                    className="w-full h-auto rounded-xl border border-border shadow-sm object-cover aspect-video" 
-                    alt={`Ảnh ${i+1}`}
-                  />
-               ))}
-               {!viewingPost?.image_urls && viewingPost?.image_url && (
-                  <img 
-                    src={getImageUrl(viewingPost.image_url)} 
-                    className="w-full h-auto rounded-xl border border-border shadow-sm object-cover max-h-[400px] col-span-full" 
-                    alt="Ảnh bài đăng"
-                  />
-               )}
-            </div>
-
-            <div className="flex items-center justify-between border-t border-border pt-6">
-               <div className="flex items-center gap-3">
-                  <Avatar className="h-10 w-10 border border-border">
-                    <AvatarImage src={getImageUrl(viewingPost?.author?.avatar_url)} />
-                    <AvatarFallback>{viewingPost?.author?.username?.[0]}</AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="text-sm font-bold text-foreground">{viewingPost?.author?.display_name || viewingPost?.author?.username}</p>
-                    <p className="text-xs text-muted-foreground">ID tác giả: {viewingPost?.author?._id}</p>
+                {/* Media Section */}
+                {(viewingPost?.image_urls?.length > 0 || viewingPost?.image_url) && (
+                  <div className="pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {viewingPost?.image_urls?.map((url: string, i: number) => (
+                      <div key={i} className="group relative rounded-2xl overflow-hidden border border-border shadow-sm aspect-square bg-muted/20">
+                        <img
+                          src={getImageUrl(url)}
+                          className="w-full h-full object-cover cursor-zoom-in transition-transform duration-700 group-hover:scale-105"
+                          alt={`Attached Asset ${i + 1}`}
+                          onClick={() => setZoomedImage(getImageUrl(url))}
+                        />
+                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                          <Maximize2 className="h-8 w-8 text-white drop-shadow-lg" />
+                        </div>
+                      </div>
+                    ))}
+                    {!viewingPost?.image_urls && viewingPost?.image_url && (
+                      <div className="rounded-3xl overflow-hidden border border-border shadow-sm col-span-full group relative bg-muted/20">
+                        <img
+                          src={getImageUrl(viewingPost.image_url)}
+                          className="w-full h-auto object-cover max-h-[800px] cursor-zoom-in group-hover:opacity-95 transition-opacity"
+                          alt="Main Post Media"
+                          onClick={() => setZoomedImage(getImageUrl(viewingPost.image_url))}
+                        />
+                      </div>
+                    )}
                   </div>
-               </div>
-               
-               <div className="flex gap-3">
-                  {activeTab === 'posts' && (
-                    <>
-                      <Button
-                        onClick={() => {
-                          handlePostAction(viewingPost._id, 'approve');
-                          setViewingPost(null);
-                        }}
-                        className="bg-green-600 hover:bg-green-700 text-white font-bold"
-                      >
-                        <CheckCircle2 className="h-4 w-4 mr-2" /> Duyệt bài ngay
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          handlePostAction(viewingPost._id, 'reject');
-                          setViewingPost(null);
-                        }}
-                        className="text-red-500 border-red-100 hover:bg-red-50 font-bold"
-                      >
-                        <XCircle className="h-4 w-4 mr-2" /> Từ chối
-                      </Button>
-                    </>
-                  )}
-
-                  {activeTab === 'hidden' && (
-                    <Button
-                      onClick={() => {
-                        handleRestorePost(viewingPost._id);
-                        setViewingPost(null);
-                      }}
-                      className="bg-green-600 hover:bg-green-700 text-white font-bold"
-                    >
-                      <CheckCircle2 className="h-4 w-4 mr-2" /> Khôi phục bài viết
-                    </Button>
-                  )}
-
-                  {activeTab === 'reports' && (
-                    <Button
-                      variant="outline"
-                      onClick={() => setViewingPost(null)}
-                      className="font-bold border-border"
-                    >
-                      Đóng
-                    </Button>
-                  )}
-               </div>
+                )}
+              </div>
             </div>
+          </div>
+
+          {/* Action Center - Fixed Footer */}
+          <div className="flex-shrink-0 h-24 bg-background border-t border-border px-10 flex items-center justify-between z-50">
+            <div className="flex items-center gap-4">
+              <Avatar className="h-12 w-12 border-2 border-border shadow-md">
+                <AvatarImage src={getImageUrl(viewingPost?.author?.avatar_url)} className="object-cover" />
+                <AvatarFallback className="font-bold">{viewingPost?.author?.username?.[0] || 'U'}</AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col">
+                <span className="text-sm font-black italic">@{viewingPost?.author?.username}</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-60">Poster Identity</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              {activeTab === 'posts' && (
+                <>
+                  <Button
+                    className="bg-green-600 hover:bg-green-700 text-white font-black h-12 px-8 rounded-2xl shadow-xl shadow-green-500/20 gap-2 transition-all active:scale-95"
+                    onClick={() => { handlePostAction(viewingPost._id, 'approve'); setViewingPost(null); }}
+                  >
+                    <CheckCircle2 className="h-5 w-5" /> DUYỆT BÀI
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="border-red-200 text-red-500 hover:bg-red-50 font-black h-12 px-8 rounded-2xl transition-all"
+                    onClick={() => { handlePostAction(viewingPost._id, 'reject'); setViewingPost(null); }}
+                  >
+                    <XCircle className="h-5 w-5 mr-2" /> TỪ CHỐI
+                  </Button>
+                </>
+              )}
+              {(activeTab === 'reports' || activeTab === 'hidden') && (
+                <Button
+                  className="bg-primary hover:bg-primary/90 text-white font-black h-12 px-8 rounded-2xl"
+                  onClick={() => setViewingPost(null)}
+                >
+                  ĐÓNG XEM TRƯỚC
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Zoom Modal */}
+      <Dialog open={!!zoomedImage} onOpenChange={(open) => !open && setZoomedImage(null)}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 border-none bg-black/95 flex items-center justify-center z-[200] rounded-none overflow-hidden [&>button]:hidden">
+          <DialogTitle className="sr-only">Phóng to ảnh</DialogTitle>
+          <DialogDescription className="sr-only">Tùy biến hiển thị kích thước lớn của ảnh được chọn.</DialogDescription>
+          <div className="relative w-full h-full flex items-center justify-center p-4">
+            {zoomedImage && (
+              <img src={getImageUrl(zoomedImage)} alt="Zoomed view" className="max-w-full max-h-full object-contain shadow-2xl animate-in zoom-in-95 duration-200" onClick={() => setZoomedImage(null)} />
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-4 right-4 text-white/50 hover:bg-white/10 hover:text-white transition-all"
+              onClick={() => setZoomedImage(null)}
+            >
+              <X className="h-6 w-6" />
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

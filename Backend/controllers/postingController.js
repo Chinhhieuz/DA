@@ -90,6 +90,13 @@ const getAllPosts = async (req, res) => {
             .sort({ created_at: -1 })
             .lean();
             
+        // Lấy danh sách following của user hiện tại (nếu có) để check trạng thái follow
+        let followingList = [];
+        if (userId) {
+            const user = await Account.findById(userId).select('following');
+            if (user) followingList = (user.following || []).map(id => id.toString());
+        }
+
         // Đếm số lượng bình luận và lấy 1 bình luận mới nhất cho mỗi bài viết
         const postsWithCommentCount = await Promise.all(posts.map(async (post) => {
             const commentCount = await Comment.countDocuments({ post: post._id });
@@ -106,8 +113,16 @@ const getAllPosts = async (req, res) => {
                 if (reaction) userVote = reaction.type;
             }
 
+            // Inject isFollowing
+            const authorId = (post.author._id || post.author).toString();
+            const isFollowing = userId ? followingList.includes(authorId) : false;
+
             return {
                 ...post,
+                author: {
+                    ...(post.author._id ? post.author : { _id: post.author }),
+                    isFollowing
+                },
                 commentCount,
                 recentComment: recentComments.length > 0 ? recentComments[0] : null,
                 userVote
@@ -334,6 +349,13 @@ const getSavedPosts = async (req, res) => {
         // Lọc bỏ bài viết đã bị xóa (nếu có trong savedPosts nhưng fetch ra null)
         const validPosts = user.savedPosts.filter(p => p !== null);
         
+        // Lấy danh sách following của user hiện tại (nếu có)
+        let followingList = [];
+        if (userId) {
+            const user = await Account.findById(userId).select('following');
+            if (user) followingList = (user.following || []).map(id => id.toString());
+        }
+
         // Đếm comment và check reaction (tương tự getAllPosts)
         const postsWithDetails = await Promise.all(validPosts.map(async (post) => {
             const commentCount = await Comment.countDocuments({ post: post._id });
@@ -345,13 +367,22 @@ const getSavedPosts = async (req, res) => {
             
             // Inject userVote
             let userVote = null;
-            if (userId && post.reactions) {
-                const reaction = post.reactions.find(r => r.user_id && r.user_id.toString() === userId);
+            const postObj = post.toObject();
+            if (userId && postObj.reactions) {
+                const reaction = postObj.reactions.find(r => r.user_id && r.user_id.toString() === userId);
                 if (reaction) userVote = reaction.type;
             }
+
+            // Inject isFollowing
+            const authorId = (postObj.author._id || postObj.author).toString();
+            const isFollowing = userId ? followingList.includes(authorId) : false;
                 
             return {
-                ...post.toObject(),
+                ...postObj,
+                author: {
+                    ...(postObj.author._id ? postObj.author : { _id: postObj.author }),
+                    isFollowing
+                },
                 commentCount,
                 recentComment: recentComments.length > 0 ? recentComments[0] : null,
                 userVote

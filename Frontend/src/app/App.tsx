@@ -20,6 +20,7 @@ import { Login } from '@/components/Login'
 import { Badge } from '@/components/ui/badge'
 import { AdminDashboard } from '@/components/AdminDashboard'
 import { ResetPassword } from '@/components/ResetPassword'
+import { SavedPosts } from '@/components/SavedPosts'
 import { getImageUrl } from '@/lib/imageUtils'
 import { API_BASE_URL, API_URL } from '@/lib/api'
 
@@ -278,6 +279,7 @@ export default function App() {
                   name: p.author?.display_name || p.author?.username || 'Unknown',
                   avatar: getImageUrl(p.author?.avatar_url),
                   username: p.author?.username || 'unknown',
+                  isFollowing: !!p.author?.isFollowing,
                 },
                 community: p.community || 'lập trình',
                 timestamp: new Date(p.created_at).toLocaleString('vi-VN'),
@@ -325,7 +327,7 @@ export default function App() {
   };
 
   const handleViewChange = (view: string) => {
-    const protectedViews = ['profile', 'create', 'messages', 'settings', 'notifications', 'groups', 'admin'];
+    const protectedViews = ['profile', 'create', 'messages', 'settings', 'notifications', 'groups', 'admin', 'saved'];
     if (!isAuthenticated && protectedViews.includes(view)) {
       setCurrentView('login');
       setMobileMenuOpen(false);
@@ -516,6 +518,14 @@ export default function App() {
           onLogout={handleLogout} />;
       case 'admin':
         return <AdminDashboard currentUser={currentUser} />;
+      case 'saved':
+        return <SavedPosts 
+          currentUser={currentUser} 
+          onPostClick={handlePostClick} 
+          onUserClick={handleUserClick} 
+          onSaveToggle={handleSaveToggle}
+          onCommunityClick={handleCommunityClick}
+        />;
       default:
         return null;
     }

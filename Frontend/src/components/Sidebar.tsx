@@ -6,6 +6,7 @@ import {
   Settings,
   Home,
   Shield,
+  Bookmark,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -19,14 +20,12 @@ export function Sidebar({ currentView, onViewChange, userRole }: SidebarProps) {
   const menuItems = [
     { id: 'home', icon: Home, label: 'Trang Chủ' },
     { id: 'create', icon: PenSquare, label: 'Tạo bài viết' },
+    { id: 'saved', icon: Bookmark, label: 'Đã lưu' },
   ];
 
   if (userRole === 'admin') {
     menuItems.push({ id: 'admin', icon: Shield, label: 'Quản trị' });
   }
-
-  // Import Shield if not already present
-  // Note: Sidebar already imports from lucide-react, I need to make sure Shield is there.
 
 
   return (
@@ -54,13 +53,16 @@ export function Sidebar({ currentView, onViewChange, userRole }: SidebarProps) {
 
       </div>
 
-      <div className="mt-auto pt-4">
+      <div className="mt-auto pt-4 flex flex-col gap-2">
         <Button
-          variant="ghost"
-          className="w-full justify-start gap-3 hover:bg-muted text-muted-foreground"
+          variant={currentView === 'settings' ? 'secondary' : 'ghost'}
+          className={`w-full justify-start gap-3 ${currentView === 'settings'
+              ? 'bg-primary/10 text-primary hover:bg-primary/20'
+              : 'hover:bg-muted text-muted-foreground'
+            }`}
           onClick={() => onViewChange('settings')}
         >
-          <div className="rounded-xl bg-muted p-2 shadow-sm">
+          <div className={`rounded-xl p-2 shadow-sm ${currentView === 'settings' ? 'bg-background' : 'bg-muted'}`}>
             <Settings className="h-5 w-5" />
           </div>
           <span className="font-medium">Cài đặt</span>

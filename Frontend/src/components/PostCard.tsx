@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { getImageUrl } from '@/lib/imageUtils';
 import { API_URL } from '@/lib/api';
 import { toast } from 'sonner';
-import { MessageCircle, MoreHorizontal, Flag, ArrowBigUp, ArrowBigDown, Share2, Trash2, Bookmark, UserPlus, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MessageCircle, MoreHorizontal, Flag, ArrowBigUp, ArrowBigDown, Share2, Trash2, Bookmark, UserPlus, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ReportModal } from './ReportModal';
 
 // Component lightbox xem toàn bộ ảnh
 function ImageLightbox({ images, startIndex, onClose }: { images: string[]; startIndex: number; onClose: () => void }) {
@@ -200,6 +201,7 @@ export interface Post {
     name: string;
     avatar: string;
     username: string;
+    isFollowing?: boolean;
   };
   community: string;
   timestamp: string;
@@ -244,33 +246,22 @@ export function PostCard({
   const [upVotes, setUpVotes] = useState(post.upvotes);
   const [downVotes, setDownVotes] = useState(post.downvotes || 0);
   const [userReaction, setUserReaction] = useState<string | null>(post.userVote || null);
+  const [isFollowing, setIsFollowing] = useState(post.author.isFollowing || false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   useEffect(() => {
     setUpVotes(post.upvotes);
     setDownVotes(post.downvotes || 0);
     setUserReaction(post.userVote || null);
-  }, [post.upvotes, post.downvotes, post.userVote]);
+    setIsFollowing(post.author.isFollowing || false);
+  }, [post.upvotes, post.downvotes, post.userVote, post.author.isFollowing]);
 
-  const handleReportAction = async () => {
+  const handleReportAction = () => {
     if (!currentUser?.id) {
        toast.error('Vui lòng đăng nhập để báo cáo nội dung!');
        return;
     }
-    const reason = window.prompt("Vui lòng nhập lý do báo cáo bài viết này:");
-    if (!reason || reason.trim() === '') return;
-    
-    try {
-      const res = await fetch(`${API_URL}/reports/create`, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ post_id: post.id, reporter_id: currentUser.id, reason: reason.trim() })
-      });
-      const data = await res.json();
-      if (data.status === 'success') toast.success('Đã gửi đơn tố cáo cho Admin!');
-      else toast.error(data.message);
-    } catch {
-      toast.error('Lỗi khi xóa bài viết!');
-    }
+    setIsReportModalOpen(true);
   };
 
   const handleSavePost = async () => {
@@ -425,19 +416,36 @@ export function PostCard({
                <Button 
                 variant="ghost" 
                 size="sm" 
-                className="ml-auto h-8 px-2 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold text-xs gap-1"
+                className={`ml-auto h-8 px-2 font-bold text-xs gap-1 transition-all ${isFollowing ? 'text-slate-500 hover:bg-slate-100 hover:text-slate-600' : 'text-red-600 hover:bg-red-50 hover:text-red-700'}`}
                 onClick={async (e) => {
                   e.stopPropagation();
-                  const res = await fetch(`${API_URL}/auth/friends/follow`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ followerId: currentUser.id, targetId: post.author.id })
-                  });
-                  if (res.ok) toast.success(`Đã theo dõi ${post.author.name || post.author.username}`);
+                  const action = isFollowing ? 'unfollow' : 'follow';
+                  const prevIsFollowing = isFollowing;
+                  
+                  // Optimistic update
+                  setIsFollowing(!isFollowing);
+
+                  try {
+                    const res = await fetch(`${API_URL}/auth/friends/${action}`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ followerId: currentUser.id, targetId: post.author.id })
+                    });
+                    if (res.ok) {
+                      toast.success(`${!prevIsFollowing ? 'Đã theo dõi' : 'Đã bỏ theo dõi'} ${post.author.name || post.author.username}`);
+                    } else {
+                      const data = await res.json();
+                      toast.error(data.message || 'Lỗi khi thực hiện thao tác');
+                      setIsFollowing(prevIsFollowing);
+                    }
+                  } catch (err) {
+                    toast.error('Lỗi kết nối máy chủ');
+                    setIsFollowing(prevIsFollowing);
+                  }
                 }}
                >
-                 <UserPlus className="h-3.5 w-3.5" />
-                 Theo dõi
+                 {isFollowing ? <Check className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
+                 {isFollowing ? 'Đã theo dõi' : 'Theo dõi'}
                </Button>
             )}
           </div>
@@ -586,6 +594,13 @@ export function PostCard({
 
         </div>
       </div>
+      {/* Report Modal */}
+      <ReportModal 
+        isOpen={isReportModalOpen} 
+        onOpenChange={setIsReportModalOpen} 
+        postId={post.id} 
+        currentUser={currentUser} 
+      />
     </Card>
   );
 }

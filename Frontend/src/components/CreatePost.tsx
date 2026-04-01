@@ -97,7 +97,7 @@ function ImagePreviewStrip({
 
 
 export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
-  const [postType, setPostType] = useState<'text' | 'image' | 'link'>('text');
+  const [postType, setPostType] = useState<'text' | 'image'>('text');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [community, setCommunity] = useState('');
@@ -273,17 +273,6 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
           >
             <Image className={`h-4 w-4 ${postType === 'image' ? 'text-red-500' : 'text-gray-400'}`} />
             Hình ảnh
-          </button>
-          <button
-            onClick={() => setPostType('link')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl transition-all duration-300 font-semibold text-sm ${
-              postType === 'link' 
-              ? 'bg-background text-primary shadow-sm ring-1 ring-border/50' 
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Link2 className={`h-4 w-4 ${postType === 'link' ? 'text-red-500' : 'text-gray-400'}`} />
-            Liên kết
           </button>
         </div>
 

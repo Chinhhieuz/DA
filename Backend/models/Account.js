@@ -24,6 +24,9 @@ const accountSchema = new mongoose.Schema({
     mssv: { 
         type: String 
     },
+    faculty: {
+        type: String
+    },
     avatar_url: { 
         type: String 
     },

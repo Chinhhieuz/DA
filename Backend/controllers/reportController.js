@@ -10,7 +10,7 @@ const createReport = async (req, res) => {
     console.log('[REPORT CONTROLLER] 📦 Dữ liệu đầu vào (req.body):', req.body);
     
     try {
-        const { post_id, reporter_id, reason } = req.body;
+        const { post_id, reporter_id, reason, description, evidence_images } = req.body;
 
         if (!post_id || !reporter_id || !reason) {
             console.log('[REPORT CONTROLLER] ❌ Lỗi: Thiếu post_id, reporter_id hoặc reason!');
@@ -33,7 +33,13 @@ const createReport = async (req, res) => {
         }
 
         console.log('[REPORT CONTROLLER] ✍️ Thỏa điều kiện. Đang lưu Tố cáo vào CSDL chờ Admin duyệt...');
-        const newReport = new Report({ post: post_id, reporter: reporter_id, reason });
+        const newReport = new Report({ 
+            post: post_id, 
+            reporter: reporter_id, 
+            reason,
+            description: description || '',
+            evidence_images: evidence_images || []
+        });
         await newReport.save();
         
         console.log(`[REPORT CONTROLLER] 🎉 Tạo tố cáo thành công! ID Báo cáo: ${newReport._id}`);
@@ -98,7 +104,7 @@ const handleReport = async (req, res) => {
                         recipient: authorId,
                         sender: admin_id,
                         type: 'system',
-                        content: `[SỬ PHẠT] Bài viết "${postTitle}" của bạn đã bị gỡ bỏ do vi phạm nghiêm trọng quy tắc cộng đồng.`
+                        content: `[XỬ PHẠT] Bài viết "${postTitle}" của bạn đã bị gỡ bỏ do vi phạm nghiêm trọng quy tắc cộng đồng.`
                     });
                     await notify.save();
                     
@@ -152,7 +158,7 @@ const handleReport = async (req, res) => {
                         sender: admin_id,
                         type: 'system',
                         post: report.post ? report.post._id : null,
-                        content: `[SỬ PHẠT] Cảnh báo: Bài viết "${postTitle}" của bạn đã bị ẩn do vi phạm cộng đồng. Bạn đã bị cảnh cáo ${authorAccount.warning_count}/3 lần.${lockMessage}`
+                        content: `[XỬ PHẠT] Cảnh báo: Bài viết "${postTitle}" của bạn đã bị ẩn do vi phạm cộng đồng. Bạn đã bị cảnh cáo ${authorAccount.warning_count}/3 lần.${lockMessage}`
                     });
                     await notify.save();
 
@@ -209,12 +215,13 @@ const getPendingReports = async (req, res) => {
         }
 
         const reports = await Report.find({ status: 'pending' })
-            .populate('reporter', 'username email display_name')
+            .populate('reporter', 'username email display_name avatar_url')
             .populate({
                 path: 'post',
-                populate: { path: 'author', select: 'username email display_name' }
+                populate: { path: 'author', select: 'username email display_name avatar_url' }
             })
             .sort({ created_at: -1 });
+
 
         return res.status(200).json({ status: 'success', data: reports });
     } catch (error) {

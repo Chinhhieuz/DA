@@ -114,6 +114,8 @@ const updateProfileService = async (accountId, updateData) => {
     if (updateData.bio !== undefined) allowedUpdates.bio = updateData.bio;
     if (updateData.location !== undefined) allowedUpdates.location = updateData.location;
     if (updateData.website !== undefined) allowedUpdates.website = updateData.website;
+    if (updateData.mssv !== undefined) allowedUpdates.mssv = updateData.mssv;
+    if (updateData.faculty !== undefined) allowedUpdates.faculty = updateData.faculty;
 
     const updatedAccount = await Account.findByIdAndUpdate(
         accountId,
@@ -505,14 +507,28 @@ const getProfileByIdService = async (userId, currentUserId) => {
     };
 };
 
-const searchUsersService = async (query) => {
+const searchUsersService = async (query, currentUserId = null) => {
     if (!query) return [];
-    return await Account.find({
+    
+    const users = await Account.find({
         $or: [
             { username: { $regex: query, $options: 'i' } },
             { full_name: { $regex: query, $options: 'i' } }
         ]
-    }).select('username full_name avatar_url bio').limit(20);
+    }).select('username full_name avatar_url bio').limit(20).lean();
+
+    if (currentUserId) {
+        const currentUser = await Account.findById(currentUserId).select('following');
+        if (currentUser) {
+            const followingList = (currentUser.following || []).map(id => id.toString());
+            return users.map(user => ({
+                ...user,
+                isFollowing: followingList.includes(user._id.toString())
+            }));
+        }
+    }
+
+    return users;
 };
 
 module.exports = {

@@ -317,8 +317,8 @@ const getFriendRequests = async (req, res) => {
 
 const searchUsers = async (req, res) => {
     try {
-        const { q } = req.query;
-        const users = await authService.searchUsersService(q);
+        const { q, currentUserId } = req.query;
+        const users = await authService.searchUsersService(q, currentUserId);
         return res.status(200).json({ status: 'success', data: users });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });

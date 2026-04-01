@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, TrendingUp, Users, Clock, ArrowRight, MessageSquare, Heart, Share2, Trash2, UserPlus } from 'lucide-react';
+import { Search, TrendingUp, Users, Clock, ArrowRight, MessageSquare, Heart, Share2, Trash2, UserPlus, Check } from 'lucide-react';
 import { API_URL } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -45,7 +45,7 @@ export function SearchView({ allPosts, onPostClick, onUserClick, currentUser }: 
 
       // Tìm người dùng từ API
       try {
-      const res = await fetch(`${API_URL}/posts/search?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`${API_URL}/posts/search?q=${encodeURIComponent(query)}&currentUserId=${currentUser?.id || ''}`);
         const data = await res.json();
         if (data.status === 'success') {
           setFilteredUsers(data.data);
@@ -58,6 +58,36 @@ export function SearchView({ allPosts, onPostClick, onUserClick, currentUser }: 
     } else {
       setFilteredPosts([]);
       setFilteredUsers([]);
+    }
+  };
+
+  const toggleFollowUser = async (user: any) => {
+    if (!currentUser?.id) {
+      toast.error('Vui lòng đăng nhập để theo dõi!');
+      return;
+    }
+    const isFollowing = !!user.isFollowing;
+    const action = isFollowing ? 'unfollow' : 'follow';
+    
+    // Optimistic update
+    setFilteredUsers(prev => prev.map(u => u._id === user._id ? { ...u, isFollowing: !isFollowing } : u));
+    
+    try {
+      const res = await fetch(`${API_URL}/auth/friends/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followerId: currentUser.id, targetId: user._id })
+      });
+      if (res.ok) {
+        toast.success(`${!isFollowing ? 'Đã theo dõi' : 'Đã bỏ theo dõi'} ${user.full_name || user.username}`);
+      } else {
+        const data = await res.json();
+        toast.error(data.message || 'Lỗi khi thực hiện thao tác');
+        setFilteredUsers(prev => prev.map(u => u._id === user._id ? { ...u, isFollowing: isFollowing } : u));
+      }
+    } catch (err) {
+      toast.error('Lỗi kết nối máy chủ');
+      setFilteredUsers(prev => prev.map(u => u._id === user._id ? { ...u, isFollowing: isFollowing } : u));
     }
   };
 
@@ -134,21 +164,15 @@ export function SearchView({ allPosts, onPostClick, onUserClick, currentUser }: 
                          {currentUser?.id !== user._id && (
                             <Button 
                               size="sm" 
-                              variant="outline" 
-                              className="h-8 text-xs font-semibold text-red-600 border-red-200 hover:bg-red-50"
+                              variant={user.isFollowing ? "secondary" : "outline"} 
+                              className={`h-8 text-xs font-semibold gap-1 transition-all ${user.isFollowing ? 'text-slate-500 bg-slate-100 hover:bg-slate-200' : 'text-red-600 border-red-200 hover:bg-red-50'}`}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                fetch(`${API_URL}/auth/friends/follow`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ followerId: currentUser.id, targetId: user._id })
-                                }).then(res => {
-                                  if (res.ok) toast.success(`Đã theo dõi ${user.full_name || user.username}`);
-                                  else toast.error('Lỗi khi theo dõi');
-                                });
+                                toggleFollowUser(user);
                               }}
                             >
-                              Theo dõi
+                              {user.isFollowing ? <Check className="h-3 w-3" /> : <UserPlus className="h-3 w-3" />}
+                              {user.isFollowing ? 'Đã theo dõi' : 'Theo dõi'}
                             </Button>
                          )}
                       </Card>

@@ -140,7 +140,6 @@ export function Settings({ currentUser, onUpdatePreferences, onLogout }:
               >
                 Đổi mật khẩu
               </Button>
-
             </>
           ) : (
             <form onSubmit={handlePassChange} className="space-y-4 pt-2">
@@ -195,6 +194,7 @@ export function Settings({ currentUser, onUpdatePreferences, onLogout }:
         </div>
       </Card>
 
+
       {/* Appearance Settings */}
       <Card className="border-border bg-card p-6 shadow-sm">
         <div className="mb-4 flex items-center gap-3">
@@ -221,66 +221,7 @@ export function Settings({ currentUser, onUpdatePreferences, onLogout }:
             />
           </div>
         </div>
-      </Card>
+      </Card>    </div>
 
-
-
-
-      {/* Quên mật khẩu */}
-      <Card className="border-border bg-card p-6 shadow-sm">
-        <div className="mb-4 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 dark:bg-red-900/20">
-            <Lock className="h-5 w-5 text-red-600 dark:text-red-400" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-foreground">Bạn quên mật khẩu?</h3>
-            <p className="text-sm text-muted-foreground">Nhận hướng dẫn khôi phục qua email</p>
-          </div>
-        </div>
-
-        <form className="space-y-4 pt-2" onSubmit={async (e) => {
-          e.preventDefault();
-          const target = e.target as typeof e.target & { resetemail: { value: string } };
-          const resetEmail = target.resetemail.value;
-          if (!resetEmail) return;
-          try {
-            const res = await fetch(`${API_URL}/auth/forgot-password`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: resetEmail })
-            });
-            const data = await res.json();
-            if (res.ok && data.status === 'success') {
-              toast.success(data.message || `Một email hướng dẫn đã được gửi tới: ${resetEmail}`);
-              target.resetemail.value = ''; // clear input
-            } else {
-              toast.error(data.message || 'Có lỗi xảy ra, vui lòng thử lại.');
-            }
-          } catch (err) {
-            toast.error('Lỗi kết nối đến server!');
-          }
-        }}>
-          <div className="space-y-2">
-            <Label htmlFor="resetemail" className="text-xs font-semibold text-foreground">Tài khoản hoặc Email</Label>
-            <Input 
-              id="resetemail"
-              name="resetemail"
-              type="text" 
-              placeholder="Nhập tên đăng nhập hoặc email"
-              className="h-10 rounded-lg border-border bg-background"
-              required 
-            />
-          </div>
-          <Button
-            type="submit"
-            variant="outline"
-            className="w-full justify-start gap-2 border-red-200/50 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/10 dark:border-red-900/20 dark:hover:text-red-500 font-medium"
-          >
-            <Lock className="h-4 w-4" />
-            Gửi yêu cầu khôi phục
-          </Button>
-        </form>
-      </Card>
-    </div>
   );
 }

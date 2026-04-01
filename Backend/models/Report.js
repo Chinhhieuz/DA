@@ -15,6 +15,13 @@ const reportSchema = new mongoose.Schema({
         type: String, 
         required: true 
     },
+    description: {
+        type: String,
+        default: ''
+    },
+    evidence_images: [{
+        type: String
+    }],
     status: { 
         type: String, 
         enum: ['pending', 'resolved', 'dismissed'],
