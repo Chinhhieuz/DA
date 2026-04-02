@@ -11,6 +11,7 @@ interface SavedPostsProps {
   onUserClick: (userId: string) => void;
   onSaveToggle: (postId: string, isSaved: boolean) => void;
   onCommunityClick: (community: string) => void;
+  onBackHome: () => void;
 }
 
 export function SavedPosts({ 
@@ -18,7 +19,8 @@ export function SavedPosts({
   onPostClick, 
   onUserClick, 
   onSaveToggle, 
-  onCommunityClick 
+  onCommunityClick,
+  onBackHome
 }: SavedPostsProps) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,7 +125,7 @@ export function SavedPosts({
           <Button 
             variant="outline" 
             className="mt-6 rounded-xl border-primary/20 text-primary hover:bg-primary/5"
-            onClick={() => window.location.reload()} // Hoặc trigger về home
+            onClick={onBackHome}
           >
             Về Trang Chủ
           </Button>
