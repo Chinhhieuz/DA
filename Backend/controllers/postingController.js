@@ -3,6 +3,8 @@ const Account = require('../models/Account'); // Assume the author uses an Accou
 const Comment = require('../models/Comment');
 const Notification = require('../models/Notification');
 const socketModule = require('../socket');
+const { formatPostData } = require('../utils/postFormatter');
+const mongoose = require('mongoose');
 
 const createPost = async (req, res) => {
     console.log('\n[POSTING CONTROLLER] ================================');
@@ -92,7 +94,7 @@ const getAllPosts = async (req, res) => {
             
         // Lấy danh sách following của user hiện tại (nếu có) để check trạng thái follow
         let followingList = [];
-        if (userId) {
+        if (userId && mongoose.Types.ObjectId.isValid(userId)) {
             const user = await Account.findById(userId).select('following');
             if (user) followingList = (user.following || []).map(id => id.toString());
         }
@@ -114,19 +116,10 @@ const getAllPosts = async (req, res) => {
             }
 
             // Inject isFollowing
-            const authorId = (post.author._id || post.author).toString();
-            const isFollowing = userId ? followingList.includes(authorId) : false;
+            const authorId = post.author ? (post.author._id || post.author).toString() : null;
+            const isFollowing = (userId && authorId) ? followingList.includes(authorId) : false;
 
-            return {
-                ...post,
-                author: {
-                    ...(post.author._id ? post.author : { _id: post.author }),
-                    isFollowing
-                },
-                commentCount,
-                recentComment: recentComments.length > 0 ? recentComments[0] : null,
-                userVote
-            };
+            return formatPostData(post, commentCount, recentComments, userVote, isFollowing);
         }));
         
         return res.status(200).json({
@@ -134,7 +127,51 @@ const getAllPosts = async (req, res) => {
             data: postsWithCommentCount
         });
     } catch (error) {
-        console.error('[POSTING CONTROLLER] 🚨 Lỗi fetch danh sách bài viết:', error.message);
+        console.error('[POSTING CONTROLLER] 🚨 Lỗi fetch danh sách bài viết:', error);
+        return res.status(500).json({ status: 'error', message: `Lỗi máy chủ: ${error.message}` });
+    }
+};
+
+const getTrendingPosts = async (req, res) => {
+    try {
+        const { userId } = req.query;
+        
+        // Lấy 5 bài viết có upvotes cao nhất đã được duyệt
+        const posts = await Post.find({ status: 'approved' })
+            .populate('author', 'username email role avatar_url display_name')
+            .sort({ upvotes: -1, created_at: -1 })
+            .limit(5)
+            .lean();
+
+        let followingList = [];
+        if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+            const user = await Account.findById(userId).select('following');
+            if (user) followingList = (user.following || []).map(id => id.toString());
+        }
+
+        const trendingPosts = await Promise.all(posts.map(async (post) => {
+            const commentCount = await Comment.countDocuments({ post: post._id });
+            const recentComments = await Comment.find({ post: post._id })
+                .sort({ created_at: -1 })
+                .limit(1)
+                .populate('author', 'username display_name')
+                .lean();
+                
+            let userVote = null;
+            if (userId && post.reactions) {
+                const reaction = post.reactions.find(r => r.user_id && r.user_id.toString() === userId);
+                if (reaction) userVote = reaction.type;
+            }
+
+            const authorId = post.author ? (post.author._id || post.author).toString() : null;
+            const isFollowing = (userId && authorId) ? followingList.includes(authorId) : false;
+
+            return formatPostData(post, commentCount, recentComments, userVote, isFollowing);
+        }));
+
+        return res.status(200).json({ status: 'success', data: trendingPosts });
+    } catch (error) {
+        console.error('[POSTING CONTROLLER] 🚨 Lỗi fetch trending:', error);
         return res.status(500).json({ status: 'error', message: 'Lỗi máy chủ' });
     }
 };
@@ -349,9 +386,9 @@ const getSavedPosts = async (req, res) => {
         // Lọc bỏ bài viết đã bị xóa (nếu có trong savedPosts nhưng fetch ra null)
         const validPosts = user.savedPosts.filter(p => p !== null);
         
-        // Lấy danh sách following của user hiện tại (nếu có)
+        // Lấy danh sách following của user hiện tại (nếu có) để check trạng thái follow
         let followingList = [];
-        if (userId) {
+        if (userId && mongoose.Types.ObjectId.isValid(userId)) {
             const user = await Account.findById(userId).select('following');
             if (user) followingList = (user.following || []).map(id => id.toString());
         }
@@ -374,19 +411,10 @@ const getSavedPosts = async (req, res) => {
             }
 
             // Inject isFollowing
-            const authorId = (postObj.author._id || postObj.author).toString();
-            const isFollowing = userId ? followingList.includes(authorId) : false;
+            const authorId = postObj.author ? (postObj.author._id || postObj.author).toString() : null;
+            const isFollowing = (userId && authorId) ? followingList.includes(authorId) : false;
                 
-            return {
-                ...postObj,
-                author: {
-                    ...(postObj.author._id ? postObj.author : { _id: postObj.author }),
-                    isFollowing
-                },
-                commentCount,
-                recentComment: recentComments.length > 0 ? recentComments[0] : null,
-                userVote
-            };
+            return formatPostData(postObj, commentCount, recentComments, userVote, isFollowing);
         }));
 
         return res.status(200).json({ status: 'success', data: postsWithDetails });
@@ -396,14 +424,154 @@ const getSavedPosts = async (req, res) => {
     }
 };
 
+const searchPosts = async (req, res) => {
+    try {
+        const { q, userId } = req.query;
+        if (!q) return res.status(200).json({ status: 'success', data: [] });
+
+        const query = {
+            status: 'approved',
+            $or: [
+                { title: { $regex: q, $options: 'i' } },
+                { content: { $regex: q, $options: 'i' } },
+                { community: { $regex: q, $options: 'i' } }
+            ]
+        };
+
+        const posts = await Post.find(query)
+            .populate('author', 'username email role avatar_url display_name')
+            .sort({ created_at: -1 })
+            .limit(20)
+            .lean();
+
+        let followingList = [];
+        if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+            const user = await Account.findById(userId).select('following');
+            if (user) followingList = (user.following || []).map(id => id.toString());
+        }
+
+        const formattedResults = await Promise.all(posts.map(async (post) => {
+            const commentCount = await Comment.countDocuments({ post: post._id });
+            const recentComments = await Comment.find({ post: post._id })
+                .sort({ created_at: -1 })
+                .limit(1)
+                .populate('author', 'username display_name')
+                .lean();
+
+            let userVote = null;
+            if (userId && post.reactions) {
+                const reaction = post.reactions.find(r => r.user_id && r.user_id.toString() === userId);
+                if (reaction) userVote = reaction.type;
+            }
+
+            const authorId = post.author ? (post.author._id || post.author).toString() : null;
+            const isFollowing = (userId && authorId) ? followingList.includes(authorId) : false;
+
+            return formatPostData(post, commentCount, recentComments, userVote, isFollowing);
+        }));
+
+        return res.status(200).json({ status: 'success', data: formattedResults });
+    } catch (error) {
+        console.error('[POSTING CONTROLLER] 🚨 Lỗi search posts:', error);
+        return res.status(500).json({ status: 'error', message: 'Lỗi server' });
+    }
+};
+
+/**
+ * [ADMIN] Lấy tất cả bài viết của một cộng đồng theo tên
+ * Chức năng này dành cho quản trị viên xem toàn bộ nội dung chủ đề mà không bị lọc trạng thái
+ */
+const getCommunityPostsAdmin = async (req, res) => {
+    console.log('\n[ADMIN - POSTING CONTROLLER] 🚀 Đang lấy tất cả bài viết của chủ đề:', req.params.communityName);
+    try {
+        const { communityName } = req.params;
+        const { admin_id } = req.query;
+
+        // 1. Kiểm tra quyền admin (đã được middleware check cơ bản, đây là lớp bảo mật bổ sung)
+        if (!admin_id) {
+            return res.status(403).json({ status: 'fail', message: 'Bạn không có quyền thực hiện hành động này!' });
+        }
+
+        // 2. Tìm kiếm bài viết theo tên cộng đồng (Sử dụng regex để không phân biệt hoa thường)
+        const posts = await Post.find({ 
+            community: { $regex: new RegExp(`^${communityName}$`, 'i') } 
+        })
+        .populate('author', 'username email role avatar_url display_name') // Lấy thông tin tác giả
+        .sort({ created_at: -1 }) // Sắp xếp mới nhất lên đầu
+        .lean();
+
+        // 3. Trả về dữ liệu cho Admin Dashboard
+        return res.status(200).json({
+            status: 'success',
+            results: posts.length,
+            data: posts
+        });
+    } catch (error) {
+        console.error('[ADMIN - POSTING CONTROLLER] 🚨 Lỗi:', error.message);
+        return res.status(500).json({ status: 'error', message: `Lỗi máy chủ: ${error.message}` });
+    }
+};
+
+const getPostById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { userId } = req.query;
+
+        const post = await Post.findById(id)
+            .populate('author', 'username email role avatar_url display_name')
+            .lean();
+
+        if (!post) return res.status(404).json({ status: 'fail', message: 'Không tìm thấy bài viết' });
+
+        // Lấy danh sách following của user hiện tại (nếu có)
+        let isFollowing = false;
+        if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+            const user = await Account.findById(userId).select('following');
+            if (user) {
+                const followingList = (user.following || []).map(id => id.toString());
+                const authorId = post.author ? (post.author._id || post.author).toString() : null;
+                isFollowing = (authorId && followingList) ? followingList.includes(authorId) : false;
+            }
+        }
+
+        // Đếm bình luận và lấy 1 bình luận mới nhất
+        const [commentCount, recentComments] = await Promise.all([
+            Comment.countDocuments({ post: post._id }),
+            Comment.find({ post: post._id })
+                .sort({ created_at: -1 })
+                .limit(1)
+                .populate('author', 'username display_name')
+                .lean()
+        ]);
+
+        // Inject userVote
+        let userVote = null;
+        if (userId && post.reactions) {
+            const reaction = post.reactions.find(r => r.user_id && r.user_id.toString() === userId);
+            if (reaction) userVote = reaction.type;
+        }
+
+        const postWithDetails = formatPostData(post, commentCount, recentComments, userVote, isFollowing);
+
+        return res.status(200).json({ status: 'success', data: postWithDetails });
+    } catch (error) {
+        console.error('[POSTING CONTROLLER] Lỗi getPostById:', error.message);
+        return res.status(500).json({ status: 'error', message: 'Lỗi server' });
+    }
+};
+
 module.exports = {
     createPost,
     getAllPosts,
+    getPostById,
     reactToPost,
     getPendingPosts,
     approvePost,
     rejectPost,
     deletePost,
     toggleSavePost,
-    getSavedPosts
+    getSavedPosts,
+    getTrendingPosts,
+    searchPosts,
+    getCommunityPostsAdmin
 };

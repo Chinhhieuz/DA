@@ -18,13 +18,12 @@ const trendingTopics = [
 ];
 
 interface SearchViewProps {
-  allPosts: Post[];
   onPostClick?: (post: Post) => void;
   onUserClick?: (userId: string) => void;
   currentUser?: any;
 }
 
-export function SearchView({ allPosts, onPostClick, onUserClick, currentUser }: SearchViewProps) {
+export function SearchView({ onPostClick, onUserClick, currentUser }: SearchViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredPosts, setFilteredPosts] = useState<Post[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<any[]>([]);
@@ -34,24 +33,23 @@ export function SearchView({ allPosts, onPostClick, onUserClick, currentUser }: 
     setSearchQuery(query);
     if (query.trim()) {
       setIsSearching(true);
-      // Lọc bài viết cục bộ (hoặc từ props)
-      const filteredP = allPosts.filter(
-        (post) =>
-          post.title.toLowerCase().includes(query.toLowerCase()) ||
-          post.content.toLowerCase().includes(query.toLowerCase()) ||
-          post.community.toLowerCase().includes(query.toLowerCase())
-      );
-      setFilteredPosts(filteredP);
-
-      // Tìm người dùng từ API
+      
       try {
-      const res = await fetch(`${API_URL}/posts/search?q=${encodeURIComponent(query)}&currentUserId=${currentUser?.id || ''}`);
-        const data = await res.json();
-        if (data.status === 'success') {
-          setFilteredUsers(data.data);
+        // Tìm bài viết từ Backend (Đã move xử lý qua backend)
+        const postsRes = await fetch(`${API_URL}/posts/search?q=${encodeURIComponent(query)}&userId=${currentUser?.id || ''}`);
+        const postsData = await postsRes.json();
+        if (postsData.status === 'success') {
+          setFilteredPosts(postsData.data);
+        }
+
+        // Tìm người dùng từ API (Giữ nguyên hoặc đã move qua authController)
+        const usersRes = await fetch(`${API_URL}/auth/search/users?q=${encodeURIComponent(query)}&currentUserId=${currentUser?.id || ''}`);
+        const usersData = await usersRes.json();
+        if (usersData.status === 'success') {
+          setFilteredUsers(usersData.data);
         }
       } catch (err) {
-        console.error('Lỗi tìm kiếm người dùng:', err);
+        console.error('Lỗi tìm kiếm:', err);
       } finally {
         setIsSearching(false);
       }

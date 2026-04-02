@@ -29,7 +29,17 @@ const getIcon = (type: string) => {
   }
 };
 
-export function Notifications({ currentUser, socket, onMarkAllAsRead }: { currentUser?: any, socket?: Socket | null, onMarkAllAsRead?: () => void }) {
+export function Notifications({ 
+  currentUser, 
+  socket, 
+  onMarkAllAsRead,
+  onNotificationClick
+}: { 
+  currentUser?: any, 
+  socket?: Socket | null, 
+  onMarkAllAsRead?: () => void,
+  onNotificationClick?: (notification: any) => void
+}) {
   const [notifications, setNotifications] = useState<any[]>([]);
 
   useEffect(() => {
@@ -65,7 +75,7 @@ export function Notifications({ currentUser, socket, onMarkAllAsRead }: { curren
         type: data.type,
         content: data.content,
         sender: data.sender || { username: data.senderName, avatar_url: '' },
-        post: data.postTitle ? { title: data.postTitle } : null,
+        post: data.postId ? { _id: data.postId, title: data.postTitle } : (data.postTitle ? { title: data.postTitle } : null),
         isRead: false,
         created_at: data.created_at || new Date().toISOString()
       };
@@ -144,7 +154,10 @@ export function Notifications({ currentUser, socket, onMarkAllAsRead }: { curren
         {notifications.map((notification) => (
           <Card
             key={notification._id}
-            onClick={() => handleMarkAsRead(notification._id, notification.isRead)}
+            onClick={() => {
+              handleMarkAsRead(notification._id, notification.isRead);
+              if (onNotificationClick) onNotificationClick(notification);
+            }}
             className={`border-border p-4 transition-colors hover:shadow-md cursor-pointer ${
               !notification.isRead ? 'bg-primary/5' : 'bg-card'
             }`}

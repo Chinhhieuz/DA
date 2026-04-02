@@ -219,6 +219,7 @@ export interface Post {
   };
   userVote?: 'up' | 'down' | null;
   saved?: boolean;
+  status?: string;
 }
 
 interface PostCardProps {
@@ -408,6 +409,24 @@ export function PostCard({
                 >
                   #{post.community.replace(/^[rdD]\//, '')}
                 </Badge>
+                
+                {/* Status Badge - Only for non-approved posts */}
+                {post.status !== 'approved' && (
+                   <Badge 
+                     variant="outline" 
+                     className={`text-[9px] px-1.5 py-0 font-bold uppercase ${
+                       post.status === 'pending' ? 'bg-amber-50 text-amber-600 border-amber-200' :
+                       post.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
+                       post.status === 'hidden' ? 'bg-slate-50 text-slate-500 border-slate-200' :
+                       'bg-green-50 text-green-600 border-green-200'
+                     }`}
+                   >
+                     {post.status === 'pending' ? 'Chờ duyệt' : 
+                      post.status === 'rejected' ? 'Bị từ chối' : 
+                      post.status === 'hidden' ? 'Bị ẩn' : 
+                      'Đã đăng'}
+                   </Badge>
+                )}
               </div>
             </div>
             

@@ -119,6 +119,7 @@ const handleReport = async (req, res) => {
                             content: notify.content,
                             senderName: 'Hệ thống Admin',
                             sender: { username: 'Admin', avatar_url: '' },
+                            postId: report.post?._id,
                             created_at: notify.created_at
                         });
                         console.log(`[REPORT CONTROLLER] 🚀 Đã phát Socket event 'new_notification' tới ${socketId}`);
@@ -172,6 +173,7 @@ const handleReport = async (req, res) => {
                             content: notify.content,
                             senderName: 'Hệ thống Admin',
                             sender: { username: 'Admin', avatar_url: '' },
+                            postId: report.post?._id,
                             created_at: notify.created_at
                         });
                     }

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,24 +61,28 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
   const [viewingPost, setViewingPost] = useState<any>(null);
   const [viewingReport, setViewingReport] = useState<any>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [selectedCommPosts, setSelectedCommPosts] = useState<any[]>([]);
+  const [isViewCommPostsOpen, setIsViewCommPostsOpen] = useState(false);
+  const [loadingCommPosts, setLoadingCommPosts] = useState(false);
+  const [activeCommName, setActiveCommName] = useState('');
   const [editFormData, setEditFormData] = useState({
     username: '', email: '', password: '', full_name: '', mssv: '', role: 'User'
   });
   const [editTopicFormData, setEditTopicFormData] = useState({
     name: '', description: '', icon: '👥'
   });
+  const [formData, setFormData] = useState({
+    username: '', email: '', password: '', full_name: '', mssv: '', role: 'User'
+  });
+  const [isLoading, setIsLoading] = useState(false);
 
   const fetchStats = async () => {
     if (!currentUser?.id) return;
     try {
-      console.log('[AdminDashboard] 🌐 Đang lấy thống kê từ:', `${API_URL}/admin/dashboard?admin_id=${currentUser.id}`);
       const res = await fetch(`${API_URL}/admin/dashboard?admin_id=${currentUser.id}`);
-      console.log('[AdminDashboard] 📡 Response status:', res.status);
       const data = await res.json();
-      console.log('[AdminDashboard] 📦 Dữ liệu nhận được:', data);
 
       if (data.status === 'success') {
-        console.log('[AdminDashboard] ✅ Cập nhật stats:', data.data);
         setAdminStats(data.data);
       } else {
         console.warn('[AdminDashboard] ⚠️ Lỗi từ server:', data.message);
@@ -317,10 +321,32 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       }
     } catch (e) { toast.error('Lỗi kết nối!'); }
   };
-  const [formData, setFormData] = useState({
-    username: '', email: '', password: '', full_name: '', mssv: '', role: 'User'
-  });
-  const [isLoading, setIsLoading] = useState(false);
+
+  /**
+   * [ADMIN] Lấy toàn bộ bài viết của một chủ đề (bao gồm cả các bài chưa duyệt)
+   * Giúp quản trị viên có cái nhìn tổng quát về hoạt động của từng chủ đề
+   */
+  const fetchCommunityPosts = async (communityName: string) => {
+    if (!currentUser?.id) return;
+    setLoadingCommPosts(true);         // 1. Hiệu ứng đang tải
+    setActiveCommName(communityName); // 2. Ghi nhận tên chủ đề đang xem
+    setIsViewCommPostsOpen(true);    // 3. Mở Dialog hiển thị
+    try {
+      // 4. Gọi API từ Backend truyền kèm admin_id để xác thực quyền
+      const res = await fetch(`${API_URL}/posts/admin/community/${encodeURIComponent(communityName)}?admin_id=${currentUser.id}`);
+      const data = await res.json();
+      if (data.status === 'success') {
+        setSelectedCommPosts(data.data); // 5. Cập nhật danh sách bài viết nhận được
+      } else {
+        toast.error(data.message || 'Lỗi không xác định từ server');
+      }
+    } catch (e: any) {
+      console.error('Error fetching community posts:', e);
+      toast.error(`Lỗi tải danh sách bài viết: ${e.message}`);
+    } finally {
+      setLoadingCommPosts(false); // 6. Kết thúc hiệu ứng tải
+    }
+  };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -386,8 +412,6 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
     { label: 'Người dùng', count: adminStats.totalUsers, icon: Users, color: 'text-blue-500' },
     { label: 'Góp ý từ người dùng', count: feedbacks.filter(f => f.status === 'new').length, icon: Mail, color: 'text-purple-500' },
   ];
-
-  // Đã đưa report vào CSDL thực (State `reports`)
 
   return (
     <div className="space-y-6 pb-20">
@@ -899,6 +923,15 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                             <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-9 p-2 hover:bg-primary/10 hover:text-primary rounded-lg flex items-center gap-2 group-hover:bg-primary/5"
+                              onClick={() => fetchCommunityPosts(com.name)}
+                            >
+                              <Eye className="h-4 w-4" />
+                              <span className="text-[11px] font-bold uppercase tracking-wider">Xem bài viết</span>
+                            </Button>
                             <Button
                               size="sm"
                               variant="ghost"
@@ -1252,6 +1285,92 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                 </Button>
               )}
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+
+
+      {/* GIAO DIỆN: DIALOG HIỂN THỊ DANH SÁCH BÀI VIẾT THEO CHỦ ĐỀ */}
+      <Dialog open={isViewCommPostsOpen} onOpenChange={setIsViewCommPostsOpen}>
+        <DialogContent className="sm:max-w-[800px] max-h-[85vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-2xl">
+          <DialogHeader className="bg-muted/30 px-6 py-5 border-b border-border/50 shrink-0">
+             <div className="flex items-center justify-between">
+                <div>
+                   {/* Tiêu đề Dialog hiển thị tên chủ đề đang xem */}
+                  <DialogTitle className="text-xl font-black text-foreground flex items-center gap-2 uppercase tracking-tight">
+                    <Tag className="h-5 w-5 text-primary" />
+                    Chủ đề: {activeCommName}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Danh sách tất cả bài viết thuộc chủ đề này
+                  </DialogDescription>
+                </div>
+                <Badge variant="outline" className="font-bold border-primary/20 text-primary h-7 px-3">
+                  {selectedCommPosts.length} bài viết
+                </Badge>
+             </div>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-background">
+            {loadingCommPosts ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-4">
+                <div className="h-10 w-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-sm text-muted-foreground font-medium">Đang tải danh sách bài viết...</p>
+              </div>
+            ) : selectedCommPosts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                <FileText className="h-12 w-12 text-muted-foreground/20" />
+                <div>
+                  <h4 className="font-bold text-foreground">Chưa có bài viết nào</h4>
+                  <p className="text-sm text-muted-foreground">Chủ đề này hiện đang trống.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {selectedCommPosts.map((post) => (
+                  <Card key={post._id} className="p-4 hover:bg-muted/30 transition-colors border-border/50 group">
+                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <div className="flex items-center gap-2">
+                           <Badge variant="outline" className={`text-[10px] font-black uppercase px-2 py-0 h-5 border-none ${
+                             post.status === 'approved' ? 'bg-green-100 text-green-700' :
+                             post.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                             post.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                             'bg-slate-100 text-slate-700'
+                           }`}>
+                             {post.status === 'approved' ? 'Đã đăng' :
+                              post.status === 'pending' ? 'Chờ duyệt' :
+                              post.status === 'rejected' ? 'Từ chối' :
+                              'Bị ẩn'}
+                           </Badge>
+                           <h4 className="font-bold text-sm text-foreground truncate">{post.title}</h4>
+                        </div>
+                        <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{post.content}</p>
+                        <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">
+                           <span className="flex items-center gap-1"><Users className="h-3 w-3" /> @{post.author?.username}</span>
+                           <span>• {new Date(post.created_at).toLocaleString('vi-VN')}</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 shrink-0 md:self-center">
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-8 px-3 rounded-lg hover:bg-primary/10 text-primary font-bold text-[11px] uppercase tracking-wider border border-primary/10"
+                          onClick={() => setViewingPost(post)}
+                        >
+                          <Eye className="h-3.5 w-3.5 mr-1.5" /> Chi tiết
+                        </Button>
+
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="p-4 border-t border-border shrink-0 bg-muted/20">
+             <Button variant="outline" className="w-full rounded-xl font-bold" onClick={() => setIsViewCommPostsOpen(false)}>Đóng danh sách</Button>
           </div>
         </DialogContent>
       </Dialog>

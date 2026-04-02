@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Send, Image as ImageIcon, ArrowBigUp, ArrowBigDown, Trash2 } from 'lucide-react';
+import { ArrowLeft, Send, Image as ImageIcon, ArrowBigUp, ArrowBigDown, Trash2, ShieldAlert, Lock } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -338,6 +338,27 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
         <ArrowLeft className="h-4 w-4" />
         Quay lại
       </Button>
+      
+      {(post.status === 'hidden' || post.status === 'rejected' || post.status === 'pending') && (
+        <Card className={`mb-4 border-2 p-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 ${
+          post.status === 'pending' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
+        }`}>
+          <div className={`p-2 rounded-full ${post.status === 'pending' ? 'bg-amber-100' : 'bg-red-100'}`}>
+            {post.status === 'pending' ? <ShieldAlert className="h-5 w-5 text-amber-600" /> : <Lock className="h-5 w-5 text-red-600" />}
+          </div>
+          <div>
+             <h4 className={`font-bold text-sm ${post.status === 'pending' ? 'text-amber-800' : 'text-red-800'}`}>
+               {post.status === 'pending' ? 'BÀI VIẾT ĐANG CHỜ DUYỆT' : 'BÀI VIẾT ĐÃ BỊ KHÓA'}
+             </h4>
+             <p className={`text-xs ${post.status === 'pending' ? 'text-amber-700' : 'text-red-700'}`}>
+               {post.status === 'pending' 
+                 ? 'Bài viết của bạn đang được quản trị viên kiểm duyệt. Nó sẽ sớm xuất hiện trên trang chủ.' 
+                 : 'Nội dung này đã bị quản trị viên ẩn khỏi trang chủ do vi phạm quy tắc cộng đồng.'}
+             </p>
+          </div>
+          <ShieldAlert className={`ml-auto h-6 w-6 opacity-50 ${post.status === 'pending' ? 'text-amber-300' : 'text-red-300'}`} />
+        </Card>
+      )}
 
       <PostCard
         post={post}

@@ -29,7 +29,6 @@ interface ProfileProps {
     faculty?: string;
   };
   viewedUserId?: string | null;
-  userPosts: Post[];
   onPostClick?: (post: Post) => void;
   onAvatarChange?: (newAvatar: string) => void;
   onProfileUpdate?: (updatedData: any) => void;
@@ -162,7 +161,7 @@ const AppChangePasswordDialog = ({
 
 
 
-export function Profile({ currentUser, viewedUserId, userPosts, onPostClick, onAvatarChange, onProfileUpdate, onPostsChanged, onUserClick }: ProfileProps) {
+export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange, onProfileUpdate, onPostsChanged, onUserClick }: ProfileProps) {
   const [activeTab, setActiveTab] = useState('posts');
   const [isEditing, setIsEditing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -201,16 +200,17 @@ export function Profile({ currentUser, viewedUserId, userPosts, onPostClick, onA
   const [tempAvatar, setTempAvatar] = useState<string | null>(null);
   const [isAdjustingAvatar, setIsAdjustingAvatar] = useState(false);
   const [followerTab, setFollowerTab] = useState<'followers' | 'following'>('followers');
+  const [internalUserPosts, setInternalUserPosts] = useState<Post[]>([]);
 
   useEffect(() => {
     if (effectiveUserId) {
-      // Tải thông tin profile
-      const url = `${API_URL}/auth/profile/${effectiveUserId}${isOwnProfile ? '' : `?currentUserId=${currentUser.id || ''}`}`;
+      const url = `${API_URL}/auth/profile/aggregated/${effectiveUserId}?currentUserId=${currentUser.id || ''}`;
       fetch(url)
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') {
-            const u = data.data;
+            const aggr = data.data;
+            const u = aggr.profile;
             setProfileData({
               id: u._id,
               name: u.full_name || u.username,
@@ -228,82 +228,22 @@ export function Profile({ currentUser, viewedUserId, userPosts, onPostClick, onA
 
             if (!isOwnProfile) {
               setIsFollowing(!!u.isFollowing);
-              // Legacy support cho friendStatus nếu cần
               setFriendStatus(u.friendStatus || 'none');
+            }
+
+            setUserComments(aggr.comments || []);
+            setUserStats(aggr.stats || { posts: 0, totalLikes: 0 });
+            setFollowers(aggr.followers || []);
+            setFollowing(aggr.following || []);
+            setInternalUserPosts(aggr.userPosts || []);
+            
+            if (isOwnProfile) {
+              setFriendRequests(aggr.friendRequests || []);
+              setSavedPosts(aggr.savedPosts || []);
             }
           }
         })
-        .catch(err => console.error('Lỗi khi tải thông tin hồ sơ:', err));
-
-      // Tải bình luận
-      fetch(`${API_URL}/comments/user/${effectiveUserId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success') setUserComments(data.data);
-        })
-        .catch(err => console.error('Lỗi khi tải bình luận:', err));
-
-      // Tải thống kê (bài viết & lượt thích)
-      fetch(`${API_URL}/auth/stats/${effectiveUserId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success') setUserStats(data.data);
-        })
-        .catch(err => console.error('Lỗi khi tải thống kê:', err));
-
-      // Tải danh sách người theo dõi
-      fetch(`${API_URL}/auth/friends/followers/${effectiveUserId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success') setFollowers(data.data);
-        })
-        .catch(err => console.error('Lỗi khi tải người theo dõi:', err));
-
-      // Tải danh sách đang theo dõi
-      fetch(`${API_URL}/auth/friends/following/${effectiveUserId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success') setFollowing(data.data);
-        })
-        .catch(err => console.error('Lỗi khi tải đang theo dõi:', err));
-
-      // Tải yêu cầu kết bạn (chỉ cho chính mình)
-      if (isOwnProfile) {
-        fetch(`${API_URL}/auth/friends/requests/${effectiveUserId}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.status === 'success') setFriendRequests(data.data);
-          })
-          .catch(err => console.error('Lỗi khi tải yêu cầu kết bạn:', err));
-          
-        fetch(`${API_URL}/posts/saved/${effectiveUserId}?userId=${currentUser.id || ''}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.status === 'success') {
-              const formatted = data.data.map((p: any) => ({
-                id: p._id,
-                author: {
-                   id: p.author?._id,
-                   name: p.author?.display_name || p.author?.username,
-                   avatar: getImageUrl(p.author?.avatar_url),
-                   username: p.author?.username
-                },
-                community: p.community || 'Chung',
-                title: p.title,
-                content: p.content,
-                image: p.image_url ? getImageUrl(p.image_url) : undefined,
-                image_urls: p.image_urls ? p.image_urls.map((url: string) => getImageUrl(url)) : [],
-                timestamp: new Date(p.created_at).toLocaleString('vi-VN'),
-                upvotes: p.upvotes || 0,
-                downvotes: p.downvotes || 0,
-                commentCount: p.commentCount || 0,
-                userVote: p.userVote || null
-              }));
-              setSavedPosts(formatted);
-            }
-          })
-          .catch(err => console.error('Lỗi khi tải bài viết đã lưu:', err));
-      }
+        .catch(err => console.error('Lỗi khi tải thông tin hồ sơ tổng hợp:', err));
     }
   }, [effectiveUserId, isOwnProfile, currentUser]);
 
@@ -418,7 +358,7 @@ export function Profile({ currentUser, viewedUserId, userPosts, onPostClick, onA
   };
 
   const stats = {
-    posts: userStats.posts || userPosts.length,
+    posts: userStats.posts || internalUserPosts.length,
     totalLikes: userStats.totalLikes || 0,
     cakeDay: '29 Tháng 1, 2024',
   };
@@ -827,8 +767,8 @@ export function Profile({ currentUser, viewedUserId, userPosts, onPostClick, onA
         </TabsList>
 
         <TabsContent value="posts" className="mt-4 space-y-4">
-          {userPosts.length > 0 ? (
-            userPosts.map((post) => (
+          {internalUserPosts.length > 0 ? (
+            internalUserPosts.map((post: Post) => (
               <PostCard 
                 key={post.id} 
                 post={post} 

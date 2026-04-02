@@ -271,34 +271,7 @@ export default function App() {
       if (data.status === 'success') {
         setLastFetchId(prev => {
           if (fetchId >= prev) {
-            const formattedPosts = data.data.map((p: any) => {
-              return {
-                id: p._id,
-                author: {
-                  id: p.author?._id || '',
-                  name: p.author?.display_name || p.author?.username || 'Unknown',
-                  avatar: getImageUrl(p.author?.avatar_url),
-                  username: p.author?.username || 'unknown',
-                  isFollowing: !!p.author?.isFollowing,
-                },
-                community: p.community || 'lập trình',
-                timestamp: new Date(p.created_at).toLocaleString('vi-VN'),
-                title: p.title || 'Untitled',
-                content: p.content || '',
-                image: p.image_url ? getImageUrl(p.image_url) : undefined,
-                image_urls: p.image_urls ? p.image_urls.map((url: string) => getImageUrl(url)) : [],
-                upvotes: p.upvotes || 0,
-                downvotes: p.downvotes || 0,
-                comments: [], // Sẽ load comment ở PostDetail
-                commentCount: p.commentCount || 0,
-                recentComment: p.recentComment ? {
-                    authorName: p.recentComment.author?.display_name || p.recentComment.author?.username || 'Unknown',
-                    content: p.recentComment.content
-                } : undefined,
-                userVote: p.userVote || null,
-              };
-            });
-            setPosts(formattedPosts);
+            setPosts(data.data);
           }
           return prev;
         });
@@ -354,6 +327,87 @@ export default function App() {
     setSelectedPost(post);
   };
 
+  const handleNotificationClick = async (notif: any) => {
+    // 1. Nếu là follow hoặc friend request -> Đi tới Profile của người gửi
+    if (notif.type === 'follow' || notif.type === 'friend_request') {
+      const senderId = notif.sender?._id || notif.sender;
+      if (senderId) handleUserClick(senderId);
+      return;
+    }
+
+    // 2. Nếu là các loại liên quan đến bài viết (like, comment, mention, system)
+    const postId = (notif.post?._id || notif.post || '').toString();
+    
+    // Kiểm tra postId hợp lệ (có độ dài của MongoDB ObjectId)
+    if (postId && postId.length === 24 && postId !== '[object Object]') {
+      try {
+        const url = `${API_URL}/posts/${postId}${currentUser ? `?userId=${currentUser.id}` : ''}`;
+        console.log('[App] Notification click fetching:', url);
+        
+        const res = await fetch(url);
+        
+        if (!res.ok) {
+          toast.error('Không thể tìm thấy bài viết này (có thể đã bị xóa hoặc bị khóa)');
+          return;
+        }
+
+        const data = await res.json();
+        
+        if (data.status === 'success') {
+          const p = data.data;
+
+          // Cho phép xem chi tiết ngay cả khi bị ẩn/khóa (theo yêu cầu người dùng)
+          // Nhưng vẫn thông báo cho người dùng biết trạng thái
+          if (p.status === 'hidden' || p.status === 'rejected') {
+            toast.info('Bạn đang xem bài viết đã bị quản trị viên ẩn/khóa.');
+          } else if (p.status === 'pending') {
+            toast.info('Bài viết này đang trong trạng thái chờ duyệt.');
+          }
+
+          const formattedPost: Post = {
+            id: p._id,
+            author: {
+              id: p.author?._id || '',
+              name: p.author?.display_name || p.author?.username || 'Unknown',
+              avatar: getImageUrl(p.author?.avatar_url),
+              username: p.author?.username || 'unknown',
+              isFollowing: !!p.author?.isFollowing,
+            },
+            community: p.community || 'lập trình',
+            timestamp: new Date(p.created_at).toLocaleString('vi-VN'),
+            title: p.title || 'Untitled',
+            content: p.content || '',
+            image: p.image_url ? getImageUrl(p.image_url) : undefined,
+            image_urls: p.image_urls ? p.image_urls.map((url: string) => getImageUrl(url)) : [],
+            upvotes: p.upvotes || 0,
+            downvotes: p.downvotes || 0,
+            comments: [],
+            commentCount: p.commentCount || 0,
+            recentComment: p.recentComment ? {
+                authorName: p.recentComment.author?.display_name || p.recentComment.author?.username || 'Unknown',
+                content: p.recentComment.content
+            } : undefined,
+            userVote: p.userVote || null,
+            status: p.status
+          };
+          handlePostClick(formattedPost);
+        } else {
+          toast.error('Không thể tìm thấy bài viết này');
+        }
+      } catch (err) {
+        console.error('Error fetching post detail for notification:', err);
+        toast.error('Lỗi khi tải chi tiết bài viết');
+      }
+    } else {
+      console.warn('[App] Invalid or missing postId in notification:', notif);
+      // Nếu là thông báo hệ thống và ID không hợp lệ, có thể chỉ là thông báo chung
+      if (notif.type === 'system') {
+        // Có thể mở một modal thông báo hệ thống nếu cần, tạm thời thông báo lỗi
+        toast.info('Thông báo hệ thống: ' + (notif.content || ''));
+      }
+    }
+  };
+
   const handleCommunityClick = (community: string) => {
     setActiveCommunity(community);
     setCurrentView('home');
@@ -397,7 +451,7 @@ export default function App() {
     localStorage.setItem('currentUser', JSON.stringify(updatedUser));
   };
 
-  const userPosts = posts.filter((post) => post.author.id === currentUser.id);
+
 
   const handleLogout = () => {
     setIsAuthenticated(false);
@@ -429,10 +483,7 @@ export default function App() {
 
     switch (currentView) {
       case 'home':
-        // Lọc bài viết theo cộng đồng ở phía Frontend để đảm bảo tính chính xác
-        const displayPosts = activeCommunity 
-          ? posts.filter(p => p.community.toLowerCase() === activeCommunity.toLowerCase())
-          : posts;
+        const displayPosts = posts;
 
         return (
           <div>
@@ -485,13 +536,13 @@ export default function App() {
           </div>
         );
       case 'search':
-        return <SearchView allPosts={posts} onPostClick={handlePostClick} onUserClick={handleUserClick} currentUser={currentUser} />;
+        return <SearchView onPostClick={handlePostClick} onUserClick={handleUserClick} currentUser={currentUser} />;
       case 'profile':
         return (
           <Profile
             currentUser={currentUser}
             viewedUserId={viewedUserId}
-            userPosts={viewedUserId ? posts.filter(p => p.author.id === viewedUserId) : userPosts}
+
             onPostClick={handlePostClick}
             onAvatarChange={(newAvatar: string) => setCurrentUser({ ...currentUser, avatar: newAvatar })}
             onProfileUpdate={(updatedData: any) => setCurrentUser({
@@ -510,7 +561,12 @@ export default function App() {
       case 'messages':
         return <Messages />;
       case 'notifications':
-        return <Notifications currentUser={currentUser} socket={socket} onMarkAllAsRead={() => setUnreadNotifications(0)} />;
+        return <Notifications 
+          currentUser={currentUser} 
+          socket={socket} 
+          onMarkAllAsRead={() => setUnreadNotifications(0)}
+          onNotificationClick={handleNotificationClick}
+        />;
       case 'settings':
         return <Settings 
           currentUser={currentUser}
@@ -525,6 +581,7 @@ export default function App() {
           onUserClick={handleUserClick} 
           onSaveToggle={handleSaveToggle}
           onCommunityClick={handleCommunityClick}
+          onBackHome={() => handleViewChange('home')}
         />;
       default:
         return null;
@@ -633,7 +690,7 @@ export default function App() {
             <div className="flex-1 max-w-4xl w-full">{renderContent()}</div>
             {currentView === 'home' && !selectedPost && (
               <div className="hidden lg:block w-80">
-                <TrendingContent posts={posts} onPostClick={handlePostClick} />
+                <TrendingContent onPostClick={handlePostClick} currentUser={currentUser} />
               </div>
             )}
           </div>

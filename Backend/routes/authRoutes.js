@@ -11,6 +11,8 @@ router.post('/register', authController.register);
 
 // Định tuyến cập nhật thông tin cá nhân (ảnh, bio, tên...)
 router.put('/profile', authController.updateProfile);
+// Lấy tất cả thông tin profile gộp lại
+router.get('/profile/aggregated/:userId', authController.getAggregatedProfile);
 // Lấy thông tin cá nhân của một user bất kỳ
 router.get('/profile/:userId', authController.getProfile);
 

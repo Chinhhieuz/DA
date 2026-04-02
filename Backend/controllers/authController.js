@@ -116,8 +116,8 @@ const getUserStats = async (req, res) => {
         try { if (mongoose.Types.ObjectId.isValid(userId)) authorQuery = new mongoose.Types.ObjectId(userId); } catch (e) { }
 
         const [postCount, postLikes, commentLikes, threadLikes] = await Promise.all([
-            Post.countDocuments({ author: authorQuery }),
-            Post.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]),
+            Post.countDocuments({ author: authorQuery, status: 'approved' }),
+            Post.aggregate([{ $match: { author: authorQuery, status: 'approved' } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]),
             Comment.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]),
             Thread.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }])
         ]);
@@ -325,6 +325,134 @@ const searchUsers = async (req, res) => {
     }
 };
 
+
+const getAggregatedProfile = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { currentUserId } = req.query;
+        const isOwnProfile = userId === currentUserId;
+
+        // 1. Profile Data
+        const profile = await authService.getProfileByIdService(userId, currentUserId);
+
+        // 2. Comments
+        const comments = await Comment.find({ author: userId })
+            .populate('post', 'title community')
+            .sort({ created_at: -1 })
+            .lean();
+
+        // 3. THỐNG KÊ NGƯỜI DÙNG (POSTS, LIKES)
+        let authorQuery = userId;
+        try { if (mongoose.Types.ObjectId.isValid(userId)) authorQuery = new mongoose.Types.ObjectId(userId); } catch (e) { }
+
+        // BÀI THỰC TẾ: Chỉ đếm các bài viết đã được phê duyệt (status: approved)
+        // Dù là xem profile của chính mình hay người khác, con số thống kê chỉ tính bài công khai
+        const postStatusFilter = { status: 'approved' };
+
+        const [postCount, postLikes, commentLikes, threadLikes] = await Promise.all([
+            Post.countDocuments({ author: authorQuery, ...postStatusFilter }), // Đếm số bài viết
+            Post.aggregate([{ $match: { author: authorQuery, ...postStatusFilter } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]), // Tổng upvotes bài viết
+            Comment.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]), // Tổng upvotes bình luận
+            Thread.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]) // Tổng upvotes threads
+        ]);
+        const totalLikes = (postLikes[0]?.total || 0) + (commentLikes[0]?.total || 0) + (threadLikes[0]?.total || 0);
+
+        // 4. Followers & Following
+        const followers = await authService.getFollowersService(userId);
+        const following = await authService.getFollowingService(userId);
+
+        // 5. Friend Requests & Saved Posts (only for own profile)
+        let friendRequests = [];
+        let savedPosts = [];
+        const { formatPostData } = require('../utils/postFormatter');
+
+        // 6. DANH SÁCH BÀI VIẾT CỦA NGƯỜI DÙNG
+        // CHỈ LẤY CÁC BÀI ĐÃ ĐƯỢC PHÊ DUYỆT (status: approved) để hiển thị trong profile
+        const postFilter = { author: userId, status: 'approved' };
+
+        const rawUserPosts = await Post.find(postFilter)
+            .populate('author', 'username email role avatar_url display_name')
+            .sort({ created_at: -1 }) // Bài mới nhất lên trên
+            .lean();
+            
+        let followingListForPosts = [];
+        if (currentUserId && mongoose.Types.ObjectId.isValid(currentUserId)) {
+            const currentUserAcc = await Account.findById(currentUserId).select('following');
+            if (currentUserAcc) followingListForPosts = (currentUserAcc.following || []).map(id => id.toString());
+        }
+        
+        const userPosts = await Promise.all(rawUserPosts.map(async (post) => {
+            const pCommentCount = await Comment.countDocuments({ post: post._id });
+            const pRecentComments = await Comment.find({ post: post._id })
+                .sort({ created_at: -1 })
+                .limit(1)
+                .populate('author', 'username display_name')
+                .lean();
+                
+            let pUserVote = null;
+            if (currentUserId && post.reactions) {
+                const reaction = post.reactions.find(r => r.user_id && r.user_id.toString() === currentUserId);
+                if (reaction) pUserVote = reaction.type;
+            }
+            const pAuthorId = post.author ? (post.author._id || post.author).toString() : null;
+            const pIsFollowing = pAuthorId ? followingListForPosts.includes(pAuthorId) : false;
+            
+            return formatPostData(post, pCommentCount, pRecentComments, pUserVote, pIsFollowing);
+        }));
+
+        if (isOwnProfile) {
+            friendRequests = await authService.getFriendRequestsService(userId);
+            
+            const user = await Account.findById(userId).populate({
+                path: 'savedPosts',
+                populate: { path: 'author', select: 'username display_name avatar_url' }
+            });
+            if (user && user.savedPosts) {
+                const validPosts = user.savedPosts.filter(p => p !== null);
+                let followingList = (user.following || []).map(id => id.toString());
+                
+                
+                savedPosts = await Promise.all(validPosts.map(async (post) => {
+                    const commentCount = await Comment.countDocuments({ post: post._id });
+                    const recentComments = await Comment.find({ post: post._id })
+                        .sort({ created_at: -1 })
+                        .limit(1)
+                        .populate('author', 'username display_name')
+                        .lean();
+                    
+                    let userVote = null;
+                    const postObj = post.toObject ? post.toObject() : post;
+                    if (postObj.reactions) {
+                        const reaction = postObj.reactions.find(r => r.user_id && r.user_id.toString() === userId);
+                        if (reaction) userVote = reaction.type;
+                    }
+                    const authorId = postObj.author ? (postObj.author._id || postObj.author).toString() : null;
+                    const isFollowing = authorId ? followingList.includes(authorId) : false;
+                    
+                    return formatPostData(postObj, commentCount, recentComments, userVote, isFollowing);
+                }));
+            }
+        }
+
+        return res.status(200).json({
+            status: 'success',
+            data: {
+                profile,
+                comments,
+                stats: { posts: postCount, totalLikes },
+                followers,
+                following,
+                friendRequests,
+                savedPosts,
+                userPosts
+            }
+        });
+    } catch (error) {
+        console.error('[AUTH CONTROLLER] 🚨 Lỗi getAggregatedProfile:', error);
+        return res.status(500).json({ status: 'error', message: `Lỗi máy chủ: ${error.message}` });
+    }
+};
+
 module.exports = {
     login,
     register,
@@ -346,5 +474,6 @@ module.exports = {
     getFollowers,
     getFollowing,
     cancelFriendRequest,
-    searchUsers
+    searchUsers,
+    getAggregatedProfile
 };

@@ -32,32 +32,7 @@ export function SavedPosts({
       const res = await fetch(`${API_URL}/posts/saved/${currentUser.id}`);
       const data = await res.json();
       if (data.status === 'success') {
-        const formattedPosts = data.data.map((p: any) => ({
-          id: p._id,
-          author: {
-            id: p.author?._id || '',
-            name: p.author?.display_name || p.author?.username || 'Unknown',
-            avatar: getImageUrl(p.author?.avatar_url),
-            username: p.author?.username || 'unknown',
-            isFollowing: !!p.author?.isFollowing,
-          },
-          community: p.community || 'lập trình',
-          timestamp: new Date(p.created_at).toLocaleString('vi-VN'),
-          title: p.title || 'Untitled',
-          content: p.content || '',
-          image: p.image_url ? getImageUrl(p.image_url) : undefined,
-          image_urls: p.image_urls ? p.image_urls.map((url: string) => getImageUrl(url)) : [],
-          upvotes: p.upvotes || 0,
-          downvotes: p.downvotes || 0,
-          comments: [],
-          commentCount: p.commentCount || 0,
-          recentComment: p.recentComment ? {
-              authorName: p.recentComment.author?.display_name || p.recentComment.author?.username || 'Unknown',
-              content: p.recentComment.content
-          } : undefined,
-          userVote: p.userVote || null,
-        }));
-        setPosts(formattedPosts);
+        setPosts(data.data);
       }
     } catch (err) {
       console.error('Error fetching saved posts:', err);
