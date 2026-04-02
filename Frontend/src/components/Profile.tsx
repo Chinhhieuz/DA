@@ -744,7 +744,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
           </div>
           <div className="text-center cursor-pointer hover:bg-slate-50 transition-colors p-1 rounded" onClick={() => setActiveTab('friends')}>
             <div className="text-2xl font-bold text-gray-900">{followersCount}</div>
-            <div className="text-sm text-gray-600">Người theo dõi</div>
+            <div className="text-sm text-gray-600">Theo dõi</div>
           </div>
         </div>
       </Card>
@@ -759,7 +759,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
             Bình luận
           </TabsTrigger>
           <TabsTrigger value="friends" className="data-[state=active]:bg-background data-[state=active]:text-foreground">
-            Người theo dõi ({followersCount})
+            Theo dõi ({followersCount})
           </TabsTrigger>
           <TabsTrigger value="saved" className="data-[state=active]:bg-background data-[state=active]:text-foreground">
             Đã lưu
@@ -811,7 +811,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                 className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${followerTab === 'followers' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => setFollowerTab('followers')}
              >
-                Người theo dõi ({followersCount})
+                Theo dõi ({followersCount})
              </button>
              <button 
                 className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${followerTab === 'following' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
