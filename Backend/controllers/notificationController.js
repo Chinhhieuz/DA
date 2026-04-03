@@ -1,15 +1,11 @@
-const Notification = require('../models/Notification');
+const notificationService = require('../services/notificationService');
 
 const getNotifications = async (req, res) => {
     try {
-        const { accountId } = req.query; // Tạm dùng query để nhận accountId (cần middleware sau)
+        const { accountId } = req.query;
         if (!accountId) return res.status(400).json({ status: 'fail', message: 'Thiếu accountId' });
 
-        const notifications = await Notification.find({ recipient: accountId })
-            .sort({ created_at: -1 })
-            .populate('sender', 'username display_name avatar_url full_name')
-            .populate('post', 'title');
-
+        const notifications = await notificationService.getNotificationsService(accountId);
         return res.status(200).json({ status: 'success', data: notifications });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
@@ -18,8 +14,7 @@ const getNotifications = async (req, res) => {
 
 const markAsRead = async (req, res) => {
     try {
-        const { id } = req.params;
-        await Notification.findByIdAndUpdate(id, { isRead: true });
+        await notificationService.markAsReadService(req.params.id);
         return res.status(200).json({ status: 'success', message: 'Đã đánh dấu đã đọc' });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
@@ -29,7 +24,7 @@ const markAsRead = async (req, res) => {
 const markAllAsRead = async (req, res) => {
     try {
         const { accountId } = req.body;
-        await Notification.updateMany({ recipient: accountId, isRead: false }, { isRead: true });
+        await notificationService.markAllAsReadService(accountId);
         return res.status(200).json({ status: 'success', message: 'Đã đánh dấu tất cả là đã đọc' });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });

@@ -1,22 +1,19 @@
-const Community = require('../models/Community');
-const Post = require('../models/Post');
+const communityService = require('../services/communityService');
+
+const handleServiceError = (error, res) => {
+    if (error.message.startsWith('NOT_FOUND:')) {
+        return res.status(404).json({ status: 'fail', message: error.message.split(':')[1] });
+    }
+    if (error.message === 'Tên cộng đồng là bắt buộc!') {
+        return res.status(400).json({ status: 'error', message: error.message });
+    }
+    return res.status(500).json({ status: 'error', message: error.message });
+};
 
 const getAllCommunities = async (req, res) => {
     try {
-        const communities = await Community.find().sort({ created_at: -1 });
-        
-        // Kết hợp số lượng bài viết cho mỗi cộng đồng (không phân biệt hoa thường)
-        const communitiesWithStats = await Promise.all(communities.map(async (com) => {
-            const postCount = await Post.countDocuments({ 
-                community: { $regex: new RegExp(`^${com.name}$`, 'i') } 
-            });
-            return {
-                ...com.toObject(),
-                postCount
-            };
-        }));
-
-        return res.status(200).json({ status: 'success', data: communitiesWithStats });
+        const communities = await communityService.getAllCommunitiesService();
+        return res.status(200).json({ status: 'success', data: communities });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
     }
@@ -24,41 +21,29 @@ const getAllCommunities = async (req, res) => {
 
 const createCommunity = async (req, res) => {
     try {
-        const { name, description, icon, creator_id } = req.body;
-        if (!name) return res.status(400).json({ status: 'fail', message: 'Tên cộng đồng là bắt buộc!' });
-
-        const community = new Community({ name, description, icon, creator: creator_id });
-        await community.save();
+        const community = await communityService.createCommunityService(req.body);
         return res.status(201).json({ status: 'success', data: community });
     } catch (error) {
-        return res.status(400).json({ status: 'error', message: error.message });
+        return handleServiceError(error, res);
     }
 };
 
 const updateCommunity = async (req, res) => {
     try {
-        const { name, description, icon } = req.body;
-        const community = await Community.findByIdAndUpdate(
-            req.params.id,
-            { name, description, icon },
-            { new: true }
-        );
-        if (!community) return res.status(404).json({ status: 'fail', message: 'Không tìm thấy chủ đề!' });
+        const community = await communityService.updateCommunityService(req.params.id, req.body);
         return res.status(200).json({ status: 'success', data: community });
     } catch (error) {
-        return res.status(500).json({ status: 'error', message: error.message });
+        return handleServiceError(error, res);
     }
 };
 
 const deleteCommunity = async (req, res) => {
     try {
-        const community = await Community.findByIdAndDelete(req.params.id);
-        if (!community) return res.status(404).json({ status: 'fail', message: 'Không tìm thấy chủ đề!' });
+        await communityService.deleteCommunityService(req.params.id);
         return res.status(200).json({ status: 'success', message: 'Đã xóa chủ đề thành công!' });
     } catch (error) {
-        return res.status(500).json({ status: 'error', message: error.message });
+        return handleServiceError(error, res);
     }
 };
 
 module.exports = { getAllCommunities, createCommunity, deleteCommunity, updateCommunity };
-
