@@ -36,15 +36,15 @@ export function TrendingContent({ onPostClick, currentUser }: TrendingContentPro
   return (
     <div className="w-72 shrink-0">
       <div className="sticky top-20">
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
           {/* Header */}
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50/50">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/50">
             <TrendingUp className="h-4 w-4 text-primary" />
-            <h3 className="font-semibold text-gray-900 text-sm">Nội dung thịnh hành</h3>
+            <h3 className="font-semibold text-foreground text-sm">Nội dung thịnh hành</h3>
           </div>
 
           {/* Items */}
-          <div className="divide-y divide-slate-50">
+          <div className="divide-y divide-border">
             {loading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-primary/40" />
@@ -54,22 +54,22 @@ export function TrendingContent({ onPostClick, currentUser }: TrendingContentPro
                 <div
                   key={post.id}
                   onClick={() => onPostClick(post)}
-                  className="px-4 py-3 hover:bg-slate-50 cursor-pointer transition-colors group"
+                  className="px-4 py-3 hover:bg-muted cursor-pointer transition-colors group"
                 >
                   <div className="flex gap-2.5">
                     <span className="text-lg shrink-0 mt-0.5 group-hover:scale-110 transition-transform">🔥</span>
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                      <p className="text-sm font-medium text-foreground leading-snug line-clamp-2 group-hover:text-primary transition-colors">
                         {post.title}
                       </p>
                       <div className="flex items-center gap-1.5 mt-1.5">
-                        <Avatar className="h-4 w-4 border border-slate-100">
+                        <Avatar className="h-4 w-4 border border-border">
                           <AvatarImage src={post.author.avatar} />
                           <AvatarFallback className="text-[8px] bg-primary/5 text-primary">{post.author.name[0]}</AvatarFallback>
                         </Avatar>
-                        <span className="text-[11px] text-gray-500 truncate max-w-[80px]">{post.author.username}</span>
-                        <span className="text-[10px] text-gray-300">·</span>
-                        <span className="text-[10px] text-gray-400 truncate">{post.timestamp}</span>
+                        <span className="text-[11px] text-muted-foreground truncate max-w-[80px]">{post.author.username}</span>
+                        <span className="text-[10px] text-muted-foreground/50">·</span>
+                        <span className="text-[10px] text-muted-foreground/70 truncate">{post.timestamp}</span>
                       </div>
                       <div className="flex items-center gap-1 mt-1.5 font-semibold text-orange-600">
                         <ArrowBigUp className="h-3.5 w-3.5 fill-orange-500" />
@@ -80,7 +80,7 @@ export function TrendingContent({ onPostClick, currentUser }: TrendingContentPro
                 </div>
               ))
             ) : (
-                <div className="px-4 py-6 text-center text-sm text-gray-500">
+                <div className="px-4 py-6 text-center text-sm text-muted-foreground">
                   Chưa có nội dung trending
                 </div>
             )}

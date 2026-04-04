@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { getImageUrl } from '@/lib/imageUtils';
 import { API_URL } from '@/lib/api';
 import { toast } from 'sonner';
+import DOMPurify from 'dompurify';
 import { MessageCircle, MoreHorizontal, Flag, ArrowBigUp, ArrowBigDown, Share2, Trash2, Bookmark, UserPlus, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -378,28 +379,28 @@ export function PostCard({
   };
 
   return (
-    <Card className="mb-5 overflow-hidden border border-border bg-card rounded-2xl shadow-sm hover:shadow-md transition-all duration-200">
-      <div className="p-4 sm:p-5">
+    <Card className="mb-3 overflow-hidden border border-border bg-card rounded-xl shadow-sm transition-all duration-200">
+      <div className="p-3 sm:p-4">
         {/* Content Section */}
         <div className="flex-1">
           {/* Post Header */}
-          <div className="mb-3 flex items-start gap-3">
+          <div className="mb-2 flex items-start gap-2.5">
             <Avatar 
-              className="h-10 w-10 border border-border shadow-sm ring-2 ring-background cursor-pointer hover:opacity-80 transition-opacity"
+              className="h-9 w-9 border border-border shadow-sm ring-1 ring-background cursor-pointer hover:opacity-80 transition-opacity"
               onClick={(e) => { e.stopPropagation(); onUserClick && post.author.id && onUserClick(post.author.id); }}
             >
               <AvatarImage src={post.author.avatar} className="object-cover" />
               <AvatarFallback className="bg-muted text-muted-foreground">{post.author.name?.[0] || 'U'}</AvatarFallback>
             </Avatar>
             <div className="flex flex-col">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <span 
-                  className="font-bold text-foreground text-[15px] hover:underline cursor-pointer"
+                  className="font-bold text-foreground text-[14px] hover:underline cursor-pointer"
                   onClick={(e) => { e.stopPropagation(); onUserClick && post.author.id && onUserClick(post.author.id); }}
                 >
                    {post.author.name || post.author.username}
                 </span>
-                <span className="text-muted-foreground text-xs font-medium">• {post.timestamp}</span>
+                <span className="text-muted-foreground text-[11px] font-medium">• {post.timestamp}</span>
               </div>
               <div className="mt-0.5">
                 <Badge 
@@ -474,10 +475,13 @@ export function PostCard({
             className="cursor-pointer"
             onClick={() => onPostClick && onPostClick(post)}
           >
-            <h3 className="mb-2.5 text-[22px] font-bold leading-snug text-foreground hover:text-primary transition-colors">
+            <h3 className="mb-1.5 text-[18px] sm:text-[20px] font-bold leading-snug text-foreground hover:text-primary transition-colors">
               {post.title}
             </h3>
-            <p className="mb-4 text-[15px] leading-relaxed text-foreground/90">{post.content}</p>
+            <div 
+              className="mb-3 text-[14px] leading-snug text-foreground/90 tiptap-prose"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(post.content) }}
+            />
             {/* Multi-image Rendering — dùng ImageCollage */}
             {post.image_urls && post.image_urls.length > 0 ? (
               <ImageCollage images={post.image_urls} title={post.title} />

@@ -15,6 +15,7 @@ import { SearchView } from '@/components/SearchView'
 import { TrendingContent } from '@/components/TrendingContent'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Toaster } from '@/components/ui/sonner'
 import { Login } from '@/components/Login'
 import { Badge } from '@/components/ui/badge'
@@ -439,23 +440,6 @@ export default function App() {
   };
 
   const renderContent = () => {
-    if (selectedPost) {
-      return (
-        <PostDetail
-          post={selectedPost}
-          onBack={() => {
-            fetchPosts(currentUser.id);
-            setSelectedPost(null);
-          }}
-          currentUser={currentUser}
-          onAddComment={handlePostCommented}
-          onUserClick={handleUserClick}
-          onSaveToggle={handleSaveToggle}
-          onCommunityClick={handleCommunityClick}
-        />
-      );
-    }
-
     switch (currentView) {
       case 'home':
         const displayPosts = posts;
@@ -663,7 +647,7 @@ export default function App() {
         <div className="mx-auto max-w-7xl p-4">
           <div className="flex justify-center gap-8">
             <div className="flex-1 max-w-4xl w-full">{renderContent()}</div>
-            {currentView === 'home' && !selectedPost && (
+            {currentView === 'home' && (
               <div className="hidden lg:block w-80">
                 <TrendingContent onPostClick={handlePostClick} currentUser={currentUser} />
               </div>
@@ -671,6 +655,40 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      <Dialog open={!!selectedPost} onOpenChange={(open) => {
+        if (!open) {
+          fetchPosts(currentUser.id);
+          setSelectedPost(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl md:max-w-3xl lg:max-w-4xl w-[95vw] sm:w-[90vw] h-[90vh] max-h-[90vh] p-0 border border-border/50 bg-background shadow-2xl rounded-2xl flex flex-col focus:outline-none overflow-hidden">
+          {/* Header Sticky */}
+          <div className="sticky top-0 z-10 flex items-center justify-center p-4 border-b border-border bg-background/95 backdrop-blur-sm shrink-0">
+            <DialogTitle className="text-[19px] font-bold text-foreground">
+              {selectedPost ? `Bài viết của ${selectedPost.author.name || selectedPost.author.username}` : 'Chi tiết bài viết'}
+            </DialogTitle>
+          </div>
+          
+          {/* Main Scrollable Content */}
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {selectedPost && (
+              <PostDetail
+                post={selectedPost}
+                onBack={() => {
+                  fetchPosts(currentUser.id);
+                  setSelectedPost(null);
+                }}
+                currentUser={currentUser}
+                onAddComment={handlePostCommented}
+                onUserClick={handleUserClick}
+                onSaveToggle={handleSaveToggle}
+                onCommunityClick={handleCommunityClick}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Toaster position="top-center" />
 
