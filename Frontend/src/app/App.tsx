@@ -364,33 +364,8 @@ export default function App() {
             toast.info('Bài viết này đang trong trạng thái chờ duyệt.');
           }
 
-          const formattedPost: Post = {
-            id: p._id,
-            author: {
-              id: p.author?._id || '',
-              name: p.author?.display_name || p.author?.username || 'Unknown',
-              avatar: getImageUrl(p.author?.avatar_url),
-              username: p.author?.username || 'unknown',
-              isFollowing: !!p.author?.isFollowing,
-            },
-            community: p.community || 'lập trình',
-            timestamp: new Date(p.created_at).toLocaleString('vi-VN'),
-            title: p.title || 'Untitled',
-            content: p.content || '',
-            image: p.image_url ? getImageUrl(p.image_url) : undefined,
-            image_urls: p.image_urls ? p.image_urls.map((url: string) => getImageUrl(url)) : [],
-            upvotes: p.upvotes || 0,
-            downvotes: p.downvotes || 0,
-            comments: [],
-            commentCount: p.commentCount || 0,
-            recentComment: p.recentComment ? {
-                authorName: p.recentComment.author?.display_name || p.recentComment.author?.username || 'Unknown',
-                content: p.recentComment.content
-            } : undefined,
-            userVote: p.userVote || null,
-            status: p.status
-          };
-          handlePostClick(formattedPost);
+          // Use the post object directly, as the backend already mapped it to Post via formatPostData()
+          handlePostClick(p);
         } else {
           toast.error('Không thể tìm thấy bài viết này');
         }

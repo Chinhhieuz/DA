@@ -199,7 +199,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
     }
 
     try {
-      const res = await fetch(`${API_URL}/comments`, {
+      const res = await fetch(`${API_URL}/comments/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -241,7 +241,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
     }
 
     try {
-      const res = await fetch(`${API_URL}/threads`, {
+      const res = await fetch(`${API_URL}/threads/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
