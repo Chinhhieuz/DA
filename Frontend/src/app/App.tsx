@@ -15,6 +15,7 @@ import { SearchView } from '@/components/SearchView'
 import { TrendingContent } from '@/components/TrendingContent'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Toaster } from '@/components/ui/sonner'
 import { Login } from '@/components/Login'
 import { Badge } from '@/components/ui/badge'
@@ -364,33 +365,8 @@ export default function App() {
             toast.info('Bài viết này đang trong trạng thái chờ duyệt.');
           }
 
-          const formattedPost: Post = {
-            id: p._id,
-            author: {
-              id: p.author?._id || '',
-              name: p.author?.display_name || p.author?.username || 'Unknown',
-              avatar: getImageUrl(p.author?.avatar_url),
-              username: p.author?.username || 'unknown',
-              isFollowing: !!p.author?.isFollowing,
-            },
-            community: p.community || 'lập trình',
-            timestamp: new Date(p.created_at).toLocaleString('vi-VN'),
-            title: p.title || 'Untitled',
-            content: p.content || '',
-            image: p.image_url ? getImageUrl(p.image_url) : undefined,
-            image_urls: p.image_urls ? p.image_urls.map((url: string) => getImageUrl(url)) : [],
-            upvotes: p.upvotes || 0,
-            downvotes: p.downvotes || 0,
-            comments: [],
-            commentCount: p.commentCount || 0,
-            recentComment: p.recentComment ? {
-                authorName: p.recentComment.author?.display_name || p.recentComment.author?.username || 'Unknown',
-                content: p.recentComment.content
-            } : undefined,
-            userVote: p.userVote || null,
-            status: p.status
-          };
-          handlePostClick(formattedPost);
+          // Use the post object directly, as the backend already mapped it to Post via formatPostData()
+          handlePostClick(p);
         } else {
           toast.error('Không thể tìm thấy bài viết này');
         }
@@ -464,23 +440,6 @@ export default function App() {
   };
 
   const renderContent = () => {
-    if (selectedPost) {
-      return (
-        <PostDetail
-          post={selectedPost}
-          onBack={() => {
-            fetchPosts(currentUser.id);
-            setSelectedPost(null);
-          }}
-          currentUser={currentUser}
-          onAddComment={handlePostCommented}
-          onUserClick={handleUserClick}
-          onSaveToggle={handleSaveToggle}
-          onCommunityClick={handleCommunityClick}
-        />
-      );
-    }
-
     switch (currentView) {
       case 'home':
         const displayPosts = posts;
@@ -688,7 +647,7 @@ export default function App() {
         <div className="mx-auto max-w-7xl p-4">
           <div className="flex justify-center gap-8">
             <div className="flex-1 max-w-4xl w-full">{renderContent()}</div>
-            {currentView === 'home' && !selectedPost && (
+            {currentView === 'home' && (
               <div className="hidden lg:block w-80">
                 <TrendingContent onPostClick={handlePostClick} currentUser={currentUser} />
               </div>
@@ -696,6 +655,40 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      <Dialog open={!!selectedPost} onOpenChange={(open) => {
+        if (!open) {
+          fetchPosts(currentUser.id);
+          setSelectedPost(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl md:max-w-3xl lg:max-w-4xl w-[95vw] sm:w-[90vw] h-[90vh] max-h-[90vh] p-0 border border-border/50 bg-background shadow-2xl rounded-2xl flex flex-col focus:outline-none overflow-hidden">
+          {/* Header Sticky */}
+          <div className="sticky top-0 z-10 flex items-center justify-center p-4 border-b border-border bg-background/95 backdrop-blur-sm shrink-0">
+            <DialogTitle className="text-[19px] font-bold text-foreground">
+              {selectedPost ? `Bài viết của ${selectedPost.author.name || selectedPost.author.username}` : 'Chi tiết bài viết'}
+            </DialogTitle>
+          </div>
+          
+          {/* Main Scrollable Content */}
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {selectedPost && (
+              <PostDetail
+                post={selectedPost}
+                onBack={() => {
+                  fetchPosts(currentUser.id);
+                  setSelectedPost(null);
+                }}
+                currentUser={currentUser}
+                onAddComment={handlePostCommented}
+                onUserClick={handleUserClick}
+                onSaveToggle={handleSaveToggle}
+                onCommunityClick={handleCommunityClick}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Toaster position="top-center" />
 

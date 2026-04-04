@@ -3,7 +3,7 @@ import { Image, Link2, FileText, X, Loader2, Upload, ChevronDown, ChevronUp } fr
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -97,7 +97,6 @@ function ImagePreviewStrip({
 
 
 export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
-  const [postType, setPostType] = useState<'text' | 'image'>('text');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [community, setCommunity] = useState('');
@@ -171,7 +170,7 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
       // Bước 1: Upload tất cả ảnh lên Cloudinary (chỉ khi nhấn Đăng)
       let uploadedImageUrls: string[] = [];
 
-      if (postType === 'image' && selectedFiles.length > 0) {
+      if (selectedFiles.length > 0) {
         const uploadToast = toast.loading(`Đang tải ${selectedFiles.length} ảnh lên...`);
         
         const uploadPromises = selectedFiles.map(async (file) => {
@@ -250,32 +249,6 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
           </div>
         </div>
 
-        {/* Post Type Selector */}
-        <div className="flex p-1.5 bg-muted rounded-2xl mb-8 gap-1">
-          <button
-            onClick={() => setPostType('text')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl transition-all duration-300 font-semibold text-sm ${
-              postType === 'text' 
-              ? 'bg-background text-primary shadow-sm ring-1 ring-border/50' 
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <FileText className={`h-4 w-4 ${postType === 'text' ? 'text-red-500' : 'text-gray-400'}`} />
-            Văn bản
-          </button>
-          <button
-            onClick={() => setPostType('image')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl transition-all duration-300 font-semibold text-sm ${
-              postType === 'image' 
-              ? 'bg-background text-primary shadow-sm ring-1 ring-border/50' 
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Image className={`h-4 w-4 ${postType === 'image' ? 'text-red-500' : 'text-gray-400'}`} />
-            Hình ảnh
-          </button>
-        </div>
-
         <div className="space-y-6">
           {/* Topic Select */}
           <div className="space-y-2">
@@ -317,67 +290,61 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
           {/* Content TextArea */}
           <div className="space-y-2">
              <label className="text-[11px] uppercase tracking-[0.1em] font-bold text-muted-foreground px-1">Nội dung</label>
-             <div className="relative group">
-               <Textarea
-                 placeholder="Bạn đang nghĩ gì? Chia sẻ kiến thức của bạn..."
-                 value={content}
-                 onChange={(e) => setContent(e.target.value)}
-                 className="min-h-[160px] bg-background border-border rounded-2xl focus:ring-primary/20 focus:border-primary transition-all resize-none p-4 shadow-sm text-foreground"
-               />
-               <div className="absolute bottom-4 right-4 text-[10px] font-bold text-gray-300 pointer-events-none uppercase">Markdown Supported</div>
-             </div>
+             <RichTextEditor
+               content={content}
+               onChange={setContent}
+               placeholder="Bạn đang nghĩ gì? Chia sẻ kiến thức của bạn..."
+             />
           </div>
 
-          {/* Image Upload Section — chỉ chọn ảnh, CHƯA upload */}
-          {postType === 'image' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between px-1">
-                <label className="text-[11px] uppercase tracking-[0.1em] font-bold text-muted-foreground">Hình ảnh đính kèm</label>
-                {selectedFiles.length > 0 && (
-                  <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <Upload className="h-3 w-3" />
-                    {selectedFiles.length} ảnh · Sẽ tải lên khi đăng
-                  </span>
-                )}
-              </div>
-              {/* Nút lớn để thêm ảnh (chỉ hiện khi chưa có ảnh nào) */}
-              {previewUrls.length === 0 && (
-                <label className="block">
-                  <div className={`relative flex flex-col items-center justify-center min-h-[120px] rounded-[2rem] border-2 border-dashed transition-all duration-300 cursor-pointer group border-border hover:border-primary/50 hover:bg-primary/5`}>
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept="image/*"
-                      multiple
-                      onChange={handleFileSelect}
-                    />
-
-                    <div className="flex flex-col items-center p-6">
-                      <div className="w-12 h-12 bg-card rounded-2xl shadow-sm border border-border flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-                        <Image className="h-6 w-6 text-primary" />
-                      </div>
-                      <p className="text-sm font-bold text-foreground line-clamp-1">Thêm ảnh vào bài viết</p>
-                      <p className="text-[10px] text-muted-foreground font-medium">Hỗ trợ JPG, PNG, WEBP (Nhiều ảnh)</p>
-                    </div>
-                  </div>
-                </label>
-              )}
-
-              {/* Thumbnail strip — thu gọn 2 ảnh, click +X để xem thêm */}
-              {previewUrls.length > 0 && (
-                <ImagePreviewStrip
-                  previewUrls={previewUrls}
-                  onRemove={handleRemoveImage}
-                  onAddMore={handleFileSelect}
-                />
-              )}
-              {previewUrls.length > 0 && (
-                <p className="text-[10px] text-muted-foreground font-medium mt-1.5 px-1">
-                  {previewUrls.length} ảnh · Sẽ tải lên Cloudinary khi bạn nhấn <strong>Đăng</strong>
-                </p>
+          {/* Image Upload Section — luôn hiện bên dưới nội dung */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between px-1">
+              <label className="text-[11px] uppercase tracking-[0.1em] font-bold text-muted-foreground">Hình ảnh đính kèm (Tùy chọn)</label>
+              {selectedFiles.length > 0 && (
+                <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <Upload className="h-3 w-3" />
+                  {selectedFiles.length} ảnh · Sẽ tải lên khi đăng
+                </span>
               )}
             </div>
-          )}
+            {/* Nút lớn để thêm ảnh (chỉ hiện khi chưa có ảnh nào) */}
+            {previewUrls.length === 0 && (
+              <label className="block">
+                <div className={`relative flex flex-col items-center justify-center min-h-[120px] rounded-[2rem] border-2 border-dashed transition-all duration-300 cursor-pointer group border-border hover:border-primary/50 hover:bg-primary/5`}>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    multiple
+                    onChange={handleFileSelect}
+                  />
+
+                  <div className="flex flex-col items-center p-6">
+                    <div className="w-12 h-12 bg-card rounded-2xl shadow-sm border border-border flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                      <Image className="h-6 w-6 text-primary" />
+                    </div>
+                    <p className="text-sm font-bold text-foreground line-clamp-1">Thêm ảnh đính kèm</p>
+                    <p className="text-[10px] text-muted-foreground font-medium">Hỗ trợ JPG, PNG, WEBP (Nhiều ảnh)</p>
+                  </div>
+                </div>
+              </label>
+            )}
+
+            {/* Thumbnail strip — thu gọn 2 ảnh, click +X để xem thêm */}
+            {previewUrls.length > 0 && (
+              <ImagePreviewStrip
+                previewUrls={previewUrls}
+                onRemove={handleRemoveImage}
+                onAddMore={handleFileSelect}
+              />
+            )}
+            {previewUrls.length > 0 && (
+              <p className="text-[10px] text-muted-foreground font-medium mt-1.5 px-1">
+                {previewUrls.length} ảnh · Sẽ tải lên Cloudinary khi bạn nhấn <strong>Đăng</strong>
+              </p>
+            )}
+          </div>
 
           {/* Actions */}
           <div className="flex gap-4 pt-4">

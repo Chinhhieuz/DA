@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -641,7 +642,10 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                     <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Bài viết bị tố cáo</Label>
                     <div className="p-4 rounded-2xl border border-border bg-card shadow-sm hover:border-primary/30 transition-colors cursor-pointer" onClick={() => { setViewingPost(viewingReport.post); setViewingReport(null); }}>
                       <p className="font-black text-sm mb-1">{viewingReport?.post?.title}</p>
-                      <p className="text-xs text-muted-foreground line-clamp-2">{viewingReport?.post?.content}</p>
+                      <div 
+                        className="text-xs text-muted-foreground line-clamp-2 tiptap-prose"
+                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(viewingReport?.post?.content || '') }}
+                      />
                       <div className="mt-3 flex items-center gap-2">
                         <Eye className="h-3.5 w-3.5 text-primary" />
                         <span className="text-[11px] font-bold text-primary uppercase tracking-tighter">Nhấn để xem toàn bộ bài viết</span>
@@ -723,7 +727,10 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                 <div key={post._id} className="p-4 flex flex-col md:flex-row md:items-start justify-between hover:bg-muted/30 transition-colors gap-3">
                   <div className="space-y-1 flex-1">
                     <p className="text-sm font-bold text-foreground">{post.title}</p>
-                    <p className="text-xs text-muted-foreground line-clamp-2">{post.content}</p>
+                    <div 
+                      className="text-xs text-muted-foreground line-clamp-2 tiptap-prose"
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(post.content || '') }}
+                    />
                     <p className="text-xs text-muted-foreground/70 mt-2">Đăng bởi: <span className="font-semibold">@{post.author?.username}</span> • {new Date(post.created_at).toLocaleString('vi-VN')}</p>
                     {post.image_url && (
                       <div className="mt-2">
@@ -1209,9 +1216,10 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
               </header>
 
               <div className="space-y-10">
-                <p className="text-xl text-foreground font-medium leading-[1.7] whitespace-pre-wrap select-text">
-                  {viewingPost?.content}
-                </p>
+                <div 
+                  className="text-foreground font-medium leading-[1.7] whitespace-pre-wrap select-text tiptap-prose content-zoom text-lg"
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(viewingPost?.content || '') }}
+                />
 
                 {/* Media Section */}
                 {(viewingPost?.image_urls?.length > 0 || viewingPost?.image_url) && (
@@ -1346,7 +1354,10 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                            </Badge>
                            <h4 className="font-bold text-sm text-foreground truncate">{post.title}</h4>
                         </div>
-                        <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{post.content}</p>
+                        <div 
+                          className="text-xs text-muted-foreground line-clamp-2 leading-relaxed tiptap-prose"
+                          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(post.content || '') }}
+                        />
                         <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">
                            <span className="flex items-center gap-1"><Users className="h-3 w-3" /> @{post.author?.username}</span>
                            <span>• {new Date(post.created_at).toLocaleString('vi-VN')}</span>

@@ -196,7 +196,6 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [friendStatus, setFriendStatus] = useState<'none' | 'friend' | 'sent' | 'received'>('none');
-  const [savedPosts, setSavedPosts] = useState<Post[]>([]);
   const [tempAvatar, setTempAvatar] = useState<string | null>(null);
   const [isAdjustingAvatar, setIsAdjustingAvatar] = useState(false);
   const [followerTab, setFollowerTab] = useState<'followers' | 'following'>('followers');
@@ -239,7 +238,6 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
             
             if (isOwnProfile) {
               setFriendRequests(aggr.friendRequests || []);
-              setSavedPosts(aggr.savedPosts || []);
             }
           }
         })
@@ -393,11 +391,11 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
         <div className="space-y-4">
           <Card className="border-0 shadow-xl overflow-hidden bg-card">
             {/* Header Cover Banner */}
-            <div className="h-32 w-full bg-gradient-to-br from-red-700 via-red-500 to-orange-400 relative">
+            <div className="h-40 w-full bg-gradient-to-r from-red-600 via-red-500 to-amber-500 relative shadow-inner">
               <Button
                 variant="ghost"
                 size="icon"
-                className="absolute top-4 right-4 text-white hover:bg-white/20 transition-colors rounded-full"
+                className="absolute top-4 right-4 text-white hover:bg-black/20 hover:text-white transition-colors rounded-full backdrop-blur-sm bg-black/10"
                 onClick={() => setIsEditing(false)}
               >
                 <X className="h-5 w-5" />
@@ -405,24 +403,24 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
             </div>
   
             <div className="px-8 pb-8 flex flex-col relative">
-              <div className="relative -mt-16 mb-4 flex justify-between items-end">
-                <div className="relative group">
-                  <Avatar className="h-28 w-28 border-4 border-background shadow-xl bg-card">
+              <div className="relative -mt-20 mb-6 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
+                <div className="relative group self-start">
+                  <Avatar className="h-32 w-32 border-[6px] border-background shadow-2xl bg-card">
                     <AvatarImage src={getImageUrl(currentUser.avatar)} className="object-cover" />
-                    <AvatarFallback className="text-3xl text-muted-foreground bg-muted">{currentUser.name[0]}</AvatarFallback>
+                    <AvatarFallback className="text-4xl text-muted-foreground font-black bg-muted">{currentUser.name[0]}</AvatarFallback>
                   </Avatar>
                   <Button
                     size="icon"
-                    className="absolute bottom-0 right-0 h-9 w-9 rounded-full bg-red-600 text-white shadow-lg hover:bg-red-700 transition-transform scale-100 group-hover:scale-110"
+                    className="absolute bottom-1 right-1 h-10 w-10 rounded-full bg-red-600 text-white shadow-xl hover:bg-red-700 transition-transform scale-100 group-hover:scale-110 border-2 border-background"
                     onClick={handleAvatarClick}
                   >
-                    <Camera className="h-4 w-4" />
+                    <Camera className="h-5 w-5" />
                   </Button>
                 </div>
   
-                <div className="pb-2">
-                  <h2 className="text-2xl font-bold text-gray-900 leading-none mb-1">Cập nhật hồ sơ</h2>
-                  <p className="text-sm text-gray-500">Làm mới thông tin cá nhân của bạn</p>
+                <div className="pb-2 md:text-right">
+                  <h2 className="text-3xl font-black text-foreground leading-tight tracking-tight">Cập nhật hồ sơ</h2>
+                  <p className="text-muted-foreground font-medium mt-1">Làm mới thông tin cá nhân của bạn</p>
                 </div>
               </div>
   
@@ -437,80 +435,84 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
               <div className="mt-2 space-y-8">
                 
                 {/* Section: Thông tin cơ bản */}
-                <div className="space-y-5">
-                  <div className="flex items-center gap-2 border-b border-border pb-2">
-                      <User className="h-5 w-5 text-red-500" />
-                      <h3 className="text-lg font-semibold text-foreground">Thông tin cơ bản</h3>
+                <div className="bg-muted/30 p-6 sm:p-8 rounded-[2rem] border border-border/50 space-y-6 shadow-sm">
+                  <div className="flex items-center gap-3 border-b border-border/50 pb-4">
+                      <div className="p-2.5 bg-red-500/10 rounded-xl">
+                        <User className="h-5 w-5 text-red-600" />
+                      </div>
+                      <h3 className="text-xl font-bold text-foreground tracking-tight">Thông tin cơ bản</h3>
                   </div>
                   
-                  <div className="grid gap-5 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label className="text-foreground/90 font-medium text-xs uppercase tracking-wider">Tên người dùng</Label>
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div className="space-y-2.5">
+                      <Label className="text-muted-foreground font-bold text-[11px] uppercase tracking-widest pl-1">Tên người dùng</Label>
                       <div className="relative">
-                        <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <AtSign className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
                         <Input
                           value={currentUser.username}
                           disabled
-                          className="pl-10 bg-muted border-transparent text-muted-foreground cursor-not-allowed"
+                          className="pl-10 h-12 bg-muted/50 border-transparent text-muted-foreground cursor-not-allowed font-medium rounded-xl"
                         />
                       </div>
                     </div>
   
-                    <div className="space-y-2">
-                      <Label htmlFor="displayName" className="text-gray-700 font-medium text-xs uppercase tracking-wider">Tên hiển thị</Label>
+                    <div className="space-y-2.5">
+                      <Label htmlFor="displayName" className="text-foreground/90 font-bold text-[11px] uppercase tracking-widest pl-1">Tên hiển thị</Label>
                       <Input
                         id="displayName"
                         value={formData.name}
                         onChange={e => setFormData({ ...formData, name: e.target.value })}
-                        className="bg-slate-50 border-slate-200 focus-visible:ring-red-500/20 focus-visible:border-red-500 transition-all shadow-sm"
+                        className="bg-background h-12 border-border focus-visible:ring-2 focus-visible:ring-red-500/20 focus-visible:border-red-500 transition-all shadow-sm rounded-xl font-medium"
                       />
                     </div>
                   </div>
   
-                  <div className="space-y-2">
-                    <Label htmlFor="bio" className="text-foreground/90 font-medium text-xs uppercase tracking-wider">Giới thiệu bản thân (Tiểu sử)</Label>
+                  <div className="space-y-2.5">
+                    <Label htmlFor="bio" className="text-foreground/90 font-bold text-[11px] uppercase tracking-widest pl-1">Giới thiệu bản thân (Tiểu sử)</Label>
                     <Textarea
                       id="bio"
                       value={formData.bio}
                       onChange={e => setFormData({ ...formData, bio: e.target.value })}
                       placeholder="Viết vài dòng về công việc, sở thích của bạn..."
-                      rows={3}
-                      className="resize-none bg-muted border-border focus-visible:ring-red-500/20 focus-visible:border-red-500 transition-all shadow-sm"
+                      rows={4}
+                      className="resize-none bg-background border-border focus-visible:ring-2 focus-visible:ring-red-500/20 focus-visible:border-red-500 transition-all shadow-sm rounded-xl font-medium p-4 leading-relaxed"
                     />
                   </div>
                 </div>
   
                 {/* Section: Liên hệ & Mạng xã hội */}
-                <div className="space-y-5">
-                  <div className="flex items-center gap-2 border-b border-border pb-2">
-                      <Globe className="h-5 w-5 text-red-500" />
-                      <h3 className="text-lg font-semibold text-foreground">Liên hệ & Mạng xã hội</h3>
+                <div className="bg-muted/30 p-6 sm:p-8 rounded-[2rem] border border-border/50 space-y-6 shadow-sm">
+                  <div className="flex items-center gap-3 border-b border-border/50 pb-4">
+                      <div className="p-2.5 bg-blue-500/10 rounded-xl">
+                        <Globe className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <h3 className="text-xl font-bold text-foreground tracking-tight">Liên hệ & Mạng xã hội</h3>
                   </div>
   
-                  <div className="grid gap-5 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="location" className="text-foreground/90 font-medium text-xs uppercase tracking-wider">Địa điểm sinh sống</Label>
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div className="space-y-2.5">
+                      <Label htmlFor="location" className="text-foreground/90 font-bold text-[11px] uppercase tracking-widest pl-1">Địa điểm sinh sống</Label>
                       <div className="relative">
-                        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-red-500/70" />
+                        <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
                           id="location"
                           value={formData.location}
                           onChange={e => setFormData({ ...formData, location: e.target.value })}
                           placeholder="Ví dụ: TP. Hồ Chí Minh"
-                          className="pl-10 bg-muted border-border focus-visible:ring-red-500/20 focus-visible:border-red-500 shadow-sm transition-all"
+                          className="pl-10 h-12 bg-background border-border focus-visible:ring-2 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 shadow-sm transition-all rounded-xl font-medium"
                         />
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="website" className="text-foreground/90 font-medium text-xs uppercase tracking-wider">Trang web cá nhân</Label>
+                    <div className="space-y-2.5">
+                      <Label htmlFor="website" className="text-foreground/90 font-bold text-[11px] uppercase tracking-widest pl-1">Trang web cá nhân</Label>
                       <div className="relative">
-                        <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-red-500/70" />
+                        <LinkIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
                           id="website"
                           value={formData.website}
                           onChange={e => setFormData({ ...formData, website: e.target.value })}
                           placeholder="https://..."
-                          className="pl-10 bg-muted border-border focus-visible:ring-red-500/20 focus-visible:border-red-500 shadow-sm transition-all"
+                          className="pl-10 h-12 bg-background border-border focus-visible:ring-2 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 shadow-sm transition-all rounded-xl font-medium"
                         />
                       </div>
                     </div>
@@ -518,35 +520,37 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                 </div>
   
                 {/* Section: Thông tin học tập */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 border-b border-border pb-2">
-                      <GraduationCap className="h-5 w-5 text-red-500" />
-                      <h3 className="text-lg font-semibold text-foreground">Thông tin học tập</h3>
+                <div className="bg-muted/30 p-6 sm:p-8 rounded-[2rem] border border-border/50 space-y-6 shadow-sm">
+                  <div className="flex items-center gap-3 border-b border-border/50 pb-4">
+                      <div className="p-2.5 bg-green-500/10 rounded-xl">
+                        <GraduationCap className="h-5 w-5 text-green-600" />
+                      </div>
+                      <h3 className="text-xl font-bold text-foreground tracking-tight">Thông tin học tập</h3>
                   </div>
-                  <div className="grid gap-5 md:grid-cols-2">
-                    <div className="space-y-2">
-                        <Label htmlFor="mssv" className="text-foreground/90 font-medium text-xs uppercase tracking-wider">Mã số sinh viên (MSSV)</Label>
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div className="space-y-2.5">
+                        <Label htmlFor="mssv" className="text-foreground/90 font-bold text-[11px] uppercase tracking-widest pl-1">Mã số sinh viên (MSSV)</Label>
                         <div className="relative">
-                          <Check className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-red-500/70" />
+                          <Check className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <Input
                             id="mssv"
                             value={formData.mssv}
                             onChange={e => setFormData({ ...formData, mssv: e.target.value })}
                             placeholder="Ví dụ: 20110XXX"
-                            className="pl-10 bg-muted border-border focus-visible:ring-red-500/20 focus-visible:border-red-500 shadow-sm transition-all"
+                            className="pl-10 h-12 bg-background border-border focus-visible:ring-2 focus-visible:ring-green-500/20 focus-visible:border-green-500 shadow-sm transition-all rounded-xl font-medium"
                           />
                         </div>
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="faculty" className="text-foreground/90 font-medium text-xs uppercase tracking-wider">Chuyên Ngành</Label>
+                    <div className="space-y-2.5">
+                        <Label htmlFor="faculty" className="text-foreground/90 font-bold text-[11px] uppercase tracking-widest pl-1">Chuyên Ngành</Label>
                         <div className="relative">
-                          <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-red-500/70" />
+                          <BookOpen className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <Input
                             id="faculty"
                             value={formData.faculty}
                             onChange={e => setFormData({ ...formData, faculty: e.target.value })}
                             placeholder="Ví dụ: Công nghệ thông tin"
-                            className="pl-10 bg-muted border-border focus-visible:ring-red-500/20 focus-visible:border-red-500 shadow-sm transition-all"
+                            className="pl-10 h-12 bg-background border-border focus-visible:ring-2 focus-visible:ring-green-500/20 focus-visible:border-green-500 shadow-sm transition-all rounded-xl font-medium"
                           />
                         </div>
                     </div>
@@ -555,20 +559,20 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
   
               </div>
   
-              <div className="mt-8 pt-6 border-t border-slate-100 flex justify-end gap-3">
+              <div className="mt-8 pt-8 flex flex-col-reverse sm:flex-row justify-end gap-3 px-2">
                 <Button
                   variant="outline"
                   onClick={() => setIsEditing(false)}
-                  className="hover:bg-red-50 hover:text-red-700 hover:border-red-200"
+                  className="h-14 px-8 rounded-xl font-bold tracking-tight text-muted-foreground hover:bg-muted border-border transition-all w-full sm:w-auto"
                 >
                   Hủy bỏ
                 </Button>
                 <Button
-                  className="bg-red-600 hover:bg-red-700 text-white font-semibold shadow-md transition-shadow hover:shadow-lg"
+                  className="h-14 px-10 rounded-xl bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white font-bold tracking-tight shadow-[0_10px_20px_rgba(220,38,38,0.2)] hover:shadow-[0_15px_25px_rgba(220,38,38,0.3)] hover:-translate-y-0.5 transition-all active:scale-95 w-full sm:w-auto"
                   onClick={handleSaveProfile}
                 >
-                  <Save className="mr-2 h-4 w-4" />
-                  Lưu thay đổi
+                  <Save className="mr-2 h-5 w-5" />
+                  Lưu thay đổi hồ sơ
                 </Button>
               </div>
             </div>
@@ -750,23 +754,20 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
       </Card>
 
       {/* Profile Content */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4 bg-muted">
-          <TabsTrigger value="posts" className="data-[state=active]:bg-background data-[state=active]:text-foreground">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
+        <TabsList className="grid w-full grid-cols-3 p-1.5 bg-muted/60 rounded-2xl border border-border/50 shadow-inner h-14">
+          <TabsTrigger value="posts" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-border/50 font-bold transition-all h-full text-[15px]">
             Bài viết
           </TabsTrigger>
-          <TabsTrigger value="comments" className="data-[state=active]:bg-background data-[state=active]:text-foreground">
+          <TabsTrigger value="comments" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-border/50 font-bold transition-all h-full text-[15px]">
             Bình luận
           </TabsTrigger>
-          <TabsTrigger value="friends" className="data-[state=active]:bg-background data-[state=active]:text-foreground">
+          <TabsTrigger value="friends" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm border border-transparent data-[state=active]:border-border/50 font-bold transition-all h-full text-[15px]">
             Theo dõi ({followersCount})
-          </TabsTrigger>
-          <TabsTrigger value="saved" className="data-[state=active]:bg-background data-[state=active]:text-foreground">
-            Đã lưu
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="posts" className="mt-4 space-y-4">
+        <TabsContent value="posts" className="mt-8 space-y-4">
           {internalUserPosts.length > 0 ? (
             internalUserPosts.map((post: Post) => (
               <PostCard 
@@ -847,23 +848,6 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
           </div>
         </TabsContent>
 
-        <TabsContent value="saved" className="mt-4 space-y-4">
-          {savedPosts.length > 0 ? (
-            savedPosts.map((post) => (
-              <PostCard 
-                key={post.id} 
-                post={post} 
-                onPostClick={onPostClick} 
-                currentUser={currentUser} 
-                onReact={handleReactUpdate}
-              />
-            ))
-          ) : (
-            <Card className="border-border bg-card p-12 text-center">
-              <p className="text-muted-foreground">Chưa có bài viết nào được lưu</p>
-            </Card>
-          )}
-        </TabsContent>
       </Tabs>
       {renderPasswordDialog()}
     </div>

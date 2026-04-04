@@ -199,7 +199,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
     }
 
     try {
-      const res = await fetch(`${API_URL}/comments`, {
+      const res = await fetch(`${API_URL}/comments/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -241,7 +241,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
     }
 
     try {
-      const res = await fetch(`${API_URL}/threads`, {
+      const res = await fetch(`${API_URL}/threads/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -329,267 +329,235 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
   };
 
   return (
-    <div>
-      <Button
-        variant="ghost"
-        className="mb-4 gap-2 hover:bg-muted"
-        onClick={onBack}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Quay lại
-      </Button>
-      
-      {(post.status === 'hidden' || post.status === 'rejected' || post.status === 'pending') && (
-        <Card className={`mb-4 border-2 p-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 ${
-          post.status === 'pending' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
-        }`}>
-          <div className={`p-2 rounded-full ${post.status === 'pending' ? 'bg-amber-100' : 'bg-red-100'}`}>
-            {post.status === 'pending' ? <ShieldAlert className="h-5 w-5 text-amber-600" /> : <Lock className="h-5 w-5 text-red-600" />}
-          </div>
-          <div>
-             <h4 className={`font-bold text-sm ${post.status === 'pending' ? 'text-amber-800' : 'text-red-800'}`}>
-               {post.status === 'pending' ? 'BÀI VIẾT ĐANG CHỜ DUYỆT' : 'BÀI VIẾT ĐÃ BỊ KHÓA'}
-             </h4>
-             <p className={`text-xs ${post.status === 'pending' ? 'text-amber-700' : 'text-red-700'}`}>
-               {post.status === 'pending' 
-                 ? 'Bài viết của bạn đang được quản trị viên kiểm duyệt. Nó sẽ sớm xuất hiện trên trang chủ.' 
-                 : 'Nội dung này đã bị quản trị viên ẩn khỏi trang chủ do vi phạm quy tắc cộng đồng.'}
-             </p>
-          </div>
-          <ShieldAlert className={`ml-auto h-6 w-6 opacity-50 ${post.status === 'pending' ? 'text-amber-300' : 'text-red-300'}`} />
-        </Card>
-      )}
-
-      <PostCard
-        post={post}
-        currentUser={currentUser}
-        onUserClick={onUserClick}
-        onSaveToggle={onSaveToggle}
-        onCommunityClick={onCommunityClick}
-        showAllImages={true}
-      /> <Card
- className="mb-4 border-slate-200 bg-white p-4">
-        <div className="mb-4 flex items-center gap-3">
-          <Avatar className="h-10 w-10 border-2 border-border">
-            <AvatarImage src={getImageUrl(currentUser.avatar)} />
-            <AvatarFallback>{currentUser.name[0]}</AvatarFallback>
-          </Avatar>
-          <span className="text-sm text-muted-foreground">Bình luận với tư cách {currentUser.username}</span>
-        </div>
-
-        <Textarea
-          placeholder="Bạn nghĩ gì về bài viết này?"
-          value={newComment}
-          onChange={(e) => setNewComment(e.target.value)}
-          className="mb-3 min-h-24 border-border focus:ring-primary"
-        />
-
-        {showCommentImageInput && (
-          <div className="mb-3">
-            <Input
-              type="file"
-              accept="image/*"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const formData = new FormData();
-                formData.append('image', file);
-                // Truyền user_id qua query string để backend xác thực trước khi upload lên Cloudinary
-                if (currentUser.id) formData.append('user_id', currentUser.id);
-                try {
-                  const uploadUrl = currentUser.id 
-                    ? `${API_URL}/upload?user_id=${encodeURIComponent(currentUser.id)}` 
-                    : `${API_URL}/upload`;
-                  const res = await fetch(uploadUrl, { method: 'POST', body: formData });
-                  const data = await res.json();
-                  if (data.status === 'success') {
-                    setCommentImage(data.data.url);
-                    toast.success('Đã đính kèm ảnh!');
-                  } else {
-                    toast.error(data.message || 'Lỗi tải ảnh');
-                  }
-                } catch (error) { toast.error('Lỗi kết nối'); }
-              }}
-              className="border-slate-300 focus:ring-primary h-9 cursor-pointer text-sm"
-            />
-            {commentImage && <p className="text-xs text-green-600 font-medium ml-1 mt-1">✓ Ảnh đã sẵn sàng</p>}
-          </div>
+    <div className="flex flex-col h-full w-full bg-background relative">
+      {/* Scrollable Area */}
+      <div className="flex-1 overflow-y-auto px-1 pb-4">
+        {(post.status === 'hidden' || post.status === 'rejected' || post.status === 'pending') && (
+          <Card className={`mb-4 border-2 p-4 flex items-center gap-3 ${
+            post.status === 'pending' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
+          }`}>
+            <div className={`p-2 rounded-full ${post.status === 'pending' ? 'bg-amber-100' : 'bg-red-100'}`}>
+              {post.status === 'pending' ? <ShieldAlert className="h-5 w-5 text-amber-600" /> : <Lock className="h-5 w-5 text-red-600" />}
+            </div>
+            <div>
+               <h4 className={`font-bold text-sm ${post.status === 'pending' ? 'text-amber-800' : 'text-red-800'}`}>
+                 {post.status === 'pending' ? 'BÀI VIẾT ĐANG CHỜ DUYỆT' : 'BÀI VIẾT ĐÃ BỊ KHÓA'}
+               </h4>
+               <p className={`text-xs ${post.status === 'pending' ? 'text-amber-700' : 'text-red-700'}`}>
+                 {post.status === 'pending' 
+                   ? 'Bài viết của bạn đang được quản trị viên kiểm duyệt. Nó sẽ sớm xuất hiện trên trang chủ.' 
+                   : 'Nội dung này đã bị quản trị viên ẩn khỏi trang chủ do vi phạm quy tắc cộng đồng.'}
+               </p>
+            </div>
+            <ShieldAlert className={`ml-auto h-6 w-6 opacity-50 ${post.status === 'pending' ? 'text-amber-300' : 'text-red-300'}`} />
+          </Card>
         )}
 
-        <div className="flex justify-between">
-          <Button variant="ghost" size="sm" onClick={() => setShowCommentImageInput(!showCommentImageInput)}>
-            <ImageIcon className="h-4 w-4 mr-2" /> Đính kèm ảnh
-          </Button>
-          <Button
-            className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground"
-            onClick={handleAddComment}
-          >
-            <Send className="h-4 w-4" />
-            Bình luận
-          </Button>
-        </div>
-      </Card>
+        <PostCard
+          post={post}
+          currentUser={currentUser}
+          onUserClick={onUserClick}
+          onSaveToggle={onSaveToggle}
+          onCommunityClick={onCommunityClick}
+          showAllImages={true}
+        />
 
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-foreground">
-          {comments.length} Bình luận
-        </h3>
-        {comments.map((comment) => (
-          <Card key={comment.id} className="border-border bg-card p-4">
-            <div className="mb-2 flex items-center gap-2">
-              <Avatar
-                className="h-8 w-8 border-2 border-border cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  console.log('Comment user clicked:', comment.author.id);
-                  onUserClick && comment.author.id && onUserClick(comment.author.id);
-                }}
-              >
-                <AvatarImage src={comment.author.avatar} />
-                <AvatarFallback>{comment.author.name[0]}</AvatarFallback>
-              </Avatar>
-              <div className="flex items-center gap-2">
-                <span
-                  className="font-bold text-foreground text-[14px] hover:underline cursor-pointer"
+        <div className="px-3 md:px-0">
+          <div className="mb-3 text-[15px] font-bold text-foreground">
+            {comments.length > 0 ? "Tất cả bình luận" : "Chưa có bình luận"}
+          </div>
+
+          <div className="flex flex-col gap-4">
+            {comments.map((comment) => (
+              <div key={comment.id} className="flex gap-2">
+                <Avatar
+                  className="h-8 w-8 mt-1 border border-border cursor-pointer hover:opacity-80 transition-opacity flex-shrink-0"
                   onClick={(e) => {
                     e.stopPropagation();
-                    console.log('Comment name clicked:', comment.author.id);
                     onUserClick && comment.author.id && onUserClick(comment.author.id);
                   }}
                 >
-                  {comment.author.username}
-                </span>
-                <span className="text-muted-foreground">•</span>
-                <span className="text-sm text-muted-foreground">{comment.timestamp}</span>
+                  <AvatarImage src={comment.author.avatar} />
+                  <AvatarFallback>{comment.author.name[0]}</AvatarFallback>
+                </Avatar>
+                
+                <div className="flex flex-col w-full text-[14px]">
+                  <div className="bg-muted px-3 py-2 rounded-2xl w-fit max-w-[90%] md:max-w-[85%] self-start">
+                    <span
+                      className="font-bold text-foreground hover:underline cursor-pointer block mb-0.5 leading-tight"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUserClick && comment.author.id && onUserClick(comment.author.id);
+                      }}
+                    >
+                      {comment.author.username}
+                    </span>
+                    <p className="text-foreground/90 whitespace-pre-wrap break-words">{comment.content}</p>
+                    {comment.image && (
+                      <img src={comment.image} alt="Bình luận chèn" className="mt-2 max-h-[250px] w-auto rounded-lg" />
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3 text-[12px] font-semibold text-muted-foreground ml-3 mt-1 relative z-0">
+                    <span className="font-normal">{comment.timestamp}</span>
+                    
+                    {currentUser.id === comment.author.id && (
+                      <span 
+                        className="cursor-pointer hover:underline text-red-500"
+                        onClick={() => handleDeleteComment(comment.id)}
+                      >
+                        Xóa
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Vùng Phản Hồi (Thread Reply Input) */}
+                  {replyingTo === comment.id && (
+                    <div className="mt-2 flex gap-2 w-full animate-in fade-in zoom-in-95 duration-200">
+                       <Avatar className="h-6 w-6 mt-1 flex-shrink-0">
+                         <AvatarImage src={getImageUrl(currentUser.avatar)} />
+                         <AvatarFallback>{currentUser.name[0]}</AvatarFallback>
+                       </Avatar>
+                       <div className="flex-1 bg-muted rounded-2xl px-3 py-1.5 focus-within:ring-1 focus-within:ring-primary flex items-center">
+                          <input
+                            type="text"
+                            placeholder="Viết phản hồi..."
+                            value={replyContent}
+                            onChange={(e) => setReplyContent(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleReplySubmit(comment.id); }}
+                            className="bg-transparent text-[13px] flex-1 outline-none min-w-0"
+                          />
+                          <button onClick={() => handleReplySubmit(comment.id)} className="text-primary hover:text-primary/80 shrink-0 ml-1">
+                             <Send className="h-4 w-4" />
+                          </button>
+                       </div>
+                    </div>
+                  )}
+
+                  {/* Hiển thị Các Phản hồi đã lưu trong CSDL của Comment này */}
+                  {comment.threads && comment.threads.length > 0 && (
+                    <div className="mt-2 space-y-3">
+                      {comment.threads.map(thread => (
+                        <div key={thread.id} className="flex gap-2 isolate relative before:absolute before:border-l-2 before:border-b-2 before:border-muted-foreground/30 before:-inset-x-6 before:-inset-y-9 before:w-6 before:h-12 before:rounded-bl-xl before:-z-10">
+                          <Avatar
+                            className="h-6 w-6 mt-1 border border-border cursor-pointer hover:opacity-80 transition-opacity flex-shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUserClick && thread.author.id && onUserClick(thread.author.id);
+                            }}
+                          >
+                            <AvatarImage src={thread.author.avatar} />
+                            <AvatarFallback>{thread.author.name[0]}</AvatarFallback>
+                          </Avatar>
+                          
+                          <div className="flex flex-col w-full text-[13px]">
+                             <div className="bg-muted px-3 py-2 rounded-2xl w-fit max-w-[90%] md:max-w-[85%] self-start">
+                               <span
+                                 className="font-bold text-foreground hover:underline cursor-pointer flex items-center gap-1 mb-0.5"
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   onUserClick && thread.author.id && onUserClick(thread.author.id);
+                                 }}
+                               >
+                                 {thread.author.username}
+                                 {thread.author.username === post.author.username && (
+                                    <span className="bg-blue-100 text-blue-700 text-[9px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide">Tác giả</span>
+                                 )}
+                               </span>
+                               <p className="text-foreground/90 whitespace-pre-wrap break-words">{thread.content}</p>
+                               {thread.image && (
+                                 <img src={thread.image} alt="Thread image" className="mt-2 max-h-[150px] rounded-md" />
+                               )}
+                             </div>
+                             
+                             <div className="flex items-center gap-3 text-[11px] font-semibold text-muted-foreground ml-3 mt-1">
+                                <span className="font-normal">{thread.timestamp}</span>
+                                {currentUser.id === thread.author.id && (
+                                  <span 
+                                    className="cursor-pointer hover:underline text-red-500"
+                                    onClick={() => handleDeleteThread(comment.id, thread.id)}
+                                  >
+                                    Xóa
+                                  </span>
+                                )}
+                             </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-            <p className="mb-2 text-foreground/90">{comment.content}</p>
-            {comment.image && (
-              <img src={comment.image} alt="Bình luận chèn" className="mb-3 max-w-[200px] rounded-lg" />
-            )}
+            ))}
+          </div>
+        </div>
+      </div>
 
-            <div className="flex items-center gap-2 text-sm text-muted-foreground border-t border-border mt-2 pt-2">
-              {/* Emoji Reaction Picker hover for comment */}
-              <CommentReaction
-                commentId={comment.id}
-                initialVote={comment.userVote ?? null}
-                initialUp={comment.upvotes}
-                initialDown={comment.downvotes}
-                currentUserId={currentUser.id}
-              />
-              {/* Reply button: only post author */}
-              {currentUser.username === post.author.username && (
-                <Button variant="ghost" size="sm" className="h-7 hover:bg-muted text-primary text-xs" onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}>
-                  Trả lời (Tác giả)
-                </Button>
-              )}
-              {/* Delete button: only comment author */}
-              {currentUser.id === comment.author.id && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 hover:bg-red-50 text-red-500 text-xs gap-1"
-                  onClick={() => handleDeleteComment(comment.id)}
-                >
-                  <Trash2 className="h-3 w-3" />
-                  Xóa
-                </Button>
-              )}
-            </div>
-
-            {/* Vùng Phản Hồi (Thread Reply Input) */}
-            {replyingTo === comment.id && (
-              <div className="mt-4 ml-8 pl-4 border-l-2 border-blue-200">
-                <Textarea
-                  placeholder="Viết phản hồi của bạn dưới tư cách tác giả..."
-                  value={replyContent}
-                  onChange={(e) => setReplyContent(e.target.value)}
-                  className="mb-2 min-h-16 text-sm"
-                />
-                <div className="mb-2">
-                  <Input
+      {/* Sticky Comment Footer */}
+      <div className="shrink-0 p-3 pt-4 bg-background border-t border-border flex items-end gap-2.5 w-full shadow-[0px_-4px_10px_rgba(0,0,0,0.03)] z-20">
+        <Avatar className="h-9 w-9 shrink-0 shadow-sm border border-border mt-0.5">
+          <AvatarImage src={getImageUrl(currentUser.avatar)} />
+          <AvatarFallback>{currentUser.name[0]}</AvatarFallback>
+        </Avatar>
+        
+        <div className="flex-1 flex flex-col bg-muted/80 rounded-2xl focus-within:ring-2 focus-within:ring-primary focus-within:bg-background transition-colors border border-transparent focus-within:border-primary/20 shadow-inner">
+          <div className="flex items-center w-full px-3 py-2 min-h-[44px]">
+             <input
+               type="text"
+               placeholder="Viết bình luận công khai..."
+               value={newComment}
+               onChange={(e) => setNewComment(e.target.value)}
+               onKeyDown={(e) => {
+                 if (e.key === 'Enter') handleAddComment();
+               }}
+               className="flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/80 min-w-0"
+             />
+             <div className="flex items-center gap-0.5 shrink-0 ml-1">
+                <label className="text-muted-foreground hover:text-foreground cursor-pointer p-1.5 rounded-full hover:bg-black/5 transition-colors">
+                  <ImageIcon className="h-5 w-5" />
+                  <input
                     type="file"
                     accept="image/*"
+                    hidden
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
                       const formData = new FormData();
                       formData.append('image', file);
-                      // Truyền user_id qua query string để backend xác thực trước khi upload lên Cloudinary
                       if (currentUser.id) formData.append('user_id', currentUser.id);
                       try {
-                        const uploadUrl = currentUser.id 
-                          ? `${API_URL}/upload?user_id=${encodeURIComponent(currentUser.id)}` 
-                          : `${API_URL}/upload`;
+                        const uploadUrl = currentUser.id ? `${API_URL}/upload?user_id=${encodeURIComponent(currentUser.id)}` : `${API_URL}/upload`;
                         const res = await fetch(uploadUrl, { method: 'POST', body: formData });
                         const data = await res.json();
                         if (data.status === 'success') {
-                          setReplyImage(data.data.url);
+                          setCommentImage(data.data.url);
                           toast.success('Đã đính kèm ảnh!');
-                        } else {
-                          toast.error(data.message || 'Lỗi tải ảnh');
-                        }
+                        } else { toast.error(data.message || 'Lỗi tải ảnh'); }
                       } catch (error) { toast.error('Lỗi kết nối'); }
                     }}
-                    className="h-9 text-sm cursor-pointer"
                   />
-                  {replyImage && <p className="text-xs text-green-600 font-medium ml-1 mt-1">✓ Ảnh đã sẵn sàng</p>}
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={() => handleReplySubmit(comment.id)}>Gửi Phản hồi</Button>
-                  <Button size="sm" variant="outline" onClick={() => setReplyingTo(null)}>Hủy</Button>
-                </div>
-              </div>
-            )}
-
-            {/* Hiển thị Các Phản hồi đã lưu trong CSDL của Comment này */}
-            {comment.threads && comment.threads.length > 0 && (
-              <div className="mt-4 ml-8 pl-4 border-l-2 border-border space-y-3">
-                {comment.threads.map(thread => (
-                  <div key={thread.id} className="bg-muted p-3 rounded-md">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Avatar
-                        className="h-6 w-6 cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          console.log('Thread user clicked:', thread.author.id);
-                          onUserClick && thread.author.id && onUserClick(thread.author.id);
-                        }}
-                      >
-                        <AvatarImage src={thread.author.avatar} />
-                        <AvatarFallback>{thread.author.name[0]}</AvatarFallback>
-                      </Avatar>
-                      <span
-                        className="font-bold text-foreground text-xs cursor-pointer hover:underline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          console.log('Thread name clicked:', thread.author.id);
-                          onUserClick && thread.author.id && onUserClick(thread.author.id);
-                        }}
-                      >
-                        {thread.author.username} (Chủ thớt)
-                      </span>
-                      <span className="text-xs text-muted-foreground">{thread.timestamp}</span>
-                      {currentUser.id === thread.author.id && (
-                        <button
-                          className="ml-auto text-red-400 hover:text-red-600 transition-colors"
-                          onClick={() => handleDeleteThread(comment.id, thread.id)}
-                          title="Xóa phản hồi"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-sm text-foreground/80">{thread.content}</p>
-                    {thread.image && (
-                      <img src={thread.image} alt="Thread image" className="mt-2 max-w-[150px] rounded-md" />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        ))}
+                </label>
+             </div>
+          </div>
+          {commentImage && (
+            <div className="px-3 pb-2 flex items-center">
+               <div className="relative inline-block mt-0.5">
+                  <img src={commentImage} alt="Attachment" className="h-16 w-16 object-cover rounded-xl border border-border shadow-sm" />
+                  <button onClick={() => setCommentImage('')} className="absolute -top-1.5 -right-1.5 bg-foreground text-background rounded-full p-0.5 shadow-md hover:bg-red-500 transition-colors">
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+               </div>
+            </div>
+          )}
+        </div>
+        
+        <button 
+          onClick={handleAddComment} 
+          disabled={!newComment.trim() && !commentImage}
+          className="h-11 w-11 rounded-full flex shrink-0 items-center justify-center bg-primary text-primary-foreground shadow-sm hover:opacity-90 disabled:opacity-50 disabled:bg-muted disabled:text-muted-foreground transition-all duration-200"
+        >
+          <Send className="h-5 w-5 ml-[-2px]" />
+        </button>
       </div>
     </div>
   );
