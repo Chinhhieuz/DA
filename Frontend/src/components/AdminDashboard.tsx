@@ -26,7 +26,8 @@ import {
   Plus,
   Image as ImageIcon,
   Maximize2,
-  Check
+  Check,
+  Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { API_URL, API_BASE_URL } from '@/lib/api';
@@ -386,6 +387,27 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       if (!response.ok) throw new Error(data.message || 'Lỗi cập nhật tài khoản');
       toast.success('Cập nhật tài khoản thành công!');
       setIsEditOpen(false);
+      handleSearchUsers(userSearchQuery); // Refresh the list
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa tài khoản này không? Toàn bộ bài viết và bình luận của người dùng này sẽ bị gỡ bỏ vĩnh viễn!")) return;
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_id: currentUser?.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Lỗi xóa tài khoản');
+      toast.success('Đã xóa tài khoản thành công!');
+      fetchStats(); 
       handleSearchUsers(userSearchQuery); // Refresh the list
     } catch (err: any) {
       toast.error(err.message);
@@ -1163,14 +1185,24 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary"
-                            onClick={() => openEditDialog(user)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary"
+                              onClick={() => openEditDialog(user)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 hover:bg-red-500/10 hover:text-red-500 text-red-500/70"
+                              onClick={() => handleDeleteUser(user._id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}

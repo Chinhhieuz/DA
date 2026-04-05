@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, TrendingUp, Users, Clock, ArrowRight, MessageSquare, Heart, Share2, Trash2, UserPlus, Check } from 'lucide-react';
 import { API_URL } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -8,14 +8,6 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PostCard, Post } from './PostCard';
-
-const trendingTopics = [
-  { tag: 'lập trình', posts: '5.2K' },
-  { tag: 'cơ sở dữ liệu', posts: '3.1K' },
-  { tag: 'trí tuệ nhân tạo', posts: '4.8K' },
-  { tag: 'mạng máy tính', posts: '2.4K' },
-  { tag: 'cấu trúc dữ liệu', posts: '1.9K' },
-];
 
 interface SearchViewProps {
   onPostClick?: (post: Post) => void;
@@ -28,6 +20,25 @@ export function SearchView({ onPostClick, onUserClick, currentUser }: SearchView
   const [filteredPosts, setFilteredPosts] = useState<Post[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [trendingTopics, setTrendingTopics] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchTrendingTopics = async () => {
+      try {
+        const res = await fetch(`${API_URL}/communities`);
+        const data = await res.json();
+        if (data.status === 'success') {
+          const sorted = data.data
+            .sort((a: any, b: any) => (b.postCount || 0) - (a.postCount || 0))
+            .slice(0, 7);
+          setTrendingTopics(sorted);
+        }
+      } catch (err) {
+        console.error('Lỗi khi tải chủ đề thịnh hành:', err);
+      }
+    };
+    fetchTrendingTopics();
+  }, []);
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
@@ -119,13 +130,14 @@ export function SearchView({ onPostClick, onUserClick, currentUser }: SearchView
             <div className="flex flex-wrap gap-2">
               {trendingTopics.map((topic) => (
                 <Badge
-                  key={topic.tag}
+                  key={topic._id}
                   variant="secondary"
-                  className="cursor-pointer bg-white text-gray-900 px-4 py-2 hover:bg-slate-100"
-                  onClick={() => handleSearch(topic.tag)}
+                  className="cursor-pointer bg-white text-gray-900 px-4 py-2 hover:bg-slate-100 shadow-sm"
+                  onClick={() => handleSearch(topic.name)}
                 >
-                  #{topic.tag}
-                  <span className="ml-2 text-gray-500">• {topic.posts} bài</span>
+                  <span className="mr-1.5">{topic.icon || '📌'}</span>
+                  {topic.name}
+                  <span className="ml-2 text-gray-500 font-medium tracking-wide">• {topic.postCount || 0} bài</span>
                 </Badge>
               ))}
             </div>

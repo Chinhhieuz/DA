@@ -75,4 +75,13 @@ const updateUser = async (req, res) => {
     }
 };
 
-module.exports = { getStats, unlockAccount, getLockedAccounts, getHiddenPosts, restorePost, getUsers, updateUser };
+const deleteUser = async (req, res) => {
+    try {
+        await adminService.deleteUserService({ admin_id: req.body.admin_id, id: req.params.id });
+        return res.status(200).json({ status: 'success', message: 'Đã xóa người dùng thành công!' });
+    } catch (error) {
+        return handleServiceError(error, res);
+    }
+};
+
+module.exports = { getStats, unlockAccount, getLockedAccounts, getHiddenPosts, restorePost, getUsers, updateUser, deleteUser };

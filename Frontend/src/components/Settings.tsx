@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Bell, Lock, Palette, LogOut, Eye, EyeOff } from 'lucide-react';
 import { API_URL } from '@/lib/api';
 import { Card } from "@/components/ui/card";
@@ -19,11 +19,34 @@ export function Settings({ currentUser, onUpdatePreferences, onLogout }:
   const [commentNotif, setCommentNotif] = useState(currentUser?.preferences?.commentNotifications ?? true);
   const [darkMode, setDarkMode] = useState(currentUser?.preferences?.darkMode ?? false);
 
+  // Đồng bộ props với state nội bộ khi currentUser tải về chậm (từ App.tsx)
+  useEffect(() => {
+    if (currentUser?.preferences) {
+       setPushNotif(currentUser.preferences.pushNotifications ?? true);
+       setCommentNotif(currentUser.preferences.commentNotifications ?? true);
+       setDarkMode(currentUser.preferences.darkMode ?? false);
+    }
+  }, [currentUser?.preferences]);
+
   const handlePreferencesChange = async (key: string, value: boolean) => {
      const newPrefs = { pushNotifications: pushNotif, commentNotifications: commentNotif, darkMode, [key]: value };
      if (key === 'pushNotifications') setPushNotif(value);
      if (key === 'commentNotifications') setCommentNotif(value);
      if (key === 'darkMode') setDarkMode(value);
+
+     if (key === 'pushNotifications' && value && 'Notification' in window && Notification.permission !== 'granted') {
+        try {
+           Notification.requestPermission().then(perm => {
+              if (perm !== 'granted') {
+                 toast.error("Vui lòng cấp quyền thông báo trong cài đặt trình duyệt!");
+              }
+           }).catch(() => {
+              toast.error("Trình duyệt đã chặn cửa sổ xin quyền. Vui lòng ấn vào biểu tượng tùy chỉnh cạnh thanh địa chỉ URL để mở rào chắn!");
+           });
+        } catch (e) {
+           toast.error("Vui lòng cấp quyền thông báo trong cài đặt trình duyệt!");
+        }
+     }
 
      if (onUpdatePreferences) onUpdatePreferences(newPrefs);
      

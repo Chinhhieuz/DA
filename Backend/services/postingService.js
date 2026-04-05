@@ -1,10 +1,18 @@
 const Post = require('../models/Post');
 const Account = require('../models/Account'); 
 const Comment = require('../models/Comment');
+const Thread = require('../models/Thread');
 const Notification = require('../models/Notification');
 const socketModule = require('../socket');
 const { formatPostData } = require('../utils/postFormatter');
 const mongoose = require('mongoose');
+
+const getPostCommentAndThreadCount = async (postId) => {
+    const baseCommentCount = await Comment.countDocuments({ post: postId });
+    const commentIds = await Comment.distinct('_id', { post: postId });
+    const threadCount = await Thread.countDocuments({ comment: { $in: commentIds } });
+    return baseCommentCount + threadCount;
+};
 
 const createPostService = async (postData) => {
     const { author_id, title, content, community, image_url, image_urls } = postData;
@@ -48,7 +56,7 @@ const getAllPostsService = async ({ userId, community }) => {
     }
 
     const postsWithDetails = await Promise.all(posts.map(async (post) => {
-        const commentCount = await Comment.countDocuments({ post: post._id });
+        const commentCount = await getPostCommentAndThreadCount(post._id);
         const recentComments = await Comment.find({ post: post._id })
             .sort({ created_at: -1 })
             .limit(1)
@@ -84,7 +92,7 @@ const getTrendingPostsService = async (userId) => {
     }
 
     const trendingPosts = await Promise.all(posts.map(async (post) => {
-        const commentCount = await Comment.countDocuments({ post: post._id });
+        const commentCount = await getPostCommentAndThreadCount(post._id);
         const recentComments = await Comment.find({ post: post._id })
             .sort({ created_at: -1 })
             .limit(1)
@@ -109,6 +117,10 @@ const getTrendingPostsService = async (userId) => {
 const reactToPostService = async ({ id, user_id, action, type }) => {
     const post = await Post.findById(id);
     if (!post) throw new Error('NOT_FOUND:Không tìm thấy bài viết');
+    
+    if (post.status !== 'approved') {
+        throw new Error('FORBIDDEN:Bài viết này đã bị khóa!');
+    }
 
     if (!post.reactions) post.reactions = [];
 
@@ -242,7 +254,7 @@ const getSavedPostsService = async (userId) => {
     }
 
     const postsWithDetails = await Promise.all(validPosts.map(async (post) => {
-        const commentCount = await Comment.countDocuments({ post: post._id });
+        const commentCount = await getPostCommentAndThreadCount(post._id);
         const recentComments = await Comment.find({ post: post._id })
             .sort({ created_at: -1 })
             .limit(1)
@@ -290,7 +302,7 @@ const searchPostsService = async ({ q, userId }) => {
     }
 
     const formattedResults = await Promise.all(posts.map(async (post) => {
-        const commentCount = await Comment.countDocuments({ post: post._id });
+        const commentCount = await getPostCommentAndThreadCount(post._id);
         const recentComments = await Comment.find({ post: post._id })
             .sort({ created_at: -1 })
             .limit(1)
@@ -345,7 +357,7 @@ const getPostByIdService = async ({ id, userId }) => {
     }
 
     const [commentCount, recentComments] = await Promise.all([
-        Comment.countDocuments({ post: post._id }),
+        getPostCommentAndThreadCount(post._id),
         Comment.find({ post: post._id }).sort({ created_at: -1 }).limit(1).populate('author', 'username display_name').lean()
     ]);
 
