@@ -29,11 +29,10 @@ interface HeaderProps {
   onLogout?: () => void;
   allPosts?: Post[];
   onPostClick?: (post: Post) => void;
+  onCommunityClick?: (community: string) => void;
 }
 
-const trendingTags = ['sinh viên', 'học tập', 'chia sẻ', 'giải trí', 'thông tin'];
-
-export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notificationCount, isAuthenticated, currentUser, onLogout, allPosts = [], onPostClick }: HeaderProps) {
+export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notificationCount, isAuthenticated, currentUser, onLogout, allPosts = [], onPostClick, onCommunityClick }: HeaderProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -41,8 +40,27 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
   const [feedbackContent, setFeedbackContent] = useState('');
   const [feedbackType, setFeedbackType] = useState('suggestion');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [trendingTopics, setTrendingTopics] = useState<any[]>([]);
   const searchRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fetchTrendingTopics = async () => {
+      try {
+        const res = await fetch(`${API_URL}/communities`);
+        const data = await res.json();
+        if (data.status === 'success') {
+          const sorted = data.data
+            .sort((a: any, b: any) => (b.postCount || 0) - (a.postCount || 0))
+            .slice(0, 5);
+          setTrendingTopics(sorted);
+        }
+      } catch (err) {
+        console.error('Lỗi tải chủ đề phổ biến:', err);
+      }
+    };
+    fetchTrendingTopics();
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -152,13 +170,17 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
                     <span className="text-sm font-semibold text-foreground">Chủ đề phổ biến</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {trendingTags.map((tag) => (
+                    {trendingTopics.map((topic) => (
                       <button
-                        key={tag}
-                        className="px-3 py-1.5 bg-muted hover:bg-muted/80 rounded-full text-sm text-foreground transition-colors"
-                        onClick={() => setSearchQuery(tag)}
+                        key={topic._id}
+                        className="px-3 py-1.5 bg-muted hover:bg-muted/80 rounded-full text-sm text-foreground transition-colors shadow-sm"
+                        onClick={() => {
+                          setIsSearchOpen(false);
+                          if (onCommunityClick) onCommunityClick(topic.name);
+                        }}
                       >
-                        #{tag}
+                        <span className="mr-1 opacity-80">{topic.icon || '📌'}</span>
+                        {topic.name}
                       </button>
                     ))}
                   </div>

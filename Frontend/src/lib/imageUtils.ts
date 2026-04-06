@@ -7,7 +7,7 @@ import { API_BASE_URL as BASE_URL } from './api';
  * - Nếu null/undefined → trả về ảnh mặc định
  */
 export function getImageUrl(url?: string | null, fallback?: string): string {
-  const defaultAvatar = fallback || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100';
+  const defaultAvatar = fallback !== undefined ? fallback : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100';
   
   if (!url || url === 'null' || url === 'undefined' || url === '') {
     return defaultAvatar;

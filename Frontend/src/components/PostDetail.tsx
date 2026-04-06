@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Send, Image as ImageIcon, ArrowBigUp, ArrowBigDown, Trash2, ShieldAlert, Lock } from 'lucide-react';
+import { ArrowLeft, Send, Image as ImageIcon, ArrowBigUp, ArrowBigDown, Trash2, ShieldAlert, Lock, ChevronLeft, CornerDownRight } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getImageUrl } from '@/lib/imageUtils';
 import { API_URL } from '@/lib/api';
 
-import { PostCard, Post, Comment } from './PostCard';
+import { PostCard, Post, Comment, Thread as ThreadType } from './PostCard';
 import { toast } from 'sonner';
 
 
@@ -134,9 +134,10 @@ interface PostDetailProps {
   onUserClick: (userId: string) => void;
   onSaveToggle?: (postId: string, isSaved: boolean) => void;
   onCommunityClick?: (community: string) => void;
+  onReact?: (postId: string, action: string, type: string) => void;
 }
 
-export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClick, onSaveToggle, onCommunityClick }: PostDetailProps) {
+export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClick, onSaveToggle, onCommunityClick, onReact }: PostDetailProps) {
   const [newComment, setNewComment] = useState('');
   const [commentImage, setCommentImage] = useState('');
   const [showCommentImageInput, setShowCommentImageInput] = useState(false);
@@ -353,9 +354,10 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
           </Card>
         )}
 
-        <PostCard
-          post={post}
-          currentUser={currentUser}
+        <PostCard 
+          post={post} 
+          onReact={onReact} 
+          currentUser={currentUser} 
           onUserClick={onUserClick}
           onSaveToggle={onSaveToggle}
           onCommunityClick={onCommunityClick}
@@ -401,6 +403,13 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
                   <div className="flex items-center gap-3 text-[12px] font-semibold text-muted-foreground ml-3 mt-1 relative z-0">
                     <span className="font-normal">{comment.timestamp}</span>
                     
+                    <span 
+                      className="cursor-pointer hover:underline hover:text-primary transition-colors"
+                      onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
+                    >
+                      Trả lời
+                    </span>
+
                     {currentUser.id === comment.author.id && (
                       <span 
                         className="cursor-pointer hover:underline text-red-500"
@@ -495,69 +504,80 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
 
       {/* Sticky Comment Footer */}
       <div className="shrink-0 p-3 pt-4 bg-background border-t border-border flex items-end gap-2.5 w-full shadow-[0px_-4px_10px_rgba(0,0,0,0.03)] z-20">
-        <Avatar className="h-9 w-9 shrink-0 shadow-sm border border-border mt-0.5">
-          <AvatarImage src={getImageUrl(currentUser.avatar)} />
-          <AvatarFallback>{currentUser.name[0]}</AvatarFallback>
-        </Avatar>
-        
-        <div className="flex-1 flex flex-col bg-muted/80 rounded-2xl focus-within:ring-2 focus-within:ring-primary focus-within:bg-background transition-colors border border-transparent focus-within:border-primary/20 shadow-inner">
-          <div className="flex items-center w-full px-3 py-2 min-h-[44px]">
-             <input
-               type="text"
-               placeholder="Viết bình luận công khai..."
-               value={newComment}
-               onChange={(e) => setNewComment(e.target.value)}
-               onKeyDown={(e) => {
-                 if (e.key === 'Enter') handleAddComment();
-               }}
-               className="flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/80 min-w-0"
-             />
-             <div className="flex items-center gap-0.5 shrink-0 ml-1">
-                <label className="text-muted-foreground hover:text-foreground cursor-pointer p-1.5 rounded-full hover:bg-black/5 transition-colors">
-                  <ImageIcon className="h-5 w-5" />
-                  <input
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const formData = new FormData();
-                      formData.append('image', file);
-                      if (currentUser.id) formData.append('user_id', currentUser.id);
-                      try {
-                        const uploadUrl = currentUser.id ? `${API_URL}/upload?user_id=${encodeURIComponent(currentUser.id)}` : `${API_URL}/upload`;
-                        const res = await fetch(uploadUrl, { method: 'POST', body: formData });
-                        const data = await res.json();
-                        if (data.status === 'success') {
-                          setCommentImage(data.data.url);
-                          toast.success('Đã đính kèm ảnh!');
-                        } else { toast.error(data.message || 'Lỗi tải ảnh'); }
-                      } catch (error) { toast.error('Lỗi kết nối'); }
-                    }}
-                  />
-                </label>
-             </div>
+        {post.status !== 'approved' ? (
+          <div className="flex-1 flex items-center justify-center py-3 bg-muted/50 rounded-2xl border border-border border-dashed text-muted-foreground gap-2">
+            <Lock className="h-4 w-4" />
+            <span className="text-[14px] font-medium">
+              Bài viết này đã bị khóa tương tác
+            </span>
           </div>
-          {commentImage && (
-            <div className="px-3 pb-2 flex items-center">
-               <div className="relative inline-block mt-0.5">
-                  <img src={commentImage} alt="Attachment" className="h-16 w-16 object-cover rounded-xl border border-border shadow-sm" />
-                  <button onClick={() => setCommentImage('')} className="absolute -top-1.5 -right-1.5 bg-foreground text-background rounded-full p-0.5 shadow-md hover:bg-red-500 transition-colors">
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-               </div>
+        ) : (
+          <>
+            <Avatar className="h-9 w-9 shrink-0 shadow-sm border border-border mt-0.5">
+              <AvatarImage src={getImageUrl(currentUser.avatar)} />
+              <AvatarFallback>{currentUser.name[0]}</AvatarFallback>
+            </Avatar>
+            
+            <div className="flex-1 flex flex-col bg-muted/80 rounded-2xl focus-within:ring-2 focus-within:ring-primary focus-within:bg-background transition-colors border border-transparent focus-within:border-primary/20 shadow-inner">
+              <div className="flex items-center w-full px-3 py-2 min-h-[44px]">
+                <input
+                  type="text"
+                  placeholder="Viết bình luận công khai..."
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddComment();
+                  }}
+                  className="flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/80 min-w-0"
+                />
+                <div className="flex items-center gap-0.5 shrink-0 ml-1">
+                    <label className="text-muted-foreground hover:text-foreground cursor-pointer p-1.5 rounded-full hover:bg-black/5 transition-colors">
+                      <ImageIcon className="h-5 w-5" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const formData = new FormData();
+                          formData.append('image', file);
+                          if (currentUser.id) formData.append('user_id', currentUser.id);
+                          try {
+                            const uploadUrl = currentUser.id ? `${API_URL}/upload?user_id=${encodeURIComponent(currentUser.id)}` : `${API_URL}/upload`;
+                            const res = await fetch(uploadUrl, { method: 'POST', body: formData });
+                            const data = await res.json();
+                            if (data.status === 'success') {
+                              setCommentImage(data.data.url);
+                              toast.success('Đã đính kèm ảnh!');
+                            } else { toast.error(data.message || 'Lỗi tải ảnh'); }
+                          } catch (error) { toast.error('Lỗi kết nối'); }
+                        }}
+                      />
+                    </label>
+                </div>
+              </div>
+              {commentImage && (
+                <div className="px-3 pb-2 flex items-center">
+                  <div className="relative inline-block mt-0.5">
+                      <img src={commentImage} alt="Attachment" className="h-16 w-16 object-cover rounded-xl border border-border shadow-sm" />
+                      <button onClick={() => setCommentImage('')} className="absolute -top-1.5 -right-1.5 bg-foreground text-background rounded-full p-0.5 shadow-md hover:bg-red-500 transition-colors">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        
-        <button 
-          onClick={handleAddComment} 
-          disabled={!newComment.trim() && !commentImage}
-          className="h-11 w-11 rounded-full flex shrink-0 items-center justify-center bg-primary text-primary-foreground shadow-sm hover:opacity-90 disabled:opacity-50 disabled:bg-muted disabled:text-muted-foreground transition-all duration-200"
-        >
-          <Send className="h-5 w-5 ml-[-2px]" />
-        </button>
+            
+            <button 
+              onClick={handleAddComment} 
+              disabled={!newComment.trim() && !commentImage}
+              className="h-11 w-11 rounded-full flex shrink-0 items-center justify-center bg-primary text-primary-foreground shadow-sm hover:opacity-90 disabled:opacity-50 disabled:bg-muted disabled:text-muted-foreground transition-all duration-200"
+            >
+              <Send className="h-5 w-5 ml-[-2px]" />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

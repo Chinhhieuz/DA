@@ -3,7 +3,7 @@ import { getImageUrl } from '@/lib/imageUtils';
 import { API_URL } from '@/lib/api';
 import { toast } from 'sonner';
 import DOMPurify from 'dompurify';
-import { MessageCircle, MoreHorizontal, Flag, ArrowBigUp, ArrowBigDown, Share2, Trash2, Bookmark, UserPlus, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MessageCircle, MoreHorizontal, Flag, ArrowBigUp, ArrowBigDown, Share2, Trash2, Bookmark, UserPlus, Check, X, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -226,7 +226,7 @@ export interface Post {
 interface PostCardProps {
   post: Post;
   onPostClick?: (post: Post) => void;
-  currentUser?: { id?: string; savedPosts?: string[] };
+  currentUser?: { id?: string; savedPosts?: string[]; role?: string };
   onReact?: (postId: string, action: string, type: string) => void;
   onUserClick?: (userId: string) => void;
   onSaveToggle?: (postId: string, isSaved: boolean) => void;
@@ -292,10 +292,15 @@ export function PostCard({
     }
   };
 
-  const handleVote = async (type: 'up' | 'down') => {
+  const handleVote = async (e: React.MouseEvent, type: 'up' | 'down') => {
+    e.stopPropagation();
     if (!currentUser?.id) {
-       toast.error('Vui lòng đăng nhập để thao tác!');
-       return;
+      toast.error('Vui lòng đăng nhập để bình chọn!');
+      return;
+    }
+    if (post.status !== 'approved') {
+      toast.error('Bài viết này đã bị khóa!');
+      return;
     }
 
     const isRemoving = userReaction === type || (type === 'up' && userReaction === '👍');
@@ -348,10 +353,8 @@ export function PostCard({
   };
 
   const handleShare = () => {
-    const url = `${window.location.origin}${window.location.pathname}?postId=${post.id}`;
-    navigator.clipboard.writeText(url)
-      .then(() => toast.success('Đã sao chép liên kết vào bộ nhớ tạm!'))
-      .catch(() => toast.error('Không thể tự động sao chép liên kết.'));
+    navigator.clipboard.writeText(`${window.location.origin}/?view=post&id=${post.id}`);
+    toast.success('Đã sao chép liên kết vào clipboard');
   };
 
   const handleDeletePost = async () => {
@@ -367,7 +370,6 @@ export function PostCard({
       const data = await res.json();
       if (data.status === 'success') {
         toast.success('Đã xóa bài viết thành công!');
-        // Reload lại trang hoặc cập nhật state ở component cha (App.tsx)
         window.location.reload(); 
       } else {
         toast.error(data.message);
@@ -402,13 +404,13 @@ export function PostCard({
                 </span>
                 <span className="text-muted-foreground text-[11px] font-medium">• {post.timestamp}</span>
               </div>
-              <div className="mt-0.5">
+              <div className="mt-0.5 flex flex-wrap gap-1">
                 <Badge 
                   variant="secondary" 
-                  className="bg-red-50 text-red-700 hover:bg-red-100 font-semibold px-2 py-0.5 text-[10px] tracking-wider cursor-pointer transition-colors border border-red-100 uppercase"
+                  className="bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer flex gap-1 items-center font-semibold border-none"
                   onClick={(e) => { e.stopPropagation(); onCommunityClick && onCommunityClick(post.community); }}
                 >
-                  #{post.community.replace(/^[rdD]\//, '')}
+                  {post.community}
                 </Badge>
                 
                 {/* Status Badge - Only for non-approved posts */}
@@ -529,7 +531,7 @@ export function PostCard({
                   variant="ghost"
                   size="sm"
                   className={`rounded-full h-8 w-8 p-0 transition-colors ${userReaction === 'up' || userReaction === '👍' ? 'text-orange-600 bg-orange-50 hover:bg-orange-100' : 'text-muted-foreground hover:text-orange-600 hover:bg-orange-50'}`}
-                  onClick={() => handleVote('up')}
+                  onClick={(e) => handleVote(e, 'up')}
                 >
                   <ArrowBigUp className={`h-5 w-5 ${userReaction === 'up' || userReaction === '👍' ? 'fill-orange-600' : ''}`} />
                 </Button>
@@ -545,7 +547,7 @@ export function PostCard({
                   variant="ghost"
                   size="sm"
                   className={`rounded-full h-8 w-8 p-0 transition-colors ${userReaction === 'down' ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
-                  onClick={() => handleVote('down')}
+                  onClick={(e) => handleVote(e, 'down')}
                 >
                   <ArrowBigDown className={`h-5 w-5 ${userReaction === 'down' ? 'fill-blue-600' : ''}`} />
                 </Button>
@@ -584,7 +586,7 @@ export function PostCard({
               <DropdownMenuContent align="end" className="w-64 bg-card p-2 shadow-lg border border-border">
                 <DropdownMenuItem onClick={handleSavePost} className="cursor-pointer gap-3 p-3 text-sm font-medium text-foreground focus:bg-muted focus:text-foreground">
                   <Bookmark className={`h-5 w-5 ${currentUser?.savedPosts?.includes(post.id) ? 'fill-primary text-primary' : 'text-foreground'}`} />
-                  <span>{currentUser?.savedPosts?.includes(post.id) ? 'Hủy lưu bài viết' : 'Lưu bài viết'}</span>
+                  <span>{currentUser?.savedPosts?.includes(post.id) ? 'Hủy đã lưu' : 'Lưu bài viết'}</span>
                 </DropdownMenuItem>
 
                 <DropdownMenuItem onClick={handleReportAction} className="cursor-pointer gap-3 p-3 text-sm font-medium focus:bg-muted text-red-600 focus:text-red-700">

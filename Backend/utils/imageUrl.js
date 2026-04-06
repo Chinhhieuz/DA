@@ -1,5 +1,5 @@
 const getImageUrl = (url, fallback) => {
-    const defaultAvatar = fallback || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100';
+    const defaultAvatar = fallback !== undefined ? fallback : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100';
     if (!url || url === 'null' || url === 'undefined' || url === '') {
         return defaultAvatar;
     }

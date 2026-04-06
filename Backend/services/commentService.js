@@ -19,6 +19,7 @@ const createCommentService = async (commentData) => {
     ]);
     
     if (!postExists) throw new Error('NOT_FOUND:Bài viết không tồn tại!');
+    if (postExists.status !== 'approved') throw new Error('FORBIDDEN:Bài viết này đã bị khóa bình luận!');
     if (!userExists) throw new Error('NOT_FOUND:Người bình luận không tồn tại!');
     
     const newComment = new Comment({

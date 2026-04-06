@@ -25,4 +25,7 @@ router.get('/users', isAdmin, adminController.getUsers);
 // API Cập nhật thông tin người dùng
 router.put('/users/:id', isAdmin, adminController.updateUser);
 
+// API Xóa người dùng
+router.delete('/users/:id', isAdmin, adminController.deleteUser);
+
 module.exports = router;

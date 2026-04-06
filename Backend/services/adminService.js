@@ -109,6 +109,32 @@ const updateUserService = async ({ admin_id, id }, updateData) => {
     return true;
 };
 
+const deleteUserService = async ({ admin_id, id }) => {
+    await checkAdminRights(admin_id);
+
+    const user = await Account.findById(id);
+    if (!user) throw new Error('NOT_FOUND:Người dùng không tồn tại!');
+    
+    if (user.role && user.role.toLowerCase() === 'admin') {
+        throw new Error('FORBIDDEN:Không thể xóa tài khoản Quản trị viên!');
+    }
+
+    const Comment = require('../models/Comment');
+    const Thread = require('../models/Thread');
+    
+    const posts = await Post.find({ author: id });
+    const postIds = posts.map(p => p._id);
+
+    await Post.deleteMany({ author: id });
+    await Comment.deleteMany({ post: { $in: postIds } });
+    await Comment.deleteMany({ author: id });
+    await Thread.deleteMany({ author: id });
+
+    await Account.findByIdAndDelete(id);
+
+    return true;
+};
+
 module.exports = {
     getStatsService,
     unlockAccountService,
@@ -116,5 +142,6 @@ module.exports = {
     getHiddenPostsService,
     restorePostService,
     getUsersService,
-    updateUserService
+    updateUserService,
+    deleteUserService
 };

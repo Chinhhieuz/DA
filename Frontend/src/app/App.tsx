@@ -103,7 +103,8 @@ export default function App() {
                 bio: u.bio,
                 location: u.location,
                 website: u.website,
-                preferences: u.preferences || userData.preferences
+                preferences: u.preferences || userData.preferences,
+                savedPosts: u.savedPosts || userData.savedPosts || []
               };
               setCurrentUser(freshUser);
               localStorage.setItem('currentUser', JSON.stringify(freshUser));
@@ -426,9 +427,6 @@ export default function App() {
     setCurrentUser(updatedUser);
     localStorage.setItem('currentUser', JSON.stringify(updatedUser));
   };
-
-
-
   const handleLogout = () => {
     setIsAuthenticated(false);
     setCurrentUser(defaultUser);
@@ -474,15 +472,16 @@ export default function App() {
             )}
             {displayPosts.length > 0 ? (
               displayPosts.map((post) => (
-                <PostCard 
-                  key={post.id} 
-                  post={post} 
-                  onPostClick={handlePostClick} 
-                  currentUser={currentUser} 
-                  onUserClick={handleUserClick}
-                  onSaveToggle={handleSaveToggle}
-                  onCommunityClick={handleCommunityClick}
-                />
+                  <PostCard 
+                    key={post.id} 
+                    post={post} 
+                    onPostClick={handlePostClick} 
+                    currentUser={currentUser} 
+ 
+                    onUserClick={handleUserClick}
+                    onSaveToggle={handleSaveToggle}
+                    onCommunityClick={handleCommunityClick}
+                  />
               ))
             ) : (
               <div className="text-center py-20 bg-card rounded-2xl border border-dashed border-border">
@@ -529,7 +528,11 @@ export default function App() {
       case 'settings':
         return <Settings 
           currentUser={currentUser}
-          onUpdatePreferences={(newPrefs: any) => setCurrentUser({...currentUser, preferences: newPrefs})}
+          onUpdatePreferences={(newPrefs: any) => {
+            const updatedUser = { ...currentUser, preferences: newPrefs };
+            setCurrentUser(updatedUser);
+            localStorage.setItem('currentUser', JSON.stringify(updatedUser)); // Fix localStorage desync
+          }}
           onLogout={handleLogout} />;
       case 'admin':
         return <AdminDashboard currentUser={currentUser} />;
@@ -622,6 +625,7 @@ export default function App() {
         onLogout={handleLogout}
         allPosts={posts}
         onPostClick={handlePostClick}
+        onCommunityClick={handleCommunityClick}
       />
 
       <div 

@@ -65,7 +65,8 @@ const loginUser = async (email, password) => {
             location: account.location,
             website: account.website,
             role: account.role,
-            preferences: account.preferences || { darkMode: false, pushNotifications: true, commentNotifications: true }
+            preferences: account.preferences || { darkMode: false, pushNotifications: true, commentNotifications: true },
+            savedPosts: account.savedPosts || []
         },
         profile
     };

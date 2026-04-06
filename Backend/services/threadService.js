@@ -23,8 +23,8 @@ const createThreadService = async ({ comment_id, author_id, content, image_url }
         throw new Error('NOT_FOUND:Bài viết gốc chứa bình luận này không còn tồn tại!');
     }
     
-    if (postOfComment.author.toString() !== author_id) {
-        throw new Error('FORBIDDEN:Chỉ có tác giả bài viết mới được trả lời các bình luận trong bài viết của mình!');
+    if (postOfComment.status !== 'approved') {
+        throw new Error('FORBIDDEN:Bài viết này đã bị khóa bình luận!');
     }
     
     const newThread = new Thread({
