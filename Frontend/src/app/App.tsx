@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Filter, X } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
@@ -60,8 +61,14 @@ const defaultUser: User = {
 };
 
 export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const pathParts = location.pathname.substring(1).split('/');
+  const currentView = pathParts[0] || 'home';
+  const urlUserId = currentView === 'profile' && pathParts[1] ? pathParts[1] : null;
+
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentView, setCurrentView] = useState('home');
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [posts, setPosts] = useState<Post[]>(initialPosts);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -70,7 +77,8 @@ export default function App() {
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [initialPostId, setInitialPostId] = useState<string | null>(null);
-  const [viewedUserId, setViewedUserId] = useState<string | null>(null);
+  const [viewedUserIdState, setViewedUserIdState] = useState<string | null>(null);
+  const viewedUserId = urlUserId || viewedUserIdState;
   const [viewedUser, setViewedUser] = useState<User | null>(null);
   const [activeCommunity, setActiveCommunity] = useState<string | null>(null);
   const [lastFetchId, setLastFetchId] = useState<number>(0);
@@ -114,15 +122,10 @@ export default function App() {
 
         // Khôi phục view cuối cùng nếu có
         const lastView = localStorage.getItem('currentView');
-        const lastViewedUserId = localStorage.getItem('viewedUserId');
-        
-        if (lastView) {
-          setCurrentView(lastView);
-          if (lastView === 'profile' && lastViewedUserId) {
-             setViewedUserId(lastViewedUserId);
-          }
-        } else if (userData.role === 'admin') {
-          setCurrentView('admin');
+        if (location.pathname === '/' && lastView && lastView !== 'home' && lastView !== 'login') {
+           navigate(`/${lastView}`, { replace: true });
+        } else if (location.pathname === '/' && userData.role === 'admin') {
+           navigate('/admin', { replace: true });
         }
         
         fetchUnreadCount(userData.id || userData._id);
@@ -209,8 +212,7 @@ export default function App() {
     
     if (viewQuery === 'reset-password' && tokenQuery) {
       setResetToken(tokenQuery);
-      setCurrentView('reset-password');
-      window.history.replaceState({}, document.title, window.location.pathname);
+      navigate('/reset-password', { replace: true });
     }
   }, []);
 
@@ -244,14 +246,14 @@ export default function App() {
     console.log('App: Navigating to user profile:', userId);
     
     if (userId === currentUser.id) {
-      setViewedUserId(null);
+      setViewedUserIdState(null);
       setViewedUser(null);
-      setCurrentView('profile');
+      navigate('/profile');
       localStorage.setItem('currentView', 'profile');
       localStorage.removeItem('viewedUserId');
     } else {
-      setViewedUserId(userId);
-      setCurrentView('profile');
+      setViewedUserIdState(userId);
+      navigate(`/profile/${userId}`);
       localStorage.setItem('currentView', 'profile');
       localStorage.setItem('viewedUserId', userId);
     }
@@ -304,19 +306,19 @@ export default function App() {
   const handleViewChange = (view: string) => {
     const protectedViews = ['profile', 'create', 'messages', 'settings', 'notifications', 'groups', 'admin', 'saved'];
     if (!isAuthenticated && protectedViews.includes(view)) {
-      setCurrentView('login');
+      navigate('/login');
       setMobileMenuOpen(false);
       return;
     }
     fetchPosts(currentUser.id);
     if (view === 'profile') {
-      setViewedUserId(null);
+      setViewedUserIdState(null);
       localStorage.removeItem('viewedUserId');
     }
     if (view === 'home') {
       setActiveCommunity(null);
     }
-    setCurrentView(view);
+    navigate(view === 'home' ? '/' : `/${view}`);
     localStorage.setItem('currentView', view);
     setSelectedPost(null);
     setMobileMenuOpen(false);
@@ -387,14 +389,14 @@ export default function App() {
 
   const handleCommunityClick = (community: string) => {
     setActiveCommunity(community);
-    setCurrentView('home');
+    navigate('/');
     setSelectedPost(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handlePostCreated = (newPost: Post) => {
     fetchPosts(currentUser.id); // Cập nhật lại list bài từ CSDL
-    setCurrentView('home');
+    navigate('/');
   };
 
   const handlePostCommented = (postId: string, newComment: Comment) => {
@@ -431,7 +433,7 @@ export default function App() {
     setIsAuthenticated(false);
     setCurrentUser(defaultUser);
     fetchPosts(defaultUser.id);
-    setCurrentView('login');
+    navigate('/login');
     localStorage.removeItem('currentUser');
     localStorage.removeItem('token');
     toast.success('Đã đăng xuất thành công');
@@ -557,7 +559,7 @@ export default function App() {
           token={resetToken} 
           onSuccess={() => {
              setResetToken(null);
-             setCurrentView('login');
+             navigate('/login');
           }} 
         />
         <Toaster position="top-center" />
@@ -596,17 +598,17 @@ export default function App() {
               }
 
               if (u.role && u.role.toLowerCase() === 'admin') {
-                setCurrentView('admin');
+                navigate('/admin');
               } else {
-                setCurrentView('home');
+                navigate('/');
               }
               // Load số thông báo chưa đọc
               fetchUnreadCount(u._id || u.id);
             } else {
-              setCurrentView('home');
+              navigate('/');
             }
           }} 
-          onBackToHome={() => setCurrentView('home')}
+          onBackToHome={() => navigate('/')}
         />
         <Toaster position="top-center" />
       </>
