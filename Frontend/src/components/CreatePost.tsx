@@ -167,52 +167,25 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
     setIsSubmitting(true);
 
     try {
-      // Bước 1: Upload tất cả ảnh lên Cloudinary (chỉ khi nhấn Đăng)
-      let uploadedImageUrls: string[] = [];
+      const formData = new FormData();
+      formData.append('author_id', currentUser.id!);
+      formData.append('title', title);
+      formData.append('content', content);
+      formData.append('community', community);
+      
+      // Thêm toàn bộ các file ảnh vào trường 'image'
+      selectedFiles.forEach((file) => {
+        formData.append('image', file);
+      });
 
-      if (selectedFiles.length > 0) {
-        const uploadToast = toast.loading(`Đang tải ${selectedFiles.length} ảnh lên...`);
-        
-        const uploadPromises = selectedFiles.map(async (file) => {
-          const formData = new FormData();
-          formData.append('image', file);
-          const uploadUrl = `${API_URL}/upload?user_id=${encodeURIComponent(currentUser.id!)}`;
-          const res = await fetch(uploadUrl, { method: 'POST', body: formData });
-          const data = await res.json();
-          if (data.status !== 'success') {
-            throw new Error(data.message || `Lỗi upload: ${file.name}`);
-          }
-          return data.data.url as string;
-        });
-
-        try {
-          uploadedImageUrls = await Promise.all(uploadPromises);
-          toast.dismiss(uploadToast);
-        } catch (uploadErr: any) {
-          toast.dismiss(uploadToast);
-          toast.error(`Lỗi khi tải ảnh lên: ${uploadErr.message}`);
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
-      // Bước 2: Tạo bài viết với URL Cloudinary vừa nhận được
       const res = await fetch(`${API_URL}/posts`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          author_id: currentUser.id,
-          title,
-          content,
-          community,
-          image_url: uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : undefined,
-          image_urls: uploadedImageUrls.length > 0 ? uploadedImageUrls : undefined
-        })
+        body: formData,
       });
       const data = await res.json();
 
       if (data.status === 'success') {
-        toast.success('Đã đăng bài viết thành công! Bài đang chờ Admin duyệt.');
+        toast.success('Đã gửi bài! Hệ thống đang xử lý ảnh và kiểm duyệt ngầm, bài viết sẽ hiện ra sau giây lát.');
         // Dọn dẹp form
         setTitle('');
         setContent('');

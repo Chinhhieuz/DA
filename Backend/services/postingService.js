@@ -4,8 +4,33 @@ const Comment = require('../models/Comment');
 const Thread = require('../models/Thread');
 const Notification = require('../models/Notification');
 const socketModule = require('../socket');
+const aiModerationService = require('./aiModerationService');
 const { formatPostData } = require('../utils/postFormatter');
 const mongoose = require('mongoose');
+const cloudinary = require('cloudinary').v2;
+
+// Cấu hình Cloudinary (Dùng chung cho cả route upload cũ và mới)
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+/**
+ * Helper: Tải ảnh lên Cloudinary từ Buffer sử dụng Stream
+ */
+const uploadStreamToCloudinary = (fileBuffer) => {
+    return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+            { folder: 'social-media-uploads' },
+            (error, result) => {
+                if (error) return reject(error);
+                resolve(result.secure_url || result.url);
+            }
+        );
+        stream.end(fileBuffer);
+    });
+};
 
 const getPostCommentAndThreadCount = async (postId) => {
     const baseCommentCount = await Comment.countDocuments({ post: postId });
@@ -14,27 +39,84 @@ const getPostCommentAndThreadCount = async (postId) => {
     return baseCommentCount + threadCount;
 };
 
-const createPostService = async (postData) => {
-    const { author_id, title, content, community, image_url, image_urls } = postData;
-
+const createPostService = async (postDataInput, files = []) => {
+    // 🛡️ PHÒNG THỦ TỐI ĐA: Ép kiểu về Object ngay lập tức
+    const postData = postDataInput || {};
+    const { author_id, title, content, community } = postData;
+    let { image_urls = [] } = postData; 
     if (!author_id || !title || !content) {
+        console.error('[POST SERVICE] Thiếu dữ liệu:', { author_id, title, hasContent: !!content });
         throw new Error('Vui lòng cung cấp đủ author_id, tiêu đề và nội dung bài viết!');
     }
 
     const userExists = await Account.findById(author_id);
     if (!userExists) throw new Error('NOT_FOUND:Tài khoản người đăng không tồn tại!');
 
+    // 1️⃣ TẠO VÀ LƯU BÀI VIẾT NGAY LẬP TỨC VỚI STATUS PENDING (SIÊU TỐC)
     const newPost = new Post({
         author: author_id,
         title,
         content,
         community: community || 'Chung',
-        image_url: image_url || (image_urls && image_urls.length > 0 ? image_urls[0] : ''),
-        image_urls: image_urls || [],
-        status: 'pending'
+        // Sẽ được cập nhật sau khi Cloudinary xong
+        image_url: '', 
+        image_urls: [], 
+        status: 'pending',
+        ai_system_note: 'Hệ thống đang xử lý hình ảnh và kiểm duyệt AI...'
     });
 
     await newPost.save();
+
+    // 2️⃣ KÍCH HOẠT SONG SONG: KIỂM DUYỆT AI & TẢI ẢNH LÊN CLOUDINARY (ASYNCHRONOUS)
+    (async () => {
+        try {
+            // Chuẩn bị dữ liệu cho AI (Nếu có file thô thì dùng Buffer cho nhanh)
+            const aiImages = files.length > 0 ? files.map(f => f.buffer) : image_urls;
+            
+            // Chạy song song: (1) AI quét ảnh & (2) Up ảnh lên Cloudinary
+            const [aiDecision, uploadedUrls] = await Promise.all([
+                aiModerationService.checkContent(title, content, aiImages),
+                // Chỉ upload nếu có tệp tin mới
+                files.length > 0 ? Promise.all(files.map(f => uploadStreamToCloudinary(f.buffer))) : Promise.resolve(image_urls)
+            ]);
+
+            // 🚦 Cập nhật nội dung bài viết dựa trên phán quyết AI và Link ảnh thật
+            newPost.image_urls = uploadedUrls;
+            newPost.image_url = uploadedUrls.length > 0 ? uploadedUrls[0] : '';
+            
+            if (aiDecision.status === 'PASS') {
+                newPost.status = 'approved';
+                newPost.ai_system_note = '';
+            } else {
+                newPost.status = 'pending'; // Giữ pending nếu AI Reject
+                newPost.ai_system_note = aiDecision.reason || 'Bị AI từ chối chặn';
+            }
+
+            await newPost.save();
+
+            // 📡 Thông báo cho người dùng qua Socket.io
+            try {
+                const io = socketModule.getIO();
+                const connectedUsers = socketModule.getConnectedUsers();
+                const socketId = connectedUsers.get(author_id.toString());
+                
+                if (io && socketId) {
+                    io.to(socketId).emit('post_ai_result', {
+                        postId: newPost._id,
+                        status: newPost.status,
+                        reason: newPost.ai_system_note,
+                        image_urls: uploadedUrls
+                    });
+                }
+            } catch (sErr) {}
+
+        } catch (error) {
+            console.error('[POST ASYNC SERVICE] 🚨 Lỗi xử lý ngầm:', error.message);
+            newPost.ai_system_note = 'Lỗi trong quá trình xử lý hình ảnh.';
+            await newPost.save();
+        }
+    })();
+
     return newPost;
 };
 

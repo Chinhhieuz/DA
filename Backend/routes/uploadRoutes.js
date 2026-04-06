@@ -49,7 +49,7 @@ const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: 'social-media-uploads',
-    allowed_formats: ['jpg', 'png', 'jpeg', 'gif']
+    allowed_formats: ['jpg', 'png', 'jpeg', 'gif', 'webp']
   }
 });
 
@@ -59,27 +59,43 @@ const upload = multer({
     limits: { fileSize: 5 * 1024 * 1024 } 
 });
 
-router.post('/', requireAuth, upload.single('image'), (req, res) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ status: 'fail', message: 'Không thể upload ảnh, vui lòng đính kèm file' });
+router.post('/', requireAuth, (req, res, next) => {
+    // Bọc multer để bắt lỗi và luôn trả về JSON
+    upload.single('image')(req, res, (multerErr) => {
+        if (multerErr) {
+            console.error('[UPLOAD] Lỗi từ Multer/Cloudinary:', multerErr.message || multerErr);
+            // Lỗi file quá lớn
+            if (multerErr.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ status: 'fail', message: 'File ảnh quá lớn! Tối đa 5MB.' });
+            }
+            // Lỗi định dạng
+            if (multerErr.message && multerErr.message.includes('allowed_formats')) {
+                return res.status(400).json({ status: 'fail', message: 'Định dạng file không hợp lệ! Chỉ hỗ trợ JPG, PNG, JPEG, GIF.' });
+            }
+            return res.status(500).json({ status: 'error', message: 'Lỗi khi upload ảnh: ' + (multerErr.message || 'Unknown error') });
         }
 
-        // Với Cloudinary, URL đầy đủ nằm trong req.file.path hoặc req.file.secure_url
-        const imageUrl = req.file.path;
-        
-        console.log(`[UPLOAD] ✅ User ${req.authUser.username} đã upload ảnh lên Cloudinary: ${imageUrl}`);
-        
-        return res.status(200).json({
-            status: 'success',
-            data: {
-                url: imageUrl
+        try {
+            if (!req.file) {
+                return res.status(400).json({ status: 'fail', message: 'Không thể upload ảnh, vui lòng đính kèm file' });
             }
-        });
-    } catch (error) {
-        console.error('Lỗi Upload:', error);
-        return res.status(500).json({ status: 'error', message: 'Lỗi máy chủ khi lưu ảnh lên Cloudinary' });
-    }
+
+            // Dùng secure_url (HTTPS) từ Cloudinary thay vì path (có thể là HTTP)
+            const imageUrl = req.file.secure_url || req.file.path;
+            
+            console.log(`[UPLOAD] ✅ User ${req.authUser.username} đã upload ảnh lên Cloudinary: ${imageUrl}`);
+            
+            return res.status(200).json({
+                status: 'success',
+                data: {
+                    url: imageUrl
+                }
+            });
+        } catch (error) {
+            console.error('[UPLOAD] Lỗi xử lý response:', error.message);
+            return res.status(500).json({ status: 'error', message: 'Lỗi máy chủ khi lưu ảnh lên Cloudinary' });
+        }
+    });
 });
 
 module.exports = router;
