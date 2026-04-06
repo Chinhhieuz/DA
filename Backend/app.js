@@ -1,3 +1,7 @@
+// Error Monitoring
+process.on('uncaughtException', err => console.log('[CRIT] UNCAUGHT EXCEPTION:', err));
+process.on('unhandledRejection', err => console.log('[CRIT] UNHANDLED REJECTION:', err));
+
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -103,6 +107,17 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/feedback', feedbackRoutes);
+
+// Global Error Handler — luôn trả về JSON, không bao giờ trả về HTML
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+    console.error('[GLOBAL ERROR]', err.message || err);
+    if (res.headersSent) return next(err);
+    return res.status(err.status || 500).json({
+        status: 'error',
+        message: err.message || 'Lỗi máy chủ nội bộ'
+    });
+});
 
 // Khởi động Server tích hợp cả Socket lẫn Express API
 const PORT = process.env.PORT || 5000;

@@ -17,10 +17,23 @@ const handleServiceError = (error, res) => {
 
 const createPost = async (req, res) => {
     try {
-        const newPost = await postingService.createPostService(req.body);
+        // Đảm bảo body luôn là một object, không được là null
+        const postData = req.body || {};
+        const files = req.files || [];
+        
+        console.log('[CREATE POST CONTROLLER] Incoming Body Keys:', Object.keys(postData));
+        console.log('[CREATE POST CONTROLLER] Files Count:', files.length);
+        
+        const newPost = await postingService.createPostService(postData, files);
+        
+        let message = 'Đã đăng bài viết thành công!';
+        if (newPost.status === 'pending') {
+            message = 'Bài viết của bạn đang chờ Admin kiểm duyệt.';
+        }
+
         return res.status(201).json({
             status: 'success',
-            message: 'Đăng bài viết thành công! Bài viết của bạn đang chờ Admin duyệt.',
+            message: message,
             data: newPost
         });
     } catch (error) {

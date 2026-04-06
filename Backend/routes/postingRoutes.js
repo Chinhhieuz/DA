@@ -1,11 +1,19 @@
 const express = require('express');
 const postingController = require('../controllers/postingController');
 const { isAdmin } = require('../middlewares/adminMiddleware');
+const multer = require('multer');
 
 const router = express.Router();
 
-// API Đăng bài viết
-router.post('/', postingController.createPost);
+// Cấu hình Multer bộ nhớ để xử lý Buffer ảnh thô
+const storage = multer.memoryStorage();
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 } // Giới hạn 5MB/ảnh
+});
+
+// API Đăng bài viết (Hỗ trợ Multipart/FormData cho tốc độ cao)
+router.post('/', upload.array('image', 10), postingController.createPost);
 
 // API Lấy danh sách bài viết đã duyệt
 router.get('/', postingController.getAllPosts);

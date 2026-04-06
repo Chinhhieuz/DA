@@ -122,7 +122,8 @@ function ImageCollage({ images, title }: { images: string[]; title: string }) {
       <div className={`grid gap-1.5 mb-3 ${getGridClass()}`}>
         {visible.map((url, idx) => {
           const isLastVisible = idx === visible.length - 1 && remaining > 0;
-          const aspectClass = visible.length === 1 ? 'aspect-[16/9]' : 'aspect-square';
+          const isSingle = visible.length === 1;
+          const aspectClass = isSingle ? '' : 'aspect-square';
           // Ảnh đầu tiên khi có 3 ảnh thì chiếm full width hàng đầu
           const isWide = visible.length === 3 && idx === 0;
 
@@ -132,12 +133,13 @@ function ImageCollage({ images, title }: { images: string[]; title: string }) {
               className={`relative group/img overflow-hidden rounded-xl border border-border bg-muted cursor-pointer ${
                 aspectClass
               } ${isWide ? 'col-span-2' : ''}`}
+              style={isSingle ? { maxHeight: '600px' } : {}}
               onClick={(e) => openLightbox(e, idx)}
             >
               <img
                 src={getImageUrl(url)}
                 alt={`${title} - ${idx + 1}`}
-                className="w-full h-full object-cover transition-transform duration-500 group-hover/img:scale-105"
+                className={`${isSingle ? 'w-full h-auto max-h-[600px] object-contain' : 'w-full h-full object-cover'} transition-transform duration-500 group-hover/img:scale-105`}
               />
               {/* Hover overlay */}
               <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-colors duration-300" />

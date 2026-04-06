@@ -754,6 +754,12 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                       dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(post.content || '') }}
                     />
                     <p className="text-xs text-muted-foreground/70 mt-2">Đăng bởi: <span className="font-semibold">@{post.author?.username}</span> • {new Date(post.created_at).toLocaleString('vi-VN')}</p>
+                    {post.ai_system_note && (
+                      <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-50 border border-red-100 text-red-600">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Robot cảnh báo: {post.ai_system_note}</span>
+                      </div>
+                    )}
                     {post.image_url && (
                       <div className="mt-2">
                         <img src={post.image_url.startsWith('http') ? post.image_url : `${API_BASE_URL}${post.image_url}`} alt="Post content" className="h-16 w-16 object-cover rounded-md border border-border" />
