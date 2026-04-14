@@ -29,10 +29,18 @@ const messageService = {
         return conversationsWithUnread;
     },
 
-    // Lấy lịch sử tin nhắn của một cuộc hội thoại
-    getMessages: async (conversationId) => {
-        return await Message.find({ conversation: conversationId })
-            .sort({ created_at: 1 });
+    // Lấy lịch sử tin nhắn của một cuộc hội thoại (có phân trang)
+    getMessages: async (conversationId, limit = 20, before = null) => {
+        const query = { conversation: conversationId };
+        
+        if (before) {
+            query.createdAt = { $lt: new Date(before) };
+        }
+
+        return await Message.find(query)
+            .sort({ createdAt: -1 }) // Lấy mới nhất trước
+            .limit(limit)
+            .then(msgs => msgs.reverse()); // Sau đó đảo ngược lại để đúng thứ tự thời gian
     },
 
     // Bắt đầu hoặc tìm cuộc hội thoại với một user khác

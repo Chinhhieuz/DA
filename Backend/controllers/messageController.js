@@ -19,7 +19,8 @@ const messageController = {
     getMessages: async (req, res, next) => {
         try {
             const { conversationId } = req.params;
-            const messages = await messageService.getMessages(conversationId);
+            const { limit, before } = req.query;
+            const messages = await messageService.getMessages(conversationId, parseInt(limit) || 20, before);
             res.status(200).json({
                 status: 'success',
                 data: messages

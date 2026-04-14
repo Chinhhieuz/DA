@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getImageUrl } from '@/lib/imageUtils';
 import { Search, Send, MoreVertical, ImagePlus, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -98,6 +98,12 @@ export function Messages({ currentUser, socket, onUserClick, onMessagesRead }: M
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [sharingMessage, setSharingMessage] = useState<any | null>(null);
   const [shareSearchTerm, setShareSearchTerm] = useState('');
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const prevScrollHeightRef = useRef<number>(0);
 
   const token = localStorage.getItem('token');
 
@@ -204,18 +210,48 @@ export function Messages({ currentUser, socket, onUserClick, onMessagesRead }: M
     };
   }, [conversations]);
 
-  const fetchMessages = async () => {
+  const fetchMessages = async (isLoadMore = false) => {
     if (!selectedConversation) return;
+    
+    // Nếu đang load thêm và không còn dữ liệu thì dừng
+    if (isLoadMore && !hasMore) return;
+
     try {
-      const res = await fetch(withAuthParam(`${API_URL}/messages/${selectedConversation._id}`), {
+      if (isLoadMore) setLoadingMore(true);
+      
+      const before = isLoadMore && messages.length > 0 ? (messages[0].createdAt || messages[0].created_at) : null;
+      let url = `${API_URL}/messages/${selectedConversation._id}?limit=20`;
+      if (before) url += `&before=${before}`;
+
+      const res = await fetch(withAuthParam(url), {
         headers: getAuthHeaders()
       });
       const data = await res.json();
+      
       if (data.status === 'success') {
-        setMessages(data.data);
+        const newMessages = data.data;
+        
+        if (isLoadMore) {
+          // Lưu vị trí scroll hiện tại để ổn định sau khi thêm tin nhắn cũ
+          if (scrollAreaRef.current) {
+            const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+            if (viewport) {
+              scrollPositionRef.current = viewport.scrollHeight - viewport.scrollTop;
+            }
+          }
+          
+          setMessages(prev => [...newMessages, ...prev]);
+          setHasMore(newMessages.length === 20);
+        } else {
+          setMessages(newMessages);
+          setHasMore(newMessages.length === 20);
+          setIsInitialLoad(true); // Đánh dấu là load lần đầu để scroll xuống đáy
+        }
       }
     } catch (err) {
       console.error('Lỗi tải tin nhắn:', err);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -245,6 +281,43 @@ export function Messages({ currentUser, socket, onUserClick, onMessagesRead }: M
       if (onMessagesRead) onMessagesRead();
     } catch (err) {
       console.error('Lỗi đánh dấu đã đọc:', err);
+    }
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  };
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      if (isInitialLoad) {
+        // Lần đầu load: cuộn xuống ngay lập tức
+        scrollToBottom('instant' as ScrollBehavior);
+        setIsInitialLoad(false);
+      } else if (prevScrollHeightRef.current > 0) {
+        // Sau khi load thêm tin nhắn cũ, giữ nguyên vị trí nhìn
+        const container = chatContainerRef.current;
+        if (container) {
+          container.scrollTop = container.scrollHeight - prevScrollHeightRef.current;
+        }
+        prevScrollHeightRef.current = 0;
+      } else {
+        // Tin nhắn mới đến: cuộn xuống mượt
+        scrollToBottom();
+      }
+    }
+  }, [messages]);
+
+  const handleChatScroll = () => {
+    const container = chatContainerRef.current;
+    if (!container) return;
+    // Khi người dùng cuộn lên gần đỉnh (trong vòng 60px)
+    if (container.scrollTop <= 60 && !loadingMore && hasMore && messages.length > 0) {
+      // Ghi lại chiều cao hiện tại để ổn định vị trí sau khi load
+      prevScrollHeightRef.current = container.scrollHeight;
+      fetchMessages(true);
     }
   };
 
@@ -523,7 +596,7 @@ export function Messages({ currentUser, socket, onUserClick, onMessagesRead }: M
                       {otherUser.full_name || otherUser.username}
                     </h4>
                     <span className={`text-[10px] ${isUnread ? 'text-primary font-bold' : 'text-muted-foreground'}`}>
-                      {conversation.last_message ? new Date(conversation.last_message.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}
+                      {conversation.last_message ? new Date(conversation.last_message.createdAt || conversation.last_message.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -574,95 +647,108 @@ export function Messages({ currentUser, socket, onUserClick, onMessagesRead }: M
             </div>
           </div>
 
-          {/* Messages */}
-          <ScrollArea className="flex-1 p-4">
-            <div className="space-y-4">
-              {messages.map((message) => {
-                const isMe = String(message.sender) === String(currentUser.id);
-                return (
-                  <div
-                    key={message._id || message.id}
-                    className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div className="flex items-end gap-2 group">
-                      {isMe && !message.is_revoked && (
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => setSharingMessage(message)} className="cursor-pointer">
-                                <Share2 className="h-4 w-4 mr-2" /> Chia sẻ
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleRevokeMessage(message._id)} className="text-destructive cursor-pointer">
-                                <RotateCcw className="h-4 w-4 mr-2" /> Thu hồi
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      )}
-                      
-                      {!isMe && !message.is_revoked && (
-                         <div className="opacity-0 group-hover:opacity-100 transition-opacity order-2">
-                           <DropdownMenu>
-                             <DropdownMenuTrigger asChild>
-                               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                                 <MoreHorizontal className="h-4 w-4" />
-                               </Button>
-                             </DropdownMenuTrigger>
-                             <DropdownMenuContent align="start">
-                               <DropdownMenuItem onClick={() => setSharingMessage(message)} className="cursor-pointer">
-                                 <Share2 className="h-4 w-4 mr-2" /> Chia sẻ
-                               </DropdownMenuItem>
-                             </DropdownMenuContent>
-                           </DropdownMenu>
-                         </div>
-                      )}
+          {/* Messages - Native scrollable container */}
+          <div
+            ref={chatContainerRef}
+            onScroll={handleChatScroll}
+            className="flex-1 overflow-y-auto p-4 flex flex-col gap-3"
+            style={{ scrollBehavior: 'auto' }}
+          >
+            {/* Load more indicator ở đầu */}
+            {loadingMore && (
+              <div className="flex justify-center py-2">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              </div>
+            )}
 
-                      <div
-                        className={`max-w-[100%] rounded-2xl px-4 py-2 ${
-                          isMe
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-foreground'
-                        } ${message.is_revoked ? 'opacity-50 border border-dashed border-border' : ''}`}
-                      >
-                        {message.is_revoked ? (
-                          <p className="text-sm italic">Tin nhắn đã được thu hồi</p>
-                        ) : (
-                          <>
-                            {message.attachments && message.attachments.length > 0 && (
-                              <div className="mb-2 space-y-2">
-                                {message.attachments.map((url: string, idx: number) => (
-                                  <img 
-                                    key={idx} 
-                                    src={getImageUrl(url)} 
-                                    alt="attachment" 
-                                    className="max-h-60 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity" 
-                                    onClick={() => setZoomedImage(getImageUrl(url))}
-                                  />
-                                ))}
-                              </div>
-                            )}
-                            {message.content && <p>{message.content}</p>}
-                          </>
-                        )}
-                        <span
-                          className={`text-[10px] block mt-1 opacity-70 ${
-                            isMe ? 'text-primary-foreground/80' : 'text-muted-foreground'
-                          }`}
-                        >
-                          {new Date(message.created_at || message.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
+            {!hasMore && messages.length >= 20 && (
+              <div className="text-center py-2 text-xs text-muted-foreground italic">
+                — Đây là điểm bắt đầu cuộc trò chuyện —
+              </div>
+            )}
+
+            {messages.map((message) => {
+              const isMe = String(message.sender) === String(currentUser.id);
+              return (
+                <div
+                  key={message._id || message.id}
+                  className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div className="flex items-end gap-2 group max-w-[75%]">
+                    {isMe && !message.is_revoked && (
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setSharingMessage(message)} className="cursor-pointer">
+                              <Share2 className="h-4 w-4 mr-2" /> Chia sẻ
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleRevokeMessage(message._id)} className="text-destructive cursor-pointer">
+                              <RotateCcw className="h-4 w-4 mr-2" /> Thu hồi
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
+                    )}
+
+                    {!isMe && !message.is_revoked && (
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity order-last shrink-0">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            <DropdownMenuItem onClick={() => setSharingMessage(message)} className="cursor-pointer">
+                              <Share2 className="h-4 w-4 mr-2" /> Chia sẻ
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
+
+                    <div
+                      className={`rounded-2xl px-4 py-2.5 shadow-sm ${
+                        isMe
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-foreground'
+                      } ${message.is_revoked ? 'opacity-50 border border-dashed border-border' : ''}`}
+                    >
+                      {message.is_revoked ? (
+                        <p className="text-sm italic text-muted-foreground">Tin nhắn đã được thu hồi</p>
+                      ) : (
+                        <>
+                          {message.attachments && message.attachments.length > 0 && (
+                            <div className="mb-1 flex flex-wrap gap-1.5">
+                              {message.attachments.map((url: string, idx: number) => (
+                                <img
+                                  key={idx}
+                                  src={getImageUrl(url)}
+                                  alt="attachment"
+                                  className="max-h-52 max-w-[260px] rounded-xl object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                  onClick={() => setZoomedImage(getImageUrl(url))}
+                                />
+                              ))}
+                            </div>
+                          )}
+                          {message.content && <p className="text-sm leading-relaxed">{message.content}</p>}
+                        </>
+                      )}
+                      <span className={`text-[10px] block mt-1 opacity-60 ${isMe ? 'text-right' : 'text-left'}`}>
+                        {new Date(message.createdAt || message.created_at || message.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </ScrollArea>
+                </div>
+              );
+            })}
+            <div ref={messagesEndRef} className="h-px" />
+          </div>
 
           {/* Message Input */}
           <div className="border-t border-border p-4 bg-background/50 backdrop-blur-sm">
