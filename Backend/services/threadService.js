@@ -43,6 +43,8 @@ const createThreadService = async ({ comment_id, author_id, content, image_url }
             sender: author_id,
             type: 'comment',
             post: commentExists.post,
+            comment: comment_id,
+            thread: newThread._id,
             content: `đã phản hồi: ${content.substring(0, 50)}`,
             customPayload: { title: 'Bình luận của bạn' }
         });
@@ -63,11 +65,63 @@ const deleteThreadService = async ({ id, user_id }) => {
         throw new Error('FORBIDDEN:Bạn không có quyền xóa phản hồi này');
     }
 
+    // Xóa thông báo liên quan tới thread này
+    await notificationService.deleteNotificationsByThread(id);
+
     await Thread.findByIdAndDelete(id);
     return id;
 };
 
+const reactToThreadService = async ({ id, user_id, action, type }) => {
+    const thread = await Thread.findById(id).populate('comment');
+    if (!thread) throw new Error('NOT_FOUND:Không tìm thấy phản hồi');
+
+    if (!thread.reactions) thread.reactions = [];
+
+    const existingReactionIndex = thread.reactions.findIndex(r => r.user_id && r.user_id.toString() === user_id);
+
+    if (action === 'unlike' || action === 'undislike') {
+        if (existingReactionIndex !== -1) {
+            thread.reactions.splice(existingReactionIndex, 1);
+        }
+    } else {
+        const reactionType = type || (action === 'like' || action === 'up' ? 'up' : 'down');
+        if (existingReactionIndex !== -1) {
+            thread.reactions[existingReactionIndex].type = reactionType;
+        } else {
+            thread.reactions.push({ user_id: user_id, type: reactionType });
+        }
+    }
+
+    thread.upvotes = thread.reactions.filter(r => r.type === 'up' || r.type === '👍').length;
+    thread.downvotes = thread.reactions.filter(r => r.type === 'down').length;
+    thread.markModified('reactions');
+    await thread.save();
+
+    // Thông báo nếu là "Thích"
+    if ((action === 'like' || action === 'up') && thread.author.toString() !== user_id) {
+        // Tìm postId từ comment cha
+        let postId = null;
+        if (thread.comment && thread.comment.post) {
+            postId = thread.comment.post;
+        }
+
+        await notificationService.createAndPushNotification({
+            recipient: thread.author,
+            sender: user_id,
+            type: 'like',
+            post: postId,
+            comment: thread.comment ? thread.comment._id : null,
+            thread: thread._id,
+            customPayload: { title: 'Phản hồi của bạn' }
+        });
+    }
+
+    return thread;
+};
+
 module.exports = {
     createThreadService,
-    deleteThreadService
+    deleteThreadService,
+    reactToThreadService
 };

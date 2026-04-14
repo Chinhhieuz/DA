@@ -34,6 +34,7 @@ interface ProfileProps {
   onProfileUpdate?: (updatedData: any) => void;
   onPostsChanged?: () => void;
   onUserClick?: (userId: string) => void;
+  onViewChange?: (view: string) => void;
 }
 
 interface PasswordModalProps {
@@ -161,7 +162,7 @@ const AppChangePasswordDialog = ({
 
 
 
-export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange, onProfileUpdate, onPostsChanged, onUserClick }: ProfileProps) {
+export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange, onProfileUpdate, onPostsChanged, onUserClick, onViewChange }: ProfileProps) {
   const [activeTab, setActiveTab] = useState('posts');
   const [isEditing, setIsEditing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -735,6 +736,23 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                       Đang theo dõi
                     </Button>
                   )}
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    className="border-primary text-primary hover:bg-primary/5"
+                    onClick={() => {
+                      if (onViewChange) {
+                        // Giả sử có trigger chuyển view sang messages với user cụ thể
+                        // Logic này sẽ được App.tsx xử lý nếu mình truyền state/id
+                        // Cho hiện tại, ta chỉ cần gọi chuyển hướng
+                        localStorage.setItem('startChatWith', effectiveUserId);
+                        onViewChange('messages');
+                      }
+                    }}
+                  >
+                    <MessageCircle className="mr-2 h-4 w-4" />
+                    Nhắn tin
+                  </Button>
                 </div>
               )}
             </div>

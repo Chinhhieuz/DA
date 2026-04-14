@@ -200,7 +200,7 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
                       <Search className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{post.title}</p>
-                        <p className="text-xs text-muted-foreground">r/{post.community} • {post.comments.length} bình luận</p>
+                        <p className="text-xs text-muted-foreground">{post.community} • {post.comments.length} bình luận</p>
                       </div>
                     </button>
                   ))}

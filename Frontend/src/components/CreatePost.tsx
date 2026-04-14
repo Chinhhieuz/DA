@@ -155,8 +155,20 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
   };
 
   const handleSubmit = async () => {
-    if (!title.trim() || !community) {
-      toast.error('Vui lòng điền tiêu đề và chọn chủ đề');
+    if (!title.trim() && !community) {
+      toast.error('Vui lòng điền tiêu đề và chọn chủ đề bài viết');
+      return;
+    }
+    if (!title.trim()) {
+      toast.error('Bạn chưa nhập tiêu đề cho bài viết');
+      return;
+    }
+    if (!community) {
+      toast.error('Vui lòng chọn một chủ đề để đăng bài');
+      return;
+    }
+    if (!content.trim()) {
+      toast.error('Bạn cần nhập nội dung cho bài viết');
       return;
     }
     if (!currentUser.id) {
@@ -195,10 +207,10 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
         setPreviewUrls([]);
         onPostCreated(data.data);
       } else {
-        toast.error('Lỗi máy chủ: ' + data.message);
+        toast.error(data.message || 'Không thể đăng bài viết, vui lòng thử lại sau');
       }
     } catch (err) {
-      toast.error('Không thể kết nối với server!');
+      toast.error('Không thể kết nối với máy chủ!');
     } finally {
       setIsSubmitting(false);
     }

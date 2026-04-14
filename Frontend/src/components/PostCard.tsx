@@ -178,6 +178,9 @@ export interface Thread {
   content: string;
   image?: string;
   timestamp: string;
+  upvotes?: number;
+  downvotes?: number;
+  userVote?: string | null;
 }
 
 export interface Comment {
@@ -233,6 +236,7 @@ interface PostCardProps {
   onUserClick?: (userId: string) => void;
   onSaveToggle?: (postId: string, isSaved: boolean) => void;
   onCommunityClick?: (community: string) => void;
+  onDeleteSuccess?: (postId: string) => void;
   showAllImages?: boolean;
 }
 
@@ -245,6 +249,7 @@ export function PostCard({
   onUserClick, 
   onSaveToggle, 
   onCommunityClick,
+  onDeleteSuccess,
   showAllImages = false
 }: PostCardProps) {
   const [upVotes, setUpVotes] = useState(post.upvotes);
@@ -360,26 +365,47 @@ export function PostCard({
   };
 
   const handleDeletePost = async () => {
-    if (!currentUser?.id) return;
-    if (!window.confirm('Bạn có chắc chắn muốn xóa bài viết này không? Quay lại sẽ không được.')) return;
-
-    try {
-      const res = await fetch(`${API_URL}/posts/${post.id}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: currentUser.id })
-      });
-      const data = await res.json();
-      if (data.status === 'success') {
-        toast.success('Đã xóa bài viết thành công!');
-        window.location.reload(); 
-      } else {
-        toast.error(data.message);
+    // Trì hoãn một chút để Dropdown Menu đóng lại hoàn toàn
+    setTimeout(async () => {
+      if (!currentUser?.id) {
+        toast.error('Lỗi: Bạn cần đăng nhập để xóa bài viết này.');
+        return;
       }
-    } catch (err: any) {
-      console.error('Lỗi khi xóa bài:', err);
-      toast.error(`Lỗi khi xóa bài viết: ${err.message || 'Không rõ nguyên nhân'}`);
-    }
+
+      if (!post.id) {
+         toast.error('Lỗi kỹ thuật: Không tìm thấy ID bài viết.');
+         return;
+      }
+
+      if (!window.confirm('Bạn có chắc chắn muốn xóa bài viết này không? Quay lại sẽ không được.')) return;
+
+      try {
+        const deleteUrl = `${API_URL}/posts/${post.id}?user_id=${currentUser.id}`;
+        const res = await fetch(deleteUrl, {
+          method: 'DELETE',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        });
+        
+        const data = await res.json();
+        if (data.status === 'success') {
+          toast.success('Đã xóa bài viết thành công!');
+          if (onDeleteSuccess) {
+            onDeleteSuccess(post.id);
+          } else {
+             // Dự phòng nếu không có callback
+             window.location.reload(); 
+          }
+        } else {
+          toast.error(data.message);
+        }
+      } catch (err: any) {
+        console.error('Lỗi khi xóa bài:', err);
+        toast.error(`Lỗi mạng khi xóa bài viết: ${err.message}`);
+      }
+    }, 100);
   };
 
   return (

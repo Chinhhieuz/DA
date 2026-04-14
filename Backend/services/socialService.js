@@ -1,5 +1,6 @@
 const Account = require('../models/Account'); 
 const Notification = require('../models/Notification');
+const notificationService = require('./notificationService');
 
 /**
  * Gửi yêu cầu kết bạn
@@ -24,9 +25,15 @@ const sendFriendRequestService = async (senderId, targetId) => {
     target.friendRequests.received.push(senderId);
     sender.friendRequests.sent.push(targetId);
 
-    const notif = new Notification({ recipient: targetId, sender: senderId, type: 'friend_request' });
+    // Sử dụng notificationService đồng nhất
+    await notificationService.createAndPushNotification({
+        recipient: targetId,
+        sender: senderId,
+        type: 'friend_request',
+        content: 'đã gửi lời mời kết bạn'
+    });
 
-    await Promise.all([target.save(), sender.save(), notif.save()]);
+    await Promise.all([target.save(), sender.save()]);
     return { message: 'Đã gửi yêu cầu kết bạn!' };
 };
 
@@ -90,7 +97,8 @@ const cancelFriendRequestService = async (senderId, targetId) => {
         await target.save();
     }
 
-    await Notification.deleteOne({ recipient: targetId, sender: senderId, type: 'friend_request' });
+    // Xóa thông báo lời mời kết bạn
+    await Notification.deleteMany({ recipient: targetId, sender: senderId, type: 'friend_request' });
     return { message: 'Đã hủy yêu cầu kết bạn!' };
 };
 
@@ -131,14 +139,15 @@ const followUserService = async (followerId, targetId) => {
     if (!follower.following.some(id => id.toString() === targetId.toString())) follower.following.push(targetId);
     if (!target.followers.some(id => id.toString() === followerId.toString())) target.followers.push(followerId);
 
-    const notif = new Notification({
+    // Sử dụng notificationService đồng nhất
+    await notificationService.createAndPushNotification({
         recipient: targetId,
         sender: followerId,
         type: 'follow',
         content: 'đã bắt đầu theo dõi bạn'
     });
 
-    await Promise.all([follower.save(), target.save(), notif.save()]);
+    await Promise.all([follower.save(), target.save()]);
     return { message: 'Đã theo dõi người dùng này!' };
 };
 
@@ -159,6 +168,9 @@ const unfollowUserService = async (followerId, targetId) => {
         target.followers = target.followers.filter(id => id.toString() !== followerId.toString());
         await target.save();
     }
+
+    // Xóa toàn bộ thông báo follow giữa 2 người này để làm sạch
+    await Notification.deleteMany({ recipient: targetId, sender: followerId, type: 'follow' });
 
     return { message: 'Đã bỏ theo dõi!' };
 };

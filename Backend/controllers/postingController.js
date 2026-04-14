@@ -45,7 +45,8 @@ const getAllPosts = async (req, res) => {
     try {
         const posts = await postingService.getAllPostsService({ 
             userId: req.query.userId, 
-            community: req.query.community 
+            community: req.query.community,
+            followingOnly: req.query.followingOnly
         });
         return res.status(200).json({ status: 'success', data: posts });
     } catch (error) {
@@ -92,7 +93,8 @@ const getPendingPosts = async (req, res) => {
 
 const approvePost = async (req, res) => {
     try {
-        const post = await postingService.approvePostService(req.params.id);
+        const admin_id = req.user?.id || req.body.admin_id;
+        const post = await postingService.approvePostService(req.params.id, admin_id);
         return res.status(200).json({ status: 'success', message: 'Đã duyệt bài viết!', data: post });
     } catch (error) {
         return handleServiceError(error, res);
@@ -101,7 +103,9 @@ const approvePost = async (req, res) => {
 
 const rejectPost = async (req, res) => {
     try {
-        const post = await postingService.rejectPostService(req.params.id);
+        const admin_id = req.user?.id || req.body.admin_id;
+        const { reason } = req.body;
+        const post = await postingService.rejectPostService(req.params.id, admin_id, reason);
         return res.status(200).json({ status: 'success', message: 'Đã từ chối bài viết!', data: post });
     } catch (error) {
         return handleServiceError(error, res);
@@ -111,10 +115,15 @@ const rejectPost = async (req, res) => {
 const deletePost = async (req, res) => {
     try {
         const { id } = req.params;
-        const { user_id } = req.body;
+        const user_id = req.query.user_id || req.body.user_id;
+        
+        console.log(`[DELETE POST CONTROLLER] 🗑️ Yêu cầu xóa bài: ${id}`);
+        console.log(`[DELETE POST CONTROLLER] 👤 User ID nhận được: ${user_id}`);
+        
         if (!user_id) return res.status(400).json({ status: 'fail', message: 'Cần đăng nhập để xóa bài!' });
 
         await postingService.deletePostService({ id, user_id });
+        console.log(`[DELETE POST CONTROLLER] ✅ Xóa thành công bài: ${id}`);
         return res.status(200).json({ status: 'success', message: 'Đã xóa bài viết thành công!' });
     } catch (error) {
         return handleServiceError(error, res);
@@ -146,8 +155,9 @@ const getSavedPosts = async (req, res) => {
 
 const searchPosts = async (req, res) => {
     try {
-        const { q, userId } = req.query;
-        const results = await postingService.searchPostsService({ q, userId });
+        const { q, keyword, userId } = req.query;
+        const searchKeyword = keyword || q; // Hỗ trợ cả 2 tên tham số
+        const results = await postingService.searchPostsService({ keyword: searchKeyword, userId });
         return res.status(200).json({ status: 'success', data: results });
     } catch (error) {
         return handleServiceError(error, res);

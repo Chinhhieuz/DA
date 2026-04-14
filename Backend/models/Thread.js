@@ -23,6 +23,14 @@ const threadSchema = new mongoose.Schema({
         type: Number, 
         default: 0 
     },
+    downvotes: { 
+        type: Number, 
+        default: 0 
+    },
+    reactions: [{
+        user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Account' },
+        type: { type: String, default: 'up' }
+    }],
     created_at: { 
         type: Date, 
         default: Date.now 

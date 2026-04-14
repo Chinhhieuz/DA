@@ -1,9 +1,15 @@
-const Report = require('../models/Report');
-const Post = require('../models/Post');
+const bcrypt = require('bcryptjs');
+const notificationService = require('./notificationService');
+const mongoose = require('mongoose');
 const Account = require('../models/Account');
+const Post = require('../models/Post');
+const Report = require('../models/Report');
 const Community = require('../models/Community');
 const Feedback = require('../models/Feedback');
-const bcrypt = require('bcryptjs');
+const Message = require('../models/Message');
+const Conversation = require('../models/Conversation');
+const Thread = require('../models/Thread');
+const Comment = require('../models/Comment');
 
 const checkAdminRights = async (admin_id) => {
     const adminUser = await Account.findById(admin_id);
@@ -14,8 +20,10 @@ const checkAdminRights = async (admin_id) => {
 
 const getStatsService = async (admin_id) => {
     if (admin_id) {
-        // Optional tracking
+        console.log(`[ADMIN SERVICE] Fetching stats for Admin: ${admin_id}`);
     }
+    
+    console.log('[ADMIN SERVICE] Step 1: Querying counts...');
     const [pendingReports, pendingPosts, totalUsers, communityCount, newFeedbacks] = await Promise.all([
         Report.countDocuments({ status: 'pending' }),
         Post.countDocuments({ status: 'pending' }),
@@ -23,6 +31,7 @@ const getStatsService = async (admin_id) => {
         Community.countDocuments({}),
         Feedback.countDocuments({ status: 'new' })
     ]);
+    console.log('[ADMIN SERVICE] Step 2: Counts received successfully.');
 
     return { pendingReports, pendingPosts, totalUsers, communityCount, newFeedbacks };
 };
@@ -119,17 +128,45 @@ const deleteUserService = async ({ admin_id, id }) => {
         throw new Error('FORBIDDEN:Không thể xóa tài khoản Quản trị viên!');
     }
 
-    const Comment = require('../models/Comment');
-    const Thread = require('../models/Thread');
-    
+    // 1. Phân tích các bài viết của user để xóa thông báo liên quan
     const posts = await Post.find({ author: id });
     const postIds = posts.map(p => p._id);
 
-    await Post.deleteMany({ author: id });
+    // 2. Phân tích các bình luận của user để xóa thông báo liên quan
+    const comments = await Comment.find({ author: id });
+    const commentIds = comments.map(c => c._id);
+
+    // 3. Xử lý xóa dây chuyền toàn diện
+    // Xóa Notifications liên quan đến các bài viết của user
+    for (const pid of postIds) {
+        await notificationService.deleteNotificationsByPost(pid);
+    }
+    // Xóa Notifications liên quan đến các bình luận của user
+    for (const cid of commentIds) {
+        await notificationService.deleteNotificationsByComment(cid);
+    }
+    // Xóa Notifications mà user là người gửi hoặc người nhận
+    const Notification = require('../models/Notification');
+    await Notification.deleteMany({ $or: [{ recipient: id }, { sender: id }] });
+
+    // Xóa Tin nhắn và Hội thoại
+    await Message.deleteMany({ $or: [{ sender: id }, { recipient: id }] });
+    await Conversation.deleteMany({ participants: id });
+
+    // Xóa Phản hồi (Threads)
+    await Thread.deleteMany({ author: id });
+    
+    // Xóa Bình luận
     await Comment.deleteMany({ post: { $in: postIds } });
     await Comment.deleteMany({ author: id });
-    await Thread.deleteMany({ author: id });
 
+    // Xóa Báo cáo (Reports)
+    await Report.deleteMany({ $or: [{ reporter: id }, { reported_item_id: id }, { reported_user: id }] });
+
+    // Xóa Bài viết
+    await Post.deleteMany({ author: id });
+
+    // Cuối cùng xóa tài khoản
     await Account.findByIdAndDelete(id);
 
     return true;

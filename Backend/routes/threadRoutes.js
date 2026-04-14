@@ -6,5 +6,6 @@ const router = express.Router();
 // Định tuyến để tạo phản hồi mới cho bình luận
 router.post('/create', threadController.createThread);
 router.delete('/:id', threadController.deleteThread);
+router.put('/:id/react', threadController.reactToThread);
 
 module.exports = router;

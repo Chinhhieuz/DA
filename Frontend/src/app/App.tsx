@@ -76,11 +76,13 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(defaultUser);
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [initialPostId, setInitialPostId] = useState<string | null>(null);
   const [viewedUserIdState, setViewedUserIdState] = useState<string | null>(null);
   const viewedUserId = urlUserId || viewedUserIdState;
   const [viewedUser, setViewedUser] = useState<User | null>(null);
   const [activeCommunity, setActiveCommunity] = useState<string | null>(null);
+  const [feedFilter, setFeedFilter] = useState<'all' | 'following'>('all');
   const [lastFetchId, setLastFetchId] = useState<number>(0);
   const [socket, setSocket] = useState<Socket | null>(null);
 
@@ -121,14 +123,15 @@ export default function App() {
           .catch(err => console.error('Failed to refresh profile:', err));
 
         // Khôi phục view cuối cùng nếu có
-        const lastView = localStorage.getItem('currentView');
-        if (location.pathname === '/' && lastView && lastView !== 'home' && lastView !== 'login') {
-           navigate(`/${lastView}`, { replace: true });
-        } else if (location.pathname === '/' && userData.role === 'admin') {
-           navigate('/admin', { replace: true });
-        }
+        // const lastView = localStorage.getItem('currentView');
+        // if (location.pathname === '/' && lastView && lastView !== 'home' && lastView !== 'login') {
+        //    navigate(`/${lastView}`, { replace: true });
+        // } else if (location.pathname === '/' && userData.role === 'admin') {
+        //    navigate('/admin', { replace: true });
+        // }
         
         fetchUnreadCount(userData.id || userData._id);
+        fetchUnreadMessagesCount(userData.id || userData._id);
       } catch (e) {
         console.error('Lỗi khôi phục session:', e);
         localStorage.removeItem('currentUser');
@@ -189,7 +192,20 @@ export default function App() {
        });
 
        newSocket.on('notification_cancelled', (data) => {
-          setUnreadNotifications(prev => Math.max(0, prev - 1));
+           setUnreadNotifications(prev => Math.max(0, prev - 1));
+       });
+
+       newSocket.on('receive_message', (message) => {
+          // Chỉ tăng đếm nếu không đang xem cuộc hội thoại đó
+          // Hoặc đơn giản là fetch lại tổng số
+          fetchUnreadMessagesCount(currentUser.id);
+          
+          // Toast thông báo tin nhắn mới nếu không ở trang messages
+          if (window.location.pathname !== '/messages') {
+            toast.message('Tin nhắn mới', {
+              description: `${message.content || '[Hình ảnh]'}`,
+            });
+          }
        });
     }
     return () => {
@@ -260,34 +276,31 @@ export default function App() {
     setSelectedPost(null);
   };
 
-  const fetchPosts = async (currentUserId?: string) => {
-    const activeUserId = currentUserId !== undefined ? currentUserId : currentUser.id;
-    const fetchId = Date.now();
-    setLastFetchId(fetchId);
-    
-    const url = `${API_URL}/posts?userId=${activeUserId || ''}${activeCommunity ? `&community=${encodeURIComponent(activeCommunity)}` : ''}`;
-    console.log(`[App] 🌐 Fetching posts from: ${url}`);
+  const fetchPosts = async (
+    userId: string = currentUser.id, 
+    community: string | null = activeCommunity, 
+    filter: string = feedFilter
+  ) => {
     try {
+      let url = `${API_URL}/posts?userId=${userId || ''}`;
+      if (community) url += `&community=${community}`;
+      if (filter === 'following' && userId) url += `&followingOnly=true`;
+      
       const res = await fetch(url);
       const data = await res.json();
-      
-      // Chống race condition: Chỉ update nếu đây là request mới nhất
       if (data.status === 'success') {
-        setLastFetchId(prev => {
-          if (fetchId >= prev) {
-            setPosts(data.data);
-          }
-          return prev;
-        });
+         setPosts(data.data);
       }
     } catch (err) {
-      console.error("Lỗi tải bài viết:", err);
+      console.error('App: Failed to fetch posts:', err);
     }
   };
 
   useEffect(() => {
-    fetchPosts(currentUser.id);
-  }, [currentUser.id, activeCommunity]);
+    if (currentView === 'home' || currentView === 'reset-password') {
+      fetchPosts(currentUser.id, activeCommunity, feedFilter);
+    }
+  }, [currentView, activeCommunity, feedFilter]);
 
   const fetchUnreadCount = async (userId: string) => {
     if (!userId) return;
@@ -300,6 +313,24 @@ export default function App() {
       }
     } catch (err) {
       console.error('Lỗi tải thông báo:', err);
+    }
+  };
+
+  const fetchUnreadMessagesCount = async (userId: string) => {
+    if (!userId) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/messages/unread-count?userId=${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        setUnreadMessagesCount(data.data);
+      }
+    } catch (err) {
+      console.error('Lỗi tải số tin nhắn chưa đọc:', err);
     }
   };
 
@@ -325,9 +356,13 @@ export default function App() {
     if (view === 'notifications') {
       setUnreadNotifications(0);
     }
+    if (view === 'messages') {
+      fetchUnreadMessagesCount(currentUser.id);
+    }
   };
 
   const handlePostClick = (post: Post) => {
+    console.log('[App] handlePostClick triggered for post:', post.id);
     setSelectedPost(post);
   };
 
@@ -340,13 +375,28 @@ export default function App() {
     }
 
     // 2. Nếu là các loại liên quan đến bài viết (like, comment, mention, system)
-    const postId = (notif.post?._id || notif.post || '').toString();
+    let postId = '';
     
-    // Kiểm tra postId hợp lệ (có độ dài của MongoDB ObjectId)
-    if (postId && postId.length === 24 && postId !== '[object Object]') {
+    // Logic bóc tách ID siêu an toàn từ mọi định dạng (string, object { _id }, raw ObjectId)
+    if (notif.post) {
+      if (typeof notif.post === 'object') {
+        postId = (notif.post._id || notif.post).toString();
+      } else {
+        postId = notif.post.toString();
+      }
+    }
+    
+    // Dọn dẹp chuỗi ID
+    postId = postId.trim();
+    if (postId === '[object Object]') postId = '';
+
+    console.log('[App] Final Extracted postId:', postId);
+
+    // Kiểm tra postId hợp lệ
+    if (postId && (postId.length === 24 || postId.length === 12)) {
       try {
         const url = `${API_URL}/posts/${postId}${currentUser ? `?userId=${currentUser.id}` : ''}`;
-        console.log('[App] Notification click fetching:', url);
+        console.log('[App] Notification navigation fetching:', url);
         
         const res = await fetch(url);
         
@@ -360,15 +410,12 @@ export default function App() {
         if (data.status === 'success') {
           const p = data.data;
 
-          // Cho phép xem chi tiết ngay cả khi bị ẩn/khóa (theo yêu cầu người dùng)
-          // Nhưng vẫn thông báo cho người dùng biết trạng thái
           if (p.status === 'hidden' || p.status === 'rejected') {
             toast.info('Bạn đang xem bài viết đã bị quản trị viên ẩn/khóa.');
           } else if (p.status === 'pending') {
             toast.info('Bài viết này đang trong trạng thái chờ duyệt.');
           }
 
-          // Use the post object directly, as the backend already mapped it to Post via formatPostData()
           handlePostClick(p);
         } else {
           toast.error('Không thể tìm thấy bài viết này');
@@ -379,10 +426,12 @@ export default function App() {
       }
     } else {
       console.warn('[App] Invalid or missing postId in notification:', notif);
-      // Nếu là thông báo hệ thống và ID không hợp lệ, có thể chỉ là thông báo chung
+      // Nếu là thông báo hệ thống, hiển thị nội dung thông báo
       if (notif.type === 'system') {
-        // Có thể mở một modal thông báo hệ thống nếu cần, tạm thời thông báo lỗi
         toast.info('Thông báo hệ thống: ' + (notif.content || ''));
+      } else {
+        // Nếu là interaction (like/comment) mà post null -> Bài đã bị xóa
+        toast.info('Nội dung này không còn khả dụng do bài viết đã bị gỡ bỏ.');
       }
     }
   };
@@ -429,6 +478,14 @@ export default function App() {
     setCurrentUser(updatedUser);
     localStorage.setItem('currentUser', JSON.stringify(updatedUser));
   };
+
+  const handlePostDeleted = (postId: string) => {
+    setPosts(prev => prev.filter(p => p.id !== postId));
+    if (selectedPost?.id === postId) {
+      setSelectedPost(null);
+    }
+  };
+
   const handleLogout = () => {
     setIsAuthenticated(false);
     setCurrentUser(defaultUser);
@@ -445,7 +502,33 @@ export default function App() {
         const displayPosts = posts;
 
         return (
-          <div>
+          <div className="space-y-6">
+            <div className="flex items-center gap-2 p-1 bg-muted/50 rounded-2xl w-fit border border-border/50">
+              <Button 
+                variant={feedFilter === 'all' ? 'default' : 'ghost'} 
+                size="sm" 
+                onClick={() => setFeedFilter('all')}
+                className={`rounded-xl px-6 h-9 font-bold transition-all ${feedFilter === 'all' ? 'shadow-md shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Khám phá
+              </Button>
+              <Button 
+                variant={feedFilter === 'following' ? 'default' : 'ghost'} 
+                size="sm" 
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    toast.error('Vui lòng đăng nhập để xem những người bạn đang theo dõi');
+                    return;
+                  }
+                  setFeedFilter('following');
+                }}
+                className={`rounded-xl px-6 h-9 font-bold transition-all ${feedFilter === 'following' ? 'shadow-md shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Đang theo dõi
+              </Button>
+            </div>
+
+            <div>
             {activeCommunity && (
               <div className="mb-6 p-5 bg-card border border-border rounded-2xl shadow-sm flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-500 overflow-hidden relative">
                 <div className="absolute top-0 left-0 w-1.5 h-full bg-primary" />
@@ -483,6 +566,7 @@ export default function App() {
                     onUserClick={handleUserClick}
                     onSaveToggle={handleSaveToggle}
                     onCommunityClick={handleCommunityClick}
+                    onDeleteSuccess={handlePostDeleted}
                   />
               ))
             ) : (
@@ -493,6 +577,7 @@ export default function App() {
                   </Button>
               </div>
             )}
+            </div>
           </div>
         );
       case 'search':
@@ -514,12 +599,18 @@ export default function App() {
             })}
             onPostsChanged={() => fetchPosts(currentUser.id)}
             onUserClick={handleUserClick}
+            onViewChange={handleViewChange}
           />
         );
       case 'create':
         return <CreatePost onPostCreated={handlePostCreated} currentUser={currentUser} />;
       case 'messages':
-        return <Messages />;
+        return <Messages 
+          currentUser={currentUser} 
+          socket={socket} 
+          onUserClick={handleUserClick} 
+          onMessagesRead={() => fetchUnreadMessagesCount(currentUser.id)}
+        />;
       case 'notifications':
         return <Notifications 
           currentUser={currentUser} 
@@ -604,6 +695,7 @@ export default function App() {
               }
               // Load số thông báo chưa đọc
               fetchUnreadCount(u._id || u.id);
+              fetchUnreadMessagesCount(u._id || u.id);
             } else {
               navigate('/');
             }
@@ -636,7 +728,12 @@ export default function App() {
         }`}
       >
         <div className="w-60 h-full">
-          <Sidebar currentView={currentView} onViewChange={handleViewChange} userRole={currentUser.role} />
+          <Sidebar 
+            currentView={currentView} 
+            onViewChange={handleViewChange} 
+            userRole={currentUser.role} 
+            unreadMessagesCount={unreadMessagesCount}
+          />
         </div>
       </div>
 
@@ -644,7 +741,12 @@ export default function App() {
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
         <SheetContent side="left" className="w-60 bg-background border-r border-border p-0">
           <div className="p-4">
-            <Sidebar currentView={currentView} onViewChange={handleViewChange} userRole={currentUser.role} />
+            <Sidebar 
+              currentView={currentView} 
+              onViewChange={handleViewChange} 
+              userRole={currentUser.role} 
+              unreadMessagesCount={unreadMessagesCount}
+            />
           </div>
         </SheetContent>
       </Sheet>

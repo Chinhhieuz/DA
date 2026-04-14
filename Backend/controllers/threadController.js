@@ -47,7 +47,24 @@ const deleteThread = async (req, res) => {
     }
 };
 
+const reactToThread = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { action, user_id, type } = req.body;
+        
+        if (!user_id) {
+            return res.status(400).json({ status: 'fail', message: 'Cần đăng nhập để thao tác' });
+        }
+
+        const thread = await threadService.reactToThreadService({ id, user_id, action, type });
+        return res.status(200).json({ status: 'success', data: thread });
+    } catch (error) {
+        return handleServiceError(error, res);
+    }
+};
+
 module.exports = {
     createThread,
-    deleteThread
+    deleteThread,
+    reactToThread
 };

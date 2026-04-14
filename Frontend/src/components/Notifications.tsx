@@ -75,7 +75,7 @@ export function Notifications({
         type: data.type,
         content: data.content,
         sender: data.sender || { username: data.senderName, avatar_url: '' },
-        post: data.postId ? { _id: data.postId, title: data.postTitle } : (data.postTitle ? { title: data.postTitle } : null),
+        post: data.postId ? { _id: data.postId, title: data.postTitle || data.title || 'Bài viết' } : null,
         isRead: false,
         created_at: data.created_at || new Date().toISOString()
       };

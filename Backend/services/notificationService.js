@@ -21,7 +21,7 @@ const sendSocketEvent = (recipientId, eventName, payload) => {
     }
 };
 
-const createAndPushNotification = async ({ recipient, sender, type, post, content, customPayload }) => {
+const createAndPushNotification = async ({ recipient, sender, type, post, comment, thread, content, customPayload }) => {
     try {
         const recipientAcc = await Account.findById(recipient);
         if (!recipientAcc) return null;
@@ -34,6 +34,8 @@ const createAndPushNotification = async ({ recipient, sender, type, post, conten
             sender,
             type,
             post,
+            comment,
+            thread,
             content
         });
         await notif.save();
@@ -83,10 +85,25 @@ const markAllAsReadService = async (accountId) => {
     await Notification.updateMany({ recipient: accountId, isRead: false }, { isRead: true });
 };
 
+const deleteNotificationsByPost = async (postId) => {
+    await Notification.deleteMany({ post: postId });
+};
+
+const deleteNotificationsByComment = async (commentId) => {
+    await Notification.deleteMany({ comment: commentId });
+};
+
+const deleteNotificationsByThread = async (threadId) => {
+    await Notification.deleteMany({ thread: threadId });
+};
+
 module.exports = {
     sendSocketEvent,
     createAndPushNotification,
     getNotificationsService,
     markAsReadService,
-    markAllAsReadService
+    markAllAsReadService,
+    deleteNotificationsByPost,
+    deleteNotificationsByComment,
+    deleteNotificationsByThread
 };
