@@ -14,13 +14,15 @@ import { toast } from 'sonner';
 
 
 function CommentReaction({
-  commentId,
+  targetId,
+  targetType = 'comments',
   initialVote,
   initialUp,
   initialDown,
   currentUserId,
 }: {
-  commentId: string;
+  targetId: string;
+  targetType?: 'comments' | 'threads';
   initialVote: string | null;
   initialUp: number;
   initialDown: number;
@@ -66,7 +68,7 @@ function CommentReaction({
     setUserReaction(isRemoving ? null : type);
 
     try {
-      const res = await fetch(`${API_URL}/comments/${commentId}/react`, {
+      const res = await fetch(`${API_URL}/${targetType}/${targetId}/react`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, user_id: currentUserId, type })
@@ -76,8 +78,8 @@ function CommentReaction({
         throw new Error(data.message || 'Lỗi không xác định');
       }
     } catch (e: any) {
-      console.error('Lỗi lưu vote comment:', e);
-      toast.error('Không thể lưu lượt bình chọn cho bình luận.');
+      console.error(`Lỗi lưu vote ${targetType}:`, e);
+      toast.error('Không thể lưu lượt bình chọn.');
       // Revert state
       setUpVotes(previousUp);
       setDownVotes(previousDown);
@@ -86,33 +88,33 @@ function CommentReaction({
   };
 
   return (
-    <div className="flex items-center bg-muted rounded-full p-0.5 border border-border gap-1">
+    <div className="flex items-center bg-muted rounded-full p-0.5 border border-border gap-1 scale-[0.85] origin-left">
       <div className="flex items-center gap-1 group/up">
         <Button
           variant="ghost"
           size="sm"
-          className={`h-7 w-7 p-0 rounded-full transition-colors ${userReaction === 'up' || userReaction === '👍' ? 'text-orange-600 bg-orange-50 hover:bg-orange-100' : 'text-muted-foreground hover:text-orange-600 hover:bg-orange-50'}`}
+          className={`h-6 w-6 p-0 rounded-full transition-colors ${userReaction === 'up' || userReaction === '👍' ? 'text-orange-600 bg-orange-50 hover:bg-orange-100' : 'text-muted-foreground hover:text-orange-600 hover:bg-orange-50'}`}
           onClick={() => handleVote('up')}
         >
-          <ArrowBigUp className={`h-4 w-4 ${userReaction === 'up' || userReaction === '👍' ? 'fill-orange-600' : ''}`} />
+          <ArrowBigUp className={`h-3.5 w-3.5 ${userReaction === 'up' || userReaction === '👍' ? 'fill-orange-600' : ''}`} />
         </Button>
-        <span className={`text-xs font-bold min-w-[10px] ${userReaction === 'up' || userReaction === '👍' ? 'text-orange-600' : 'text-muted-foreground'}`}>
+        <span className={`text-[10px] font-bold min-w-[8px] ${userReaction === 'up' || userReaction === '👍' ? 'text-orange-600' : 'text-muted-foreground'}`}>
           {upVotes}
         </span>
       </div>
 
-      <div className="w-[1px] h-3 bg-border mx-0.5"></div>
+      <div className="w-[1px] h-3 bg-border mx-0"></div>
 
       <div className="flex items-center gap-1 group/down">
         <Button
           variant="ghost"
           size="sm"
-          className={`h-7 w-7 p-0 rounded-full transition-colors ${userReaction === 'down' ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' : 'text-muted-foreground hover:text-blue-600 hover:bg-blue-50'}`}
+          className={`h-6 w-6 p-0 rounded-full transition-colors ${userReaction === 'down' ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' : 'text-muted-foreground hover:text-blue-600 hover:bg-blue-50'}`}
           onClick={() => handleVote('down')}
         >
-          <ArrowBigDown className={`h-4 w-4 ${userReaction === 'down' ? 'fill-blue-600' : ''}`} />
+          <ArrowBigDown className={`h-3.5 w-3.5 ${userReaction === 'down' ? 'fill-blue-600' : ''}`} />
         </Button>
-        <span className={`text-xs font-bold min-w-[10px] ${userReaction === 'down' ? 'text-blue-600' : 'text-muted-foreground'}`}>
+        <span className={`text-[10px] font-bold min-w-[8px] ${userReaction === 'down' ? 'text-blue-600' : 'text-muted-foreground'}`}>
           {downVotes}
         </span>
       </div>
@@ -386,13 +388,16 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
                 <div className="flex flex-col w-full text-[14px]">
                   <div className="bg-muted px-3 py-2 rounded-2xl w-fit max-w-[90%] md:max-w-[85%] self-start">
                     <span
-                      className="font-bold text-foreground hover:underline cursor-pointer block mb-0.5 leading-tight"
+                      className="font-bold text-foreground text-[14px] hover:underline cursor-pointer flex items-center gap-1.5 mb-1"
                       onClick={(e) => {
                         e.stopPropagation();
                         onUserClick && comment.author.id && onUserClick(comment.author.id);
                       }}
                     >
                       {comment.author.username}
+                      {comment.author.username === post.author.username && (
+                         <span className="bg-primary/10 text-primary text-[9px] px-2 py-0.5 rounded-full uppercase font-black tracking-tight border border-primary/20 ml-1.5">Tác giả</span>
+                      )}
                     </span>
                     <p className="text-foreground/90 whitespace-pre-wrap break-words">{comment.content}</p>
                     {comment.image && (
@@ -409,6 +414,15 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
                     >
                       Trả lời
                     </span>
+
+                    <CommentReaction 
+                      targetId={comment.id} 
+                      targetType="comments"
+                      initialVote={comment.userVote || null}
+                      initialUp={comment.upvotes}
+                      initialDown={comment.downvotes}
+                      currentUserId={currentUser.id}
+                    />
 
                     {currentUser.id === comment.author.id && (
                       <span 
@@ -461,18 +475,18 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
                           
                           <div className="flex flex-col w-full text-[13px]">
                              <div className="bg-muted px-3 py-2 rounded-2xl w-fit max-w-[90%] md:max-w-[85%] self-start">
-                               <span
-                                 className="font-bold text-foreground hover:underline cursor-pointer flex items-center gap-1 mb-0.5"
-                                 onClick={(e) => {
-                                   e.stopPropagation();
-                                   onUserClick && thread.author.id && onUserClick(thread.author.id);
-                                 }}
-                               >
-                                 {thread.author.username}
-                                 {thread.author.username === post.author.username && (
-                                    <span className="bg-blue-100 text-blue-700 text-[9px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide">Tác giả</span>
-                                 )}
-                               </span>
+                                 <span
+                                   className="font-bold text-foreground text-[13px] hover:underline cursor-pointer flex items-center gap-1 mb-0.5"
+                                   onClick={(e) => {
+                                     e.stopPropagation();
+                                     onUserClick && thread.author.id && onUserClick(thread.author.id);
+                                   }}
+                                 >
+                                   {thread.author.username}
+                                   {thread.author.username === post.author.username && (
+                                      <span className="bg-primary/10 text-primary text-[8px] px-1.5 py-0.5 rounded-full uppercase font-black tracking-tight border border-primary/20 ml-1">Tác giả</span>
+                                   )}
+                                 </span>
                                <p className="text-foreground/90 whitespace-pre-wrap break-words">{thread.content}</p>
                                {thread.image && (
                                  <img src={thread.image} alt="Thread image" className="mt-2 max-h-[150px] rounded-md" />
@@ -481,6 +495,26 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
                              
                              <div className="flex items-center gap-3 text-[11px] font-semibold text-muted-foreground ml-3 mt-1">
                                 <span className="font-normal">{thread.timestamp}</span>
+                                
+                                <span 
+                                  className="cursor-pointer hover:underline hover:text-primary transition-colors"
+                                  onClick={() => {
+                                    setReplyingTo(comment.id);
+                                    setReplyContent(`@${thread.author.username} `);
+                                  }}
+                                >
+                                  Trả lời
+                                </span>
+
+                                <CommentReaction 
+                                  targetId={thread.id} 
+                                  targetType="threads"
+                                  initialVote={thread.userVote || null}
+                                  initialUp={thread.upvotes || 0}
+                                  initialDown={thread.downvotes || 0}
+                                  currentUserId={currentUser.id}
+                                />
+
                                 {currentUser.id === thread.author.id && (
                                   <span 
                                     className="cursor-pointer hover:underline text-red-500"

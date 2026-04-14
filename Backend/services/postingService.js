@@ -3,8 +3,10 @@ const Account = require('../models/Account');
 const Comment = require('../models/Comment');
 const Thread = require('../models/Thread');
 const Notification = require('../models/Notification');
+const Report = require('../models/Report');
 const socketModule = require('../socket');
 const aiModerationService = require('./aiModerationService');
+const notificationService = require('./notificationService');
 const { formatPostData } = require('../utils/postFormatter');
 const mongoose = require('mongoose');
 const cloudinary = require('cloudinary').v2;
@@ -46,7 +48,7 @@ const createPostService = async (postDataInput, files = []) => {
     let { image_urls = [] } = postData; 
     if (!author_id || !title || !content) {
         console.error('[POST SERVICE] Thiếu dữ liệu:', { author_id, title, hasContent: !!content });
-        throw new Error('Vui lòng cung cấp đủ author_id, tiêu đề và nội dung bài viết!');
+        throw new Error('Bạn chưa điền đầy đủ tiêu đề hoặc nội dung cho bài viết này!');
     }
 
     const userExists = await Account.findById(author_id);
@@ -120,22 +122,29 @@ const createPostService = async (postDataInput, files = []) => {
     return newPost;
 };
 
-const getAllPostsService = async ({ userId, community }) => {
+const getAllPostsService = async ({ userId, community, followingOnly }) => {
     let query = { status: 'approved' };
     if (community) {
         query.community = { $regex: new RegExp(`^${community}$`, 'i') };
     }
 
-    const posts = await Post.find(query)
-        .populate('author', 'username email role avatar_url display_name')
-        .sort({ created_at: -1 })
-        .lean();
-        
     let followingList = [];
     if (userId && mongoose.Types.ObjectId.isValid(userId)) {
         const user = await Account.findById(userId).select('following');
         if (user) followingList = (user.following || []).map(id => id.toString());
     }
+
+    // Nếu chỉ lấy từ người đang theo dõi
+    if (followingOnly === 'true' && userId) {
+        query.author = { $in: followingList };
+    }
+
+    console.log(`[POST SERVICE] Step 1: Querying posts (Community: ${community || 'all'}, FollowingOnly: ${followingOnly || 'false'})`);
+    const posts = await Post.find(query)
+        .populate('author', 'username email role avatar_url display_name')
+        .sort({ created_at: -1 })
+        .lean();
+    console.log(`[POST SERVICE] Step 2: Found ${posts.length} posts.`);
 
     const postsWithDetails = await Promise.all(posts.map(async (post) => {
         const commentCount = await getPostCommentAndThreadCount(post._id);
@@ -158,6 +167,51 @@ const getAllPostsService = async ({ userId, community }) => {
     }));
     
     return postsWithDetails;
+};
+
+const searchPostsService = async ({ keyword, userId }) => {
+    if (!keyword) return [];
+    
+    // Tìm kiếm trong title hoặc content bài viết
+    const query = {
+        status: 'approved',
+        $or: [
+            { title: { $regex: keyword, $options: 'i' } },
+            { content: { $regex: keyword, $options: 'i' } }
+        ]
+    };
+
+    const posts = await Post.find(query)
+        .populate('author', 'username email role avatar_url display_name')
+        .sort({ created_at: -1 })
+        .lean();
+
+    let followingList = [];
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+        const user = await Account.findById(userId).select('following');
+        if (user) followingList = (user.following || []).map(id => id.toString());
+    }
+
+    // Map thêm commentCount và userVote tương tự getAllPostsService
+    return await Promise.all(posts.map(async (post) => {
+        const commentCount = await getPostCommentAndThreadCount(post._id);
+        const recentComments = await Comment.find({ post: post._id })
+            .sort({ created_at: -1 })
+            .limit(1)
+            .populate('author', 'username display_name')
+            .lean();
+            
+        let userVote = null;
+        if (userId && post.reactions) {
+            const reaction = post.reactions.find(r => r.user_id && r.user_id.toString() === userId);
+            if (reaction) userVote = reaction.type;
+        }
+
+        const authorId = post.author ? (post.author._id || post.author).toString() : null;
+        const isFollowing = (userId && authorId) ? followingList.includes(authorId) : false;
+
+        return formatPostData(post, commentCount, recentComments, userVote, isFollowing);
+    }));
 };
 
 const getTrendingPostsService = async (userId) => {
@@ -226,38 +280,15 @@ const reactToPostService = async ({ id, user_id, action, type }) => {
     post.markModified('reactions');
     await post.save();
 
-    // Push notification logic
+    // Push notification logic using unified service
     if ((action === 'like' || action === 'up') && post.author.toString() !== user_id) {
-        try {
-            const recipientAcc = await Account.findById(post.author);
-            if (recipientAcc && recipientAcc.preferences?.pushNotifications !== false) {
-                const notif = new Notification({
-                    recipient: post.author,
-                    sender: user_id,
-                    type: 'like',
-                    post: post._id
-                });
-                await notif.save();
-
-                const senderAcc = await Account.findById(user_id);
-                const io = socketModule.getIO ? socketModule.getIO() : null;
-                const connectedUsers = socketModule.getConnectedUsers ? socketModule.getConnectedUsers() : null;
-                
-                if (io && connectedUsers) {
-                    const recipientSocketId = connectedUsers.get(post.author.toString());
-                    if (recipientSocketId && senderAcc) {
-                        io.to(recipientSocketId).emit('new_notification', {
-                            type: 'like',
-                            senderName: senderAcc.display_name || senderAcc.username,
-                            postId: post._id,
-                            title: post.title
-                        });
-                    }
-                }
-            }
-        } catch (e) {
-            console.error('[POSTING SERVICE] Lỗi xử lý notification:', e.message);
-        }
+        await notificationService.createAndPushNotification({
+            recipient: post.author,
+            sender: user_id,
+            type: 'like',
+            post: post._id,
+            customPayload: { title: post.title }
+        });
     }
 
     return post;
@@ -270,15 +301,41 @@ const getPendingPostsService = async () => {
         .lean();
 };
 
-const approvePostService = async (id) => {
+const approvePostService = async (id, admin_id) => {
     const post = await Post.findByIdAndUpdate(id, { status: 'approved' }, { new: true });
     if (!post) throw new Error('NOT_FOUND:Không tìm thấy bài viết');
+    
+    // Gửi thông báo cho tác giả
+    await notificationService.createAndPushNotification({
+        recipient: post.author,
+        sender: admin_id,
+        type: 'system',
+        post: post._id,
+        content: `Bài viết "${post.title}" của bạn đã được phê duyệt!`,
+        customPayload: { title: 'Thông báo xét duyệt' }
+    });
+
     return post;
 };
 
-const rejectPostService = async (id) => {
-    const post = await Post.findByIdAndUpdate(id, { status: 'rejected' }, { new: true });
+const rejectPostService = async (id, admin_id, reason) => {
+    const post = await Post.findByIdAndUpdate(id, { 
+        status: 'rejected', 
+        ai_system_note: reason || 'Nội dung không phù hợp quy tắc cộng đồng.' 
+    }, { new: true });
+    
     if (!post) throw new Error('NOT_FOUND:Không tìm thấy bài viết');
+    
+    // Gửi thông báo cho tác giả
+    await notificationService.createAndPushNotification({
+        recipient: post.author,
+        sender: admin_id,
+        type: 'system',
+        post: post._id,
+        content: `Bài viết "${post.title}" của bạn đã bị từ chối. Lý do: ${reason || 'Vi phạm quy tắc cộng đồng.'}`,
+        customPayload: { title: 'Thông báo xét duyệt' }
+    });
+
     return post;
 };
 
@@ -286,18 +343,37 @@ const deletePostService = async ({ id, user_id }) => {
     const post = await Post.findById(id);
     if (!post) throw new Error('NOT_FOUND:Không tìm thấy bài viết');
 
-    if (post.author.toString() !== user_id) {
-        throw new Error('FORBIDDEN:Bạn không có quyền xóa bài viết này!');
+    if (post.author.toString() !== user_id && post.author._id?.toString() !== user_id) {
+        // Nếu là Admin thì chấp nhận xóa
+        const currentUser = await Account.findById(user_id);
+        if (!currentUser || currentUser.role.toLowerCase() !== 'admin') {
+            throw new Error('FORBIDDEN:Bạn không có quyền xóa bài viết này!');
+        }
     }
 
-    await Post.findByIdAndDelete(id);
-    await Comment.deleteMany({ post: id });
-    
-    try {
-        const Report = require('../models/Report'); 
-        await Report.deleteMany({ post: id });
-    } catch (e) {}
+    // 1. Xóa toàn bộ thông báo liên quan đến bài viết này
+    await notificationService.deleteNotificationsByPost(id);
 
+    // 2. Xóa các dữ liệu liên hoàn (Comments & Threads)
+    const commentIds = await Comment.distinct('_id', { post: id });
+    for (const cid of commentIds) {
+        await notificationService.deleteNotificationsByComment(cid);
+    }
+    
+    const threads = await Thread.find({ comment: { $in: commentIds } });
+    for (const thread of threads) {
+        await notificationService.deleteNotificationsByThread(thread._id);
+    }
+
+    await Thread.deleteMany({ comment: { $in: commentIds } });
+    await Comment.deleteMany({ post: id });
+
+    // 3. Xóa các Tố cáo liên quan (Reports Cleanup)
+    await Report.deleteMany({ post: id });
+
+    // 4. Xóa chính bài viết
+    await Post.findByIdAndDelete(id);
+    
     return id;
 };
 
@@ -359,52 +435,6 @@ const getSavedPostsService = async (userId) => {
     return postsWithDetails;
 };
 
-const searchPostsService = async ({ q, userId }) => {
-    if (!q) return [];
-
-    const query = {
-        status: 'approved',
-        $or: [
-            { title: { $regex: q, $options: 'i' } },
-            { content: { $regex: q, $options: 'i' } },
-            { community: { $regex: q, $options: 'i' } }
-        ]
-    };
-
-    const posts = await Post.find(query)
-        .populate('author', 'username email role avatar_url display_name')
-        .sort({ created_at: -1 })
-        .limit(20)
-        .lean();
-
-    let followingList = [];
-    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-        const user = await Account.findById(userId).select('following');
-        if (user) followingList = (user.following || []).map(id => id.toString());
-    }
-
-    const formattedResults = await Promise.all(posts.map(async (post) => {
-        const commentCount = await getPostCommentAndThreadCount(post._id);
-        const recentComments = await Comment.find({ post: post._id })
-            .sort({ created_at: -1 })
-            .limit(1)
-            .populate('author', 'username display_name')
-            .lean();
-
-        let userVote = null;
-        if (userId && post.reactions) {
-            const reaction = post.reactions.find(r => r.user_id && r.user_id.toString() === userId);
-            if (reaction) userVote = reaction.type;
-        }
-
-        const authorId = post.author ? (post.author._id || post.author).toString() : null;
-        const isFollowing = (userId && authorId) ? followingList.includes(authorId) : false;
-
-        return formatPostData(post, commentCount, recentComments, userVote, isFollowing);
-    }));
-
-    return formattedResults;
-};
 
 const getCommunityPostsAdminService = async ({ communityName, admin_id }) => {
     if (!admin_id) {

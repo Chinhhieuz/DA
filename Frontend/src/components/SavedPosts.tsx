@@ -53,6 +53,10 @@ export function SavedPosts({
     onSaveToggle(postId, isSaved);
   };
 
+  const handlePostDeleted = (postId: string) => {
+    setPosts(prev => prev.filter(p => p.id !== postId));
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
@@ -85,6 +89,7 @@ export function SavedPosts({
               onUserClick={onUserClick}
               onSaveToggle={handleInternalSaveToggle}
               onCommunityClick={onCommunityClick}
+              onDeleteSuccess={handlePostDeleted}
             />
           ))}
         </div>

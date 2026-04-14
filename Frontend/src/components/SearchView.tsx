@@ -100,6 +100,10 @@ export function SearchView({ onPostClick, onUserClick, currentUser }: SearchView
     }
   };
 
+  const handlePostDeleted = (postId: string) => {
+    setFilteredPosts(prev => prev.filter(p => p.id !== postId));
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -200,6 +204,7 @@ export function SearchView({ onPostClick, onUserClick, currentUser }: SearchView
                 onPostClick={onPostClick} 
                 onUserClick={onUserClick}
                 currentUser={currentUser}
+                onDeleteSuccess={handlePostDeleted}
               />
             ))
           ) : (

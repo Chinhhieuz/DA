@@ -1,6 +1,7 @@
 const express = require('express');
 const postingController = require('../controllers/postingController');
 const { isAdmin } = require('../middlewares/adminMiddleware');
+const { postValidation } = require('../middlewares/validateMiddleware');
 const multer = require('multer');
 
 const router = express.Router();
@@ -13,7 +14,8 @@ const upload = multer({
 });
 
 // API Đăng bài viết (Hỗ trợ Multipart/FormData cho tốc độ cao)
-router.post('/', upload.array('image', 10), postingController.createPost);
+// upload.array() phải đứng trước postValidation để parse dữ liệu từ form-data vào req.body
+router.post('/', upload.array('image', 10), postValidation, postingController.createPost);
 
 // API Lấy danh sách bài viết đã duyệt
 router.get('/', postingController.getAllPosts);

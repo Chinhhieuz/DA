@@ -16,6 +16,16 @@ const HARD_BLOCKLIST = [
 ];
 
 /**
+ * Helper: Chuẩn hóa văn bản để phát hiện lách luật (Teencode, dấu chấm, khoảng trắng)
+ * Ví dụ: "đ.m" -> "đm", "f u c k" -> "fuck"
+ */
+function normalizeText(text) {
+    if (!text) return '';
+    // Loại bỏ tất cả khoảng trắng và các ký tự gây nhiễu phổ biến
+    return text.toLowerCase().replace(/[\s\.\-\_\*\|\,\@\(\)\[\]\{\}\?\!]/g, '');
+}
+
+/**
  * Helper: Chuyển đổi Buffer ảnh thành format tương thích với Gemini
  */
 function bufferToGenerativePart(buffer, mimeType = 'image/jpeg') {
@@ -51,9 +61,12 @@ async function fetchImageToGenerativePart(url) {
  */
 const checkContent = async (title, content, imageUrls = []) => {
     // ⚔️ KIỂM TRA LỚP 1: GLOBAL HARD BLOCKLIST (CASE-INSENSITIVE)
-    const fullText = (title + ' ' + content).toLowerCase();
+    const rawText = (title + ' ' + content).toLowerCase();
+    const cleanText = normalizeText(title + ' ' + content);
+
     for (const word of HARD_BLOCKLIST) {
-        if (fullText.includes(word)) {
+        // Kiểm tra cả văn bản gốc và văn bản đã chuẩn hóa
+        if (rawText.includes(word) || cleanText.includes(word)) {
             console.log(`[AI Moderation] 🛡️ GLOBAL BLOCKLIST CATCH: "${word}" found. REJECT!`);
             return { status: 'REJECT', reason: `Phát hiện từ ngữ bị cấm: ${word}` };
         }
@@ -62,10 +75,20 @@ const checkContent = async (title, content, imageUrls = []) => {
     // 🧠 KIỂM TRA LỚP 2: INTERNATIONAL SYSTEM PROMPT (Gemini)
     return new Promise(async (resolve) => {
         try {
+            const { GoogleGenerativeAI } = require('@google/generative-ai');
             const apiKey = process.env.GEMINI_API_KEY;
             if (!apiKey) return resolve({ status: 'PASS', reason: '' });
 
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
+            const genAI = new GoogleGenerativeAI(apiKey);
+            // Sử dụng model 2.0-flash mà tài khoản của bạn có quyền truy cập
+            const model = genAI.getGenerativeModel({ 
+                model: 'gemini-2.0-flash',
+                generationConfig: {
+                    temperature: 0.1,
+                    maxOutputTokens: 1024,
+                    responseMimeType: "application/json"
+                }
+            });
 
             const prompt = `[INTERNATIONAL CONTENT MODERATION SYSTEM - GLOBAL SAFETY SHIELD]
 You are an Elite International Content Moderator. You are highly proficient in multiple languages, including Vietnamese, English, Spanish, French, and common internet slang across cultures.
@@ -95,16 +118,13 @@ RULES: Return ONLY JSON {"status": "REJECT"/"PASS", "reason": "Short text"}. NO 
 
             let contentsParts = [{ text: prompt }];
 
-            // 🚀 Xử lý danh sách Ảnh dưới dạng Buffer hoặc URL song song
+            // 🚀 Xử lý danh sách Ảnh
             const allPromises = [];
-            
-            // 1. Thêm các ảnh từ Buffers (Dùng trực tiếp dữ liệu thô)
             if (Array.isArray(imageUrls) && imageUrls.length > 0 && imageUrls[0] instanceof Buffer) {
                 imageUrls.forEach(buf => {
                     allPromises.push(Promise.resolve(bufferToGenerativePart(buf)));
                 });
             } else if (imageUrls && imageUrls.length > 0) {
-                // 2. Thêm các ảnh từ URLs (Tải về)
                 imageUrls.forEach(url => {
                     allPromises.push(fetchImageToGenerativePart(url));
                 });
@@ -117,69 +137,37 @@ RULES: Return ONLY JSON {"status": "REJECT"/"PASS", "reason": "Short text"}. NO 
                 });
             }
 
-            const requestBody = JSON.stringify({
-                contents: [{ parts: contentsParts }],
-                safetySettings: [
-                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-                ],
-                generationConfig: { 
-                    temperature: 0.1, 
-                    maxOutputTokens: 1024,
-                    responseMimeType: "application/json"
-                }
+            const result = await model.generateContent({
+                contents: [{ role: 'user', parts: contentsParts }]
             });
 
-            const req = https.request(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(requestBody) }
-            }, (res) => {
-                let data = '';
-                res.on('data', (chunk) => { data += chunk; });
-                res.on('end', () => {
-                    try {
-                        const json = JSON.parse(data);
-                        if (res.statusCode !== 200) return resolve({ status: 'REJECT', reason: 'Lỗi từ API của Google Gemini' });
-                        if (json.candidates?.[0]?.finishReason === 'SAFETY') return resolve({ status: 'REJECT', reason: 'Bị chặn bởi bộ lọc an toàn của Google' });
+            const textResponse = result.response.text().trim();
+            let aiResult;
+            try {
+                aiResult = JSON.parse(textResponse);
+            } catch (e) {
+                // Xử lý trường hợp AI trả về markdown code blocks
+                const cleaned = textResponse.replace(/^```json\s*|\s*```$/g, '').trim();
+                aiResult = JSON.parse(cleaned);
+            }
 
-                        let textResponse = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '{}';
-                        
-                        // 🧹 XỬ LÝ: Loại bỏ Markdown code blocks nếu AI trả về (vd: ```json ... ```)
-                        if (textResponse.includes('```')) {
-                            const match = textResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-                            if (match && match[1]) {
-                                textResponse = match[1].trim();
-                            }
-                        }
+            if (aiResult.status === 'REJECT') {
+                console.log(`[AI Moderation] 🛡️ REJECTED: "${title}", Lý do: ${aiResult.reason}`);
+                resolve({ status: 'REJECT', reason: aiResult.reason || 'Vi phạm chính sách cộng đồng' });
+            } else {
+                resolve({ status: 'PASS', reason: '' });
+            }
 
-                        let aiResult;
-                        try {
-                            aiResult = JSON.parse(textResponse);
-                        } catch (parseError) {
-                            console.error('[AI Moderation] Lỗi parse JSON từ AI:', textResponse);
-                            return resolve({ status: 'REJECT', reason: 'Nội dung không rõ ràng hoặc vi phạm chính sách' });
-                        }
-
-                        if (aiResult.status === 'REJECT') {
-                            console.log(`[AI Moderation] 🛡️ REJECTED: "${title}", Lý do: ${aiResult.reason}`);
-                            resolve({ status: 'REJECT', reason: aiResult.reason || 'Vi phạm chính sách cộng đồng' });
-                        } else {
-                            resolve({ status: 'PASS', reason: '' });
-                        }
-                    } catch (e) { 
-                        console.error('[AI Moderation] Lỗi xử lý phản hồi:', e.message);
-                        resolve({ status: 'REJECT', reason: 'Lỗi phân tích nội dung' }); 
-                    }
-                });
-            });
-
-            req.on('error', () => resolve({ status: 'REJECT', reason: 'Lỗi truyền tải kết nối đến AI' }));
-            req.write(requestBody);
-            req.end();
-
-        } catch (error) { resolve({ status: 'REJECT', reason: 'Lỗi hệ thống xử lý nội dung' }); }
+        } catch (error) { 
+            console.error('[AI Moderation] Lỗi hệ thống AI:', error.message);
+            // Nếu lỗi là do hết hạn mức (Quota), chúng ta cho phép bài viết đi qua để Admin duyệt thủ công
+            // thay vì chặn cứng bài viết của người dùng.
+            if (error.message.includes('429') || error.message.includes('quota')) {
+                console.log('[AI Moderation] ⚠️ Hết hạn mức API Gemini. Chuyển sang chế độ duyệt thủ công.');
+                return resolve({ status: 'PASS', reason: 'Hệ thống AI đang bảo trì - Đang chờ Admin duyệt' });
+            }
+            resolve({ status: 'REJECT', reason: 'Lỗi hệ thống xử lý nội dung' }); 
+        }
     });
 };
 

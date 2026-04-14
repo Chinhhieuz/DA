@@ -4,6 +4,7 @@ const Account = require('../models/Account');
 const Thread = require('../models/Thread');
 const Notification = require('../models/Notification');
 const socketModule = require('../socket');
+const notificationService = require('./notificationService');
 const { processMentions } = require('../utils/mentionUtils');
 
 const createCommentService = async (commentData) => {
@@ -36,37 +37,15 @@ const createCommentService = async (commentData) => {
 
     // Push notification logic
     if (postExists.author.toString() !== author_id) {
-        try {
-            const recipientAcc = await Account.findById(postExists.author);
-            if (recipientAcc && recipientAcc.preferences?.commentNotifications !== false) {
-                const notif = new Notification({
-                    recipient: postExists.author,
-                    sender: author_id,
-                    type: 'comment',
-                    post: post_id,
-                    content: content.substring(0, 50)
-                });
-                await notif.save();
-
-                const io = socketModule.getIO ? socketModule.getIO() : null;
-                const connectedUsers = socketModule.getConnectedUsers ? socketModule.getConnectedUsers() : null;
-                
-                if (io && connectedUsers) {
-                    const recipientSocketId = connectedUsers.get(postExists.author.toString());
-                    if (recipientSocketId) {
-                        io.to(recipientSocketId).emit('new_notification', {
-                            type: 'comment',
-                            senderName: userExists.display_name || userExists.username,
-                            postId: post_id,
-                            title: postExists.title,
-                            content: content.substring(0, 50)
-                        });
-                    }
-                }
-            }
-        } catch(e) {
-            console.error('[COMMENT SERVICE] Lỗi gửi socket notification:', e);
-        }
+        await notificationService.createAndPushNotification({
+            recipient: postExists.author,
+            sender: author_id,
+            type: 'comment',
+            post: post_id,
+            comment: newComment._id,
+            content: `đã bình luận: ${content.substring(0, 50)}`,
+            customPayload: { title: postExists.title }
+        });
     }
 
     return newComment;
@@ -75,14 +54,24 @@ const createCommentService = async (commentData) => {
 const getCommentsByPostService = async (postId, userId) => {
     const comments = await Comment.find({ post: postId })
         .populate('author', 'username email role avatar_url display_name')
-        .sort({ created_at: -1 })
+        .sort({ upvotes: -1, created_at: -1 })
         .lean();
     
     for (let comment of comments) {
         const threads = await Thread.find({ comment: comment._id })
             .populate('author', 'username email role avatar_url display_name')
-            .sort({ created_at: 1 });
-        comment.threads = threads;
+            .sort({ created_at: 1 })
+            .lean();
+            
+        // Xử lý userVote cho từng thread
+        comment.threads = threads.map(thread => {
+            let userVote = null;
+            if (userId && thread.reactions && thread.reactions.length > 0) {
+                const reaction = thread.reactions.find(r => r.user_id && r.user_id.toString() === userId);
+                userVote = reaction ? reaction.type : null;
+            }
+            return { ...thread, id: thread._id.toString(), userVote };
+        });
 
         if (userId && comment.reactions && comment.reactions.length > 0) {
             const userReaction = comment.reactions.find(r => r.user_id && r.user_id.toString() === userId);
@@ -129,33 +118,14 @@ const reactToCommentService = async ({ id, user_id, action, type }) => {
     await comment.save();
 
     if ((action === 'like' || action === 'up') && comment.author.toString() !== user_id) {
-        const notif = new Notification({
+        await notificationService.createAndPushNotification({
             recipient: comment.author,
             sender: user_id,
             type: 'like',
-            post: comment.post
+            post: comment.post,
+            comment: comment._id,
+            customPayload: { title: 'Bình luận của bạn' }
         });
-        await notif.save();
-
-        try {
-            const senderAcc = await Account.findById(user_id);
-            const io = socketModule.getIO ? socketModule.getIO() : null;
-            const connectedUsers = socketModule.getConnectedUsers ? socketModule.getConnectedUsers() : null;
-            
-            if (io && connectedUsers) {
-                const recipientSocketId = connectedUsers.get(comment.author.toString());
-                if (recipientSocketId && senderAcc) {
-                    io.to(recipientSocketId).emit('new_notification', {
-                        type: 'like',
-                        senderName: senderAcc.display_name || senderAcc.username,
-                        postId: comment.post,
-                        title: 'Bình luận của bạn',
-                    });
-                }
-            }
-        } catch(e) {
-            console.error('[COMMENT SERVICE] Lỗi gửi socket notification:', e);
-        }
     }
 
     return comment;
@@ -169,7 +139,16 @@ const deleteCommentService = async ({ id, user_id }) => {
         throw new Error('FORBIDDEN:Bạn không có quyền xóa bình luận này');
     }
 
+    // Xử lý xóa dây chuyền (Threads)
+    const threads = await Thread.find({ comment: id });
+    for (const thread of threads) {
+        await notificationService.deleteNotificationsByThread(thread._id);
+    }
     await Thread.deleteMany({ comment: id });
+
+    // Xóa thông báo của chính bình luận này
+    await notificationService.deleteNotificationsByComment(id);
+
     await Comment.findByIdAndDelete(id);
     
     return id;

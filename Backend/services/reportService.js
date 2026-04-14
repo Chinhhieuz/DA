@@ -1,7 +1,11 @@
 const Report = require('../models/Report');
 const Post = require('../models/Post');
 const Account = require('../models/Account');
+const Comment = require('../models/Comment');
+const Thread = require('../models/Thread');
+const Notification = require('../models/Notification');
 const notificationService = require('./notificationService');
+const postingService = require('./postingService');
 
 const createReportService = async ({ post_id, reporter_id, reason, description, evidence_images }) => {
     if (!post_id || !reporter_id || !reason) {
@@ -52,13 +56,17 @@ const handleReportService = async ({ admin_id, report_id, action }) => {
 
     if (action === 'delete_post') {
         if (report.post) {
-            await Post.findByIdAndDelete(report.post._id);
+            const postId = report.post._id;
+            
+            // Sử dụng dịch vụ xóa bài viết chuẩn đã được gia cố
+            await postingService.deletePostService({ id: postId, user_id: admin_id });
             
             if (authorId) {
                 await notificationService.createAndPushNotification({
                     recipient: authorId,
                     sender: admin_id,
                     type: 'system',
+                    post: postId,
                     content: `[XỬ PHẠT] Bài viết "${postTitle}" của bạn đã bị gỡ bỏ do vi phạm nghiêm trọng quy tắc cộng đồng.`
                 });
             }

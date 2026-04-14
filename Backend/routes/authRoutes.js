@@ -1,13 +1,14 @@
 const express = require('express');
 const authController = require('../controllers/authController');
+const { loginValidation, registerValidation } = require('../middlewares/validateMiddleware');
 
 const router = express.Router();
 
 // Định tuyến phương thức POST cho chức năng đăng nhập
-router.post('/login', authController.login);
+router.post('/login', loginValidation, authController.login);
 
 // Định tuyến xử lý việc đăng kí (Yêu cầu tài khoản dạng Admin sau này sẽ làm middlewares)
-router.post('/register', authController.register);
+router.post('/register', registerValidation, authController.register);
 
 // Định tuyến cập nhật thông tin cá nhân (ảnh, bio, tên...)
 router.put('/profile', authController.updateProfile);
