@@ -138,15 +138,14 @@ const sendFriendRequest = async (req, res) => {
         try {
             const senderAcc = await Account.findById(senderId);
             const io = socketModule.getIO();
-            const connectedUsers = socketModule.getConnectedUsers();
-            const recipientSocketId = connectedUsers.get(targetId);
-
-            if (recipientSocketId && senderAcc) {
-                io.to(recipientSocketId).emit('new_notification', {
+            if (senderAcc) {
+                const rIdStr = targetId.toString();
+                io.to(rIdStr).emit('new_notification', {
                     type: 'friend_request',
                     senderName: senderAcc.display_name || senderAcc.username,
                     senderId: senderId
                 });
+                console.log(`📡 [FRIEND_REQ] Gửi tới Room: ${rIdStr}`);
             }
         } catch (e) { console.error('Socket error (send):', e.message); }
 
@@ -165,15 +164,14 @@ const acceptFriendRequest = async (req, res) => {
         try {
             const userAcc = await Account.findById(userId);
             const io = socketModule.getIO();
-            const connectedUsers = socketModule.getConnectedUsers();
-            const recipientSocketId = connectedUsers.get(senderId);
-
-            if (recipientSocketId && userAcc) {
-                io.to(recipientSocketId).emit('new_notification', {
+            if (userAcc) {
+                const rIdStr = senderId.toString();
+                io.to(rIdStr).emit('new_notification', {
                     type: 'like', // Dùng type like để hiện thông báo thường
                     senderName: userAcc.display_name || userAcc.username,
                     content: 'đã chấp nhận lời mời kết bạn của bạn'
                 });
+                console.log(`📡 [FRIEND_ACCEPT] Gửi tới Room: ${rIdStr}`);
             }
 
             // Xóa thông báo friend_request cũ của người nhận
@@ -195,14 +193,12 @@ const cancelFriendRequest = async (req, res) => {
         // Gửi Socket Notification Hủy
         try {
             const io = socketModule.getIO();
-            const connectedUsers = socketModule.getConnectedUsers();
-            const recipientSocketId = connectedUsers.get(targetId);
-            if (recipientSocketId) {
-                io.to(recipientSocketId).emit('notification_cancelled', {
-                    senderId: senderId,
-                    type: 'friend_request'
-                });
-            }
+            const rIdStr = targetId.toString();
+            io.to(rIdStr).emit('notification_cancelled', {
+                senderId: senderId,
+                type: 'friend_request'
+            });
+            console.log(`📡 [FRIEND_CANCEL] Gửi tới Room: ${rIdStr}`);
         } catch (e) { console.error('Socket error (cancel):', e.message); }
 
         return res.status(200).json({ status: 'success', message: result.message });
@@ -246,16 +242,15 @@ const followUser = async (req, res) => {
         try {
             const followerAcc = await Account.findById(followerId);
             const io = socketModule.getIO();
-            const connectedUsers = socketModule.getConnectedUsers();
-            const recipientSocketId = connectedUsers.get(targetId);
-
-            if (recipientSocketId && followerAcc) {
-                io.to(recipientSocketId).emit('new_notification', {
+            if (followerAcc) {
+                const rIdStr = targetId.toString();
+                io.to(rIdStr).emit('new_notification', {
                     type: 'follow',
                     senderName: followerAcc.display_name || followerAcc.username,
                     content: 'đã bắt đầu theo dõi bạn',
                     senderId: followerId
                 });
+                console.log(`📡 [FOLLOW] Gửi tới Room: ${rIdStr}`);
             }
         } catch (e) { console.error('Socket error (follow):', e.message); }
 

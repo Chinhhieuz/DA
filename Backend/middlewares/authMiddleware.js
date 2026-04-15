@@ -2,12 +2,15 @@ const jwt = require('jsonwebtoken');
 const Account = require('../models/Account');
 const mongoose = require('mongoose');
 
+const normalizeId = (value) => String(value || '').trim();
+
 /**
  * Middleware xác thực người dùng qua JWT Token.
  * Hỗ trợ Tương thích ngược (Legacy Support) cho phép dùng admin_id/userId nếu không có token.
  */
 const protect = async (req, res, next) => {
     let token;
+    const isMessagesRoute = String(req.originalUrl || '').startsWith('/api/messages');
 
     // 1. Kiểm tra Token trong Header Authorization
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -30,6 +33,18 @@ const protect = async (req, res, next) => {
                 return res.status(401).json({ status: 'fail', message: 'Người dùng sở hữu token này không còn tồn tại!' });
             }
 
+            // For message routes, prefer explicit userId when provided to avoid
+            // token/localStorage drift causing sender/recipient misclassification.
+            const explicitMessageUserId = normalizeId(req.body?.userId || req.query?.userId);
+            if (isMessagesRoute && explicitMessageUserId && mongoose.Types.ObjectId.isValid(explicitMessageUserId)) {
+                if (String(req.user._id) !== explicitMessageUserId) {
+                    const explicitUser = await Account.findById(explicitMessageUserId).select('-password_hash');
+                    if (explicitUser) {
+                        req.user = explicitUser;
+                    }
+                }
+            }
+
             return next();
         } catch (error) {
             console.error('JWT Error:', error.message);
@@ -40,7 +55,12 @@ const protect = async (req, res, next) => {
 
     // TRƯỜNG HỢP KHÔNG CÓ TOKEN: Hỗ trợ tương thích ngược (Legacy Support)
     // Chấp nhận admin_id hoặc userId từ body/query/params (Cảnh báo: Cách này không bảo mật)
-    const legacyId = req.body?.admin_id || req.query?.admin_id || req.body?.userId || req.query?.userId || req.params?.userId;
+    const legacyId =
+        req.body?.admin_id ||
+        req.query?.admin_id ||
+        req.body?.userId ||
+        req.query?.userId ||
+        (isMessagesRoute ? null : req.params?.userId);
     
     if (legacyId) {
         console.warn(`[AUTH] ⚠️ Legacy access attempt with ID: ${legacyId} at ${req.originalUrl}`);

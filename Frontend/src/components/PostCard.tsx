@@ -409,14 +409,14 @@ export function PostCard({
   };
 
   return (
-    <Card className="mb-3 overflow-hidden border border-border bg-card rounded-xl shadow-sm transition-all duration-200">
-      <div className="p-3 sm:p-4">
+    <Card className="glass-panel group mb-4 overflow-hidden rounded-[28px] border border-border/70 shadow-[0_24px_60px_rgba(15,23,42,0.08)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_30px_70px_rgba(15,23,42,0.12)]">
+      <div className="p-4 sm:p-5">
         {/* Content Section */}
         <div className="flex-1">
           {/* Post Header */}
-          <div className="mb-2 flex items-start gap-2.5">
+          <div className="mb-3 flex items-start gap-3">
             <Avatar 
-              className="h-9 w-9 border border-border shadow-sm ring-1 ring-background cursor-pointer hover:opacity-80 transition-opacity"
+              className="h-11 w-11 cursor-pointer border border-white/60 shadow-md ring-4 ring-white/40 transition-opacity hover:opacity-80"
               onClick={(e) => { e.stopPropagation(); onUserClick && post.author.id && onUserClick(post.author.id); }}
             >
               <AvatarImage src={post.author.avatar} className="object-cover" />
@@ -435,7 +435,7 @@ export function PostCard({
               <div className="mt-0.5 flex flex-wrap gap-1">
                 <Badge 
                   variant="secondary" 
-                  className="bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer flex gap-1 items-center font-semibold border-none"
+                  className="flex cursor-pointer items-center gap-1 border-none bg-primary/10 px-3 py-1 font-semibold text-primary hover:bg-primary/20"
                   onClick={(e) => { e.stopPropagation(); onCommunityClick && onCommunityClick(post.community); }}
                 >
                   {post.community}
@@ -466,7 +466,7 @@ export function PostCard({
                <Button 
                 variant="ghost" 
                 size="sm" 
-                className={`ml-auto h-8 px-2 font-bold text-xs gap-1 transition-all ${isFollowing ? 'text-slate-500 hover:bg-slate-100 hover:text-slate-600' : 'text-red-600 hover:bg-red-50 hover:text-red-700'}`}
+                className={`ml-auto h-9 gap-1 rounded-full px-3 text-xs font-bold transition-all ${isFollowing ? 'text-slate-500 hover:bg-slate-100 hover:text-slate-600' : 'bg-primary/8 text-red-600 hover:bg-red-50 hover:text-red-700'}`}
                 onClick={async (e) => {
                   e.stopPropagation();
                   const action = isFollowing ? 'unfollow' : 'follow';
@@ -505,11 +505,11 @@ export function PostCard({
             className="cursor-pointer"
             onClick={() => onPostClick && onPostClick(post)}
           >
-            <h3 className="mb-1.5 text-[18px] sm:text-[20px] font-bold leading-snug text-foreground hover:text-primary transition-colors">
+            <h3 className="mb-2 text-[20px] font-black leading-snug tracking-tight text-foreground transition-colors group-hover:text-primary sm:text-[24px]">
               {post.title}
             </h3>
             <div 
-              className="mb-3 text-[14px] leading-snug text-foreground/90 tiptap-prose"
+              className="tiptap-prose mb-4 text-[14px] leading-7 text-foreground/85"
               dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(post.content) }}
             />
             {/* Multi-image Rendering — dùng ImageCollage */}
@@ -525,7 +525,7 @@ export function PostCard({
           </div>
 
           {/* Biểu đồ số liệu Lượt Thích / Bình luận */}
-          <div className="flex items-center justify-between text-xs text-muted-foreground mb-2 px-1">
+          <div className="mb-3 flex items-center justify-between px-1 text-xs text-muted-foreground">
               <div className="flex gap-2 items-center">
                 {upVotes > 0 && (
                    <span className="flex items-center gap-0.5 rounded-full px-2 py-0.5 bg-orange-50/10 text-orange-600 font-bold border border-orange-100/20 italic">
@@ -547,13 +547,13 @@ export function PostCard({
              </div>
           </div>
 
-          <div className="h-[1px] bg-border w-full my-2"></div>
+          <div className="my-3 h-px w-full bg-border/80"></div>
 
           {/* Post Actions */}
           <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-2">
               
-            <div className="flex items-center bg-muted rounded-full p-0.5 border border-border gap-1">
+            <div className="flex items-center gap-1 rounded-full border border-border bg-white/70 p-0.5">
               <div className="flex items-center gap-1 group/up">
                 <Button
                   variant="ghost"
@@ -588,7 +588,7 @@ export function PostCard({
               <Button
                 variant="ghost"
                 size="sm"
-                className="gap-2 text-muted-foreground font-medium rounded-full px-4 hover:text-primary hover:bg-primary/10 transition-colors"
+                className="rounded-full px-4 font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
                 onClick={(e) => { e.stopPropagation(); onPostClick && onPostClick(post); }}
               >
                 <MessageCircle className="h-4 w-4" />
@@ -597,7 +597,7 @@ export function PostCard({
               <Button
                 variant="ghost"
                 size="sm"
-                className="gap-2 text-muted-foreground font-medium rounded-full px-4 hover:text-green-600 hover:bg-green-50 transition-colors"
+                className="rounded-full px-4 font-medium text-muted-foreground transition-colors hover:bg-green-50 hover:text-green-600"
                 onClick={(e) => { e.stopPropagation(); handleShare(); }}
               >
                 <Share2 className="h-4 w-4" />
@@ -607,11 +607,11 @@ export function PostCard({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:bg-muted">
+                <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:bg-muted">
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64 bg-card p-2 shadow-lg border border-border">
+              <DropdownMenuContent align="end" className="glass-panel w-64 p-2">
                 <DropdownMenuItem onClick={handleSavePost} className="cursor-pointer gap-3 p-3 text-sm font-medium text-foreground focus:bg-muted focus:text-foreground">
                   <Bookmark className={`h-5 w-5 ${currentUser?.savedPosts?.includes(post.id) ? 'fill-primary text-primary' : 'text-foreground'}`} />
                   <span>{currentUser?.savedPosts?.includes(post.id) ? 'Hủy đã lưu' : 'Lưu bài viết'}</span>
@@ -638,7 +638,7 @@ export function PostCard({
           {/* Recent Comment Preview */}
           {post.recentComment && (
              <div 
-               className="mt-2 text-sm text-foreground/80 bg-muted p-2 rounded-lg cursor-pointer hover:bg-muted/80 transition-colors"
+               className="mt-3 cursor-pointer rounded-2xl bg-muted/70 p-3 text-sm text-foreground/80 transition-colors hover:bg-muted"
                onClick={() => onPostClick && onPostClick(post)}
              >
                <span className="font-semibold text-foreground">{post.recentComment.authorName}</span>: {post.recentComment.content}

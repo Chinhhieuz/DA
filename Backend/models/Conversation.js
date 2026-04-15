@@ -6,6 +6,9 @@ const conversationSchema = new mongoose.Schema({
         ref: 'Account',
         required: true
     }],
+    conversation_key: {
+        type: String
+    },
     last_message: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Message'
@@ -21,5 +24,7 @@ const conversationSchema = new mongoose.Schema({
 
 // Index để tìm nhanh cuộc hội thoại giữa 2 người
 conversationSchema.index({ participants: 1 });
+// Khóa hội thoại 1-1 để tránh tạo trùng khi nhiều request song song
+conversationSchema.index({ conversation_key: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Conversation', conversationSchema);

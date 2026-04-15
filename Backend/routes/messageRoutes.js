@@ -10,9 +10,11 @@ router.get('/conversations', messageController.getConversations);
 router.post('/share', messageController.shareMessage);
 router.post('/', messageController.sendMessage);
 router.post('/start/:userId', messageController.startChat);
+router.get('/start/:userId', messageController.startChat);
 
 router.put('/:messageId/revoke', messageController.revokeMessage);
 router.put('/:conversationId/read', messageController.markAsRead);
+router.delete('/conversations/:conversationId', messageController.deleteConversation);
 router.get('/unread-count', messageController.getUnreadCount);
 router.get('/:conversationId', messageController.getMessages);
 

@@ -36,6 +36,159 @@ body,
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: "Segoe UI", "Inter", sans-serif;
+  background: var(--background);
+  background-attachment: fixed;
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at top left, rgba(239, 68, 68, 0.15), transparent 28%),
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.18), transparent 32%),
+    linear-gradient(180deg, #0f172a 0%, #111827 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 22%, white);
+  color: var(--foreground);
+}
+
+a {
+  color: inherit;
+}
+
+.app-shell {
+  position: relative;
+}
+
+.app-shell::before,
+.app-shell::after {
+  content: "";
+  position: fixed;
+  z-index: 0;
+  border-radius: 9999px;
+  filter: blur(70px);
+  pointer-events: none;
+}
+
+.app-shell::before {
+  top: 72px;
+  left: -64px;
+  width: 220px;
+  height: 220px;
+  background: rgba(201, 31, 40, 0.12);
+}
+
+.app-shell::after {
+  right: -48px;
+  bottom: 10vh;
+  width: 260px;
+  height: 260px;
+  background: rgba(18, 59, 116, 0.12);
+}
+
+.glass-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.soft-ring {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4) inset;
+}
+
+.page-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.75rem;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, white);
+  background:
+    radial-gradient(circle at top left, rgba(201, 31, 40, 0.16), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(18, 59, 116, 0.14), transparent 32%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(255, 248, 242, 0.82));
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.dark .page-hero {
+  background:
+    radial-gradient(circle at top left, rgba(239, 68, 68, 0.18), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.16), transparent 34%),
+    linear-gradient(145deg, rgba(15, 23, 42, 0.88), rgba(17, 24, 39, 0.92));
+}
+
+.page-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -8% -35% auto;
+  width: 240px;
+  height: 240px;
+  border-radius: 9999px;
+  background: rgba(201, 31, 40, 0.08);
+  filter: blur(12px);
+}
+
+.page-section-card {
+  border-radius: 1.5rem;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, white);
+  background: color-mix(in srgb, var(--card) 88%, white);
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(16px);
+}
+
+.page-stat-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.page-stat-card {
+  border-radius: 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, white);
+  background: rgba(255, 255, 255, 0.7);
+  padding: 1rem;
+}
+
+.dark .page-stat-card {
+  background: rgba(15, 23, 42, 0.52);
+}
+
+.page-empty {
+  border-radius: 1.5rem;
+  border: 1px dashed color-mix(in srgb, var(--border) 92%, white);
+  background:
+    radial-gradient(circle at top, rgba(201, 31, 40, 0.07), transparent 40%),
+    color-mix(in srgb, var(--card) 85%, white);
+}
+
+.page-soft-surface {
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid color-mix(in srgb, var(--border) 84%, white);
+}
+
+.dark .page-soft-surface {
+  background: rgba(15, 23, 42, 0.58);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.page-soft-hover:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.dark .page-soft-hover:hover {
+  background: rgba(30, 41, 59, 0.72);
+}
+
 @layer utilities {
   .tiptap-prose ul {
     list-style-type: disc !important;

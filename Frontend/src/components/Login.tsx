@@ -2,248 +2,310 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowRight, Eye, EyeOff } from 'lucide-react';
+import {
+  ArrowRight,
+  Eye,
+  EyeOff,
+  ChevronLeft,
+  ShieldCheck,
+  KeyRound,
+  Sparkles,
+} from 'lucide-react';
 import { API_URL } from '@/lib/api';
 import { toast } from 'sonner';
 
-export function Login({ onLogin, onBackToHome }: { onLogin: (userData?: any) => void, onBackToHome?: () => void }) {
+type LoginAccount = {
+  _id?: string;
+  id?: string;
+  full_name?: string;
+  username?: string;
+  avatar_url?: string;
+  role?: string;
+  preferences?: unknown;
+  savedPosts?: string[];
+};
+
+type LoginPayload = {
+  token?: string;
+  user?: LoginAccount;
+} & Record<string, unknown>;
+
+export function Login({
+  onLogin,
+  onBackToHome,
+}: {
+  onLogin: (userData?: LoginPayload) => void;
+  onBackToHome?: () => void;
+}) {
   const [showPassword, setShowPassword] = useState(false);
   const [currentView, setCurrentView] = useState<'login' | 'forgot'>('login');
   const [resetEmail, setResetEmail] = useState('');
   const [isSendingForgot, setIsSendingForgot] = useState(false);
 
-  // --- THÊM STATE CHO CHỨC NĂNG LOGIN ---
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // --- HÀM XỬ LÝ ĐĂNG NHẬP GỌI API BACKEND ---
+  const isForgotView = currentView === 'forgot';
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(''); // Xóa lỗi cũ
-    setIsLoading(true); // Bật trạng thái loading
+    setError('');
+    setIsLoading(true);
 
     try {
-      // Thay đổi URL này cho khớp với port server Node.js của bạn
       const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        // Backend đang mong đợi "email" (hoặc tài khoản) và "password"
-        body: JSON.stringify({ email, password }), 
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        // Ném lỗi ra nếu API trả về status lỗi (400, 401, 500...)
         throw new Error(data.message || 'Đăng nhập thất bại!');
       }
 
-      // ĐĂNG NHẬP THÀNH CÔNG
-      // Lưu Token và thông tin user vào localStorage để dùng cho các trang khác
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('userInfo', JSON.stringify(data.data));
+      const token = data.data?.token || data.token;
+      const userData = data.data as LoginPayload | undefined;
+      const account = userData?.user;
 
-      // Chuyển trang và truyền thông tin user lên component cha
-      onLogin(data.data); 
-    } catch (err: any) {
-      setError(err.message); // Hiển thị lỗi ra màn hình
+      if (!token || !account) {
+        throw new Error('Dữ liệu đăng nhập trả về không hợp lệ!');
+      }
+
+      localStorage.setItem('token', token);
+      localStorage.setItem(
+        'currentUser',
+        JSON.stringify({
+          id: account._id || account.id,
+          _id: account._id || account.id,
+          name: account.full_name || account.username,
+          username: account.username,
+          avatar: account.avatar_url || '',
+          role: (account.role || 'user').toLowerCase(),
+          preferences: account.preferences,
+          savedPosts: account.savedPosts || [],
+        }),
+      );
+
+      onLogin(userData);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Đăng nhập thất bại!';
+      setError(message);
     } finally {
-      setIsLoading(false); // Tắt trạng thái loading
+      setIsLoading(false);
     }
   };
 
-  if (currentView === 'forgot') {
-    return (
-      <div className="flex min-h-screen w-full bg-white">
-        {/* ... [GIỮ NGUYÊN CODE PHẦN BANNER BÊN TRÁI CỦA FORGOT PASSWORD] ... */}
-        <div className="hidden lg:flex flex-col justify-between w-[400px] xl:w-[500px] p-10 bg-primary relative overflow-hidden text-white">
-          <div className="absolute inset-0 bg-black/10 z-0"></div>
-          <div className="relative z-10">
-            <div 
-              className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-8 shadow-lg cursor-pointer transition-transform hover:scale-105"
-              onClick={() => setCurrentView('login')}
-            >
-              <span className="text-2xl text-primary">🔗</span>
-            </div>
-            <h1 className="text-4xl font-bold mb-4">Quên mật khẩu?</h1>
-            <p className="text-lg text-white/90">Đừng lo lắng, chúng tôi sẽ giúp bạn lấy lại quyền truy cập tài khoản.</p>
-          </div>
-        </div>
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail || isSendingForgot) return;
 
-        <div className="flex-1 flex flex-col items-center justify-center p-8 sm:p-12 relative">
-          <div className="w-full max-w-[400px] flex flex-col gap-6">
-            <Button variant="ghost" className="w-fit p-0 h-auto text-primary hover:bg-transparent" onClick={() => setCurrentView('login')}>
-              <ArrowRight className="w-4 h-4 mr-2 rotate-180" /> Quay lại đăng nhập
-            </Button>
-            
-            <div className="space-y-2">
-              <h2 className="text-3xl font-bold tracking-tight">Khôi phục mật khẩu</h2>
-              <p className="text-sm text-zinc-500">Nhập email hoặc tên đăng nhập để nhận hướng dẫn khôi phục qua email hệ thống.</p>
-            </div>
+    setIsSendingForgot(true);
+    const toastId = toast.loading('Hệ thống đang xử lý và gửi email, vui lòng đợi...');
 
-            <form className="space-y-4" onSubmit={async (e) => { 
-                e.preventDefault(); 
-                if (!resetEmail || isSendingForgot) return;
-                setIsSendingForgot(true);
-                const toastId = toast.loading('Hệ thống đang xử lý và gửi email, vui lòng đợi...');
-                try {
-                  const res = await fetch(`${API_URL}/auth/forgot-password`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: resetEmail })
-                  });
-                  const data = await res.json();
-                  if (res.ok && data.status === 'success') {
-                    toast.success(data.message || `Một email hướng dẫn đã được gửi tới: ${resetEmail}`, { id: toastId });
-                    setCurrentView('login');
-                  } else {
-                    toast.error(data.message || 'Có lỗi xảy ra, vui lòng thử lại.', { id: toastId });
-                  }
-                } catch (err) {
-                  toast.error('Lỗi kết nối đến server!', { id: toastId });
-                } finally {
-                  setIsSendingForgot(false);
-                }
-            }}>
-              <div className="space-y-2">
-                <Label htmlFor="reset-email" className="text-sm font-semibold">Tài khoản hoặc Email</Label>
-                <Input
-                  id="reset-email"
-                  type="text"
-                  placeholder="Nhập tên đăng nhập hoặc email"
-                  value={resetEmail}
-                  onChange={(e) => setResetEmail(e.target.value)}
-                  className="h-12 rounded-xl bg-zinc-50 border-transparent focus:border-primary focus:ring-primary transition-colors"
-                  disabled={isSendingForgot}
-                  required
-                />
-              </div>
+    try {
+      const res = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail }),
+      });
 
-              <Button disabled={isSendingForgot} type="submit" className="w-full h-12 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold mt-2 shadow-md">
-                {isSendingForgot ? 'Đang gửi...' : 'Gửi mã xác thực'} {!isSendingForgot && <ArrowRight className="w-4 h-4 ml-2" />}
-              </Button>
-            </form>
-          </div>
-        </div>
-      </div>
-    );
-  }
+      const data = await res.json();
+
+      if (res.ok && data.status === 'success') {
+        toast.success(data.message || `Hướng dẫn đã được gửi tới: ${resetEmail}`, { id: toastId });
+        setCurrentView('login');
+      } else {
+        toast.error(data.message || 'Có lỗi xảy ra, vui lòng thử lại.', { id: toastId });
+      }
+    } catch {
+      toast.error('Lỗi kết nối đến server!', { id: toastId });
+    } finally {
+      setIsSendingForgot(false);
+    }
+  };
 
   return (
-    <div className="flex min-h-screen w-full bg-white">
-      {/* Left side - Banner */}
-      <div className="hidden lg:flex flex-col justify-between w-[400px] xl:w-[500px] p-10 bg-primary relative overflow-hidden">
-        <div className="absolute inset-0 bg-black/10 z-0"></div>
-        <div className="relative z-10 text-white">
-          <div 
-            className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-8 shadow-lg cursor-pointer transition-transform hover:scale-105"
-            onClick={onBackToHome}
-            title="Quay lại trang chủ"
-          >
-            <span className="text-2xl text-primary">🔗</span>
-          </div>
-          <h1 className="text-4xl font-bold mb-4">Chào mừng quay trở lại</h1>
-          <p className="text-lg text-white/90">Hệ thống sử dụng tài khoản được cấp. Vui lòng đăng nhập để tiếp tục.</p>
-        </div>
-        
-        <div className="relative z-10">
-          <img 
-            src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop" 
-            alt="Abstract landscape" 
-            className="rounded-xl shadow-2xl border border-white/20 object-cover h-[300px] w-full"
-          />
-        </div>
-      </div>
+    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(201,31,40,0.2),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(18,59,116,0.16),transparent_38%),linear-gradient(145deg,#fffefc_0%,#f5f7fb_55%,#eef2f7_100%)]">
+      <div className="pointer-events-none absolute -left-24 top-8 h-64 w-64 rounded-full bg-primary/15 blur-3xl" />
+      <div className="pointer-events-none absolute -right-20 bottom-10 h-64 w-64 rounded-full bg-secondary/20 blur-3xl" />
 
-      {/* Right side - Login Form */}
-      <div className="flex-1 flex flex-col items-center justify-center p-8 sm:p-12 relative">
-        <div className="w-full max-w-[400px] flex flex-col gap-6">
-          <div 
-            className="lg:hidden w-12 h-12 bg-primary rounded-full flex items-center justify-center mb-2 shadow-lg cursor-pointer transition-transform hover:scale-105"
-            onClick={onBackToHome}
-            title="Quay lại trang chủ"
-          >
-            <span className="text-2xl text-white">🔗</span>
-          </div>
-          
-          <div className="space-y-2">
-            <h2 className="text-3xl font-bold tracking-tight">Đăng nhập</h2>
-            <p className="text-sm text-zinc-500">
-              Vui lòng điền thông tin tài khoản đã được cấp.
-            </p>
-          </div>
+      <div className="relative mx-auto flex min-h-screen w-full max-w-[96rem] items-center px-3 py-4 sm:px-6 lg:px-8">
+        <div className="grid min-h-[88vh] w-full overflow-hidden rounded-[38px] border border-white/70 bg-white/85 shadow-[0_30px_90px_rgba(15,23,42,0.14)] backdrop-blur-xl lg:grid-cols-[1.15fr_1fr]">
+          <section className="relative hidden overflow-hidden bg-[linear-gradient(145deg,#ab111f_0%,#c91f28_46%,#7c102d_100%)] p-12 text-white lg:flex lg:flex-col lg:justify-between">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.22),transparent_34%),radial-gradient(circle_at_88%_82%,rgba(18,59,116,0.45),transparent_36%)]" />
+            <div className="relative z-10">
+              <button
+                type="button"
+                className="mb-8 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-primary shadow-lg transition hover:-translate-y-0.5"
+                onClick={onBackToHome}
+                title="Quay lại trang chủ"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
 
-          {/* HIỂN THỊ LỖI NẾU CÓ */}
-          {error && (
-            <div className="p-3 text-sm text-red-500 bg-red-50 border border-red-200 rounded-lg">
-              {error}
+              <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/90">
+                <Sparkles className="h-3.5 w-3.5" />
+                Linky workspace
+              </p>
+
+              <h1 className="text-4xl font-black leading-tight">
+                {isForgotView ? 'Khôi phục tài khoản an toàn' : 'Chào mừng quay trở lại'}
+              </h1>
+
+              <p className="mt-4 max-w-md text-sm leading-6 text-white/85">
+                {isForgotView
+                  ? 'Nhập tài khoản hoặc email để nhận hướng dẫn khôi phục mật khẩu ngay lập tức.'
+                  : 'Đăng nhập để tiếp tục công việc, theo dõi thông báo và quản lý nội dung của bạn.'}
+              </p>
             </div>
-          )}
 
-          <form className="space-y-4" onSubmit={handleLoginSubmit}>
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-semibold text-zinc-700">
-                Email / Tài khoản
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="Nhập email của bạn"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="h-12 rounded-xl bg-zinc-50 border-transparent hover:border-zinc-200 focus:border-primary focus:ring-primary transition-colors"
-                required
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-semibold text-zinc-700">
-                Mật khẩu
-              </Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Mật khẩu"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="h-12 rounded-xl bg-zinc-50 border-transparent hover:border-zinc-200 focus:border-primary focus:ring-primary transition-colors pr-12"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors p-1"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
+            <div className="relative z-10 space-y-3">
+              <div className="rounded-2xl border border-white/25 bg-white/10 p-4 backdrop-blur-sm">
+                <p className="text-xs uppercase tracking-[0.16em] text-white/75">Bảo mật</p>
+                <p className="mt-2 flex items-center gap-2 text-base font-semibold">
+                  <ShieldCheck className="h-5 w-5 text-white/90" />
+                  Xác thực tài khoản theo phiên
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/25 bg-white/10 p-4 backdrop-blur-sm">
+                <p className="text-xs uppercase tracking-[0.16em] text-white/75">Truy cập nhanh</p>
+                <p className="mt-2 flex items-center gap-2 text-base font-semibold">
+                  <KeyRound className="h-5 w-5 text-white/90" />
+                  Đơn giản, rõ ràng, dễ sử dụng
+                </p>
               </div>
             </div>
+          </section>
 
-            <div className="flex items-center justify-between pt-1">
-              <button 
-                type="button"
-                onClick={() => setCurrentView('forgot')}
-                className="text-sm text-zinc-500 hover:text-primary transition-colors"
-              >
-                Quên <span className="text-primary font-medium hover:underline underline-offset-4">mật khẩu</span>?
-              </button>
-            </div>
+          <section className="relative px-6 py-7 sm:px-12 sm:py-12 lg:px-14">
+            <div className="pointer-events-none absolute right-5 top-5 h-20 w-20 rounded-full bg-primary/10 blur-2xl" />
 
-            <Button 
-              type="submit" 
-              disabled={isLoading}
-              className="w-full h-12 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold mt-2 shadow-md hover:shadow-lg transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+            <button
+              type="button"
+              className="mb-4 inline-flex items-center gap-1 rounded-xl border border-zinc-200/70 bg-white/85 px-3 py-2 text-sm font-medium text-zinc-600 shadow-sm transition hover:bg-zinc-50 lg:hidden"
+              onClick={isForgotView ? () => setCurrentView('login') : onBackToHome}
             >
-              {isLoading ? 'Đang xử lý...' : (
-                <>Đăng nhập <ArrowRight className="w-4 h-4 ml-2" /></>
+              <ChevronLeft className="h-4 w-4" />
+              {isForgotView ? 'Quay lại đăng nhập' : 'Quay lại'}
+            </button>
+
+            <div className="relative z-10 mx-auto w-full max-w-[500px]">
+              <div className="mb-7 space-y-2">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary/80">
+                  {isForgotView ? 'Password support' : 'Secure login'}
+                </p>
+                <h2 className="text-3xl font-black tracking-tight text-zinc-900">
+                  {isForgotView ? 'Khôi phục mật khẩu' : 'Đăng nhập'}
+                </h2>
+                <p className="text-sm leading-6 text-zinc-500">
+                  {isForgotView
+                    ? 'Nhập tài khoản hoặc email, hệ thống sẽ gửi hướng dẫn về hộp thư của bạn.'
+                    : 'Nhập thông tin tài khoản đã được cấp để tiếp tục.'}
+                </p>
+              </div>
+
+              {error && !isForgotView && (
+                <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                  {error}
+                </div>
               )}
-            </Button>
-          </form>
+
+              {isForgotView ? (
+                <form className="space-y-5" onSubmit={handleForgotSubmit}>
+                  <div className="space-y-2">
+                    <Label htmlFor="reset-email" className="text-sm font-semibold text-zinc-700">
+                      Tài khoản hoặc Email
+                    </Label>
+                    <Input
+                      id="reset-email"
+                      type="text"
+                      placeholder="Nhập tài khoản hoặc email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      className="h-12 rounded-2xl border-zinc-200/80 bg-white/80 px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] focus-visible:border-primary focus-visible:ring-primary/20"
+                      disabled={isSendingForgot}
+                      required
+                    />
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={isSendingForgot}
+                    className="h-12 w-full rounded-2xl bg-primary text-primary-foreground font-semibold shadow-[0_14px_30px_rgba(201,31,40,0.3)] transition hover:-translate-y-0.5 hover:bg-primary/90 disabled:translate-y-0"
+                  >
+                    {isSendingForgot ? 'Đang gửi...' : 'Gửi hướng dẫn'}
+                    {!isSendingForgot && <ArrowRight className="ml-1 h-4 w-4" />}
+                  </Button>
+                </form>
+              ) : (
+                <form className="space-y-5" onSubmit={handleLoginSubmit}>
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className="text-sm font-semibold text-zinc-700">
+                      Email / Tài khoản
+                    </Label>
+                    <Input
+                      id="email"
+                      type="text"
+                      placeholder="Nhập email hoặc tên đăng nhập"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="h-12 rounded-2xl border-zinc-200/80 bg-white/80 px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] focus-visible:border-primary focus-visible:ring-primary/20"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="password" className="text-sm font-semibold text-zinc-700">
+                      Mật khẩu
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="Nhập mật khẩu"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="h-12 rounded-2xl border-zinc-200/80 bg-white/80 px-4 pr-12 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] focus-visible:border-primary focus-visible:ring-primary/20"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-zinc-400 transition hover:text-zinc-700"
+                      >
+                        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentView('forgot')}
+                      className="text-sm font-medium text-zinc-500 transition hover:text-primary"
+                    >
+                      Quên mật khẩu?
+                    </button>
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={isLoading}
+                    className="h-12 w-full rounded-2xl bg-primary text-primary-foreground font-semibold shadow-[0_14px_30px_rgba(201,31,40,0.3)] transition hover:-translate-y-0.5 hover:bg-primary/90 disabled:translate-y-0"
+                  >
+                    {isLoading ? 'Đang xử lý...' : 'Đăng nhập'}
+                    {!isLoading && <ArrowRight className="ml-1 h-4 w-4" />}
+                  </Button>
+                </form>
+              )}
+            </div>
+          </section>
         </div>
       </div>
     </div>
