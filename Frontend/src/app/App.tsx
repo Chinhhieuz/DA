@@ -228,7 +228,7 @@ function AppContent({
           if (!isMessagesPage && isIncomingForCurrentUser) {
             console.log('📣 [App] Triggering toast notification');
             toast('Tin nhắn mới', {
-              description: message.content || '[Hình ảnh]',
+              description: message.content || '[Tệp đính kèm]',
               action: {
                 label: 'Xem',
                 onClick: () => navigate('/messages')
@@ -416,7 +416,7 @@ function AppContent({
                 <div className="flex items-center gap-4">
                   <div className="rounded-2xl bg-primary/10 p-3 text-primary"><Filter className="h-5 w-5" /></div>
                   <div>
-                    <h2 className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Bộ lọc đang hoạt động</h2>
+                    <h2 className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Chủ đề</h2>
                     <span className="text-xl font-bold">{activeCommunity}</span>
                   </div>
                 </div>
@@ -498,7 +498,7 @@ function AppContent({
         onCommunityClick={handleCommunityClick}
       />
 
-      <div className={`hidden md:block fixed left-0 top-20 bottom-6 z-40 transition-all duration-300 ${desktopSidebarOpen ? 'w-72 opacity-100' : 'w-0 opacity-0 overflow-hidden'}`}>
+      <div className={`hidden md:block fixed left-0 top-[5.5rem] bottom-6 z-40 transition-all duration-300 ${desktopSidebarOpen ? 'w-72 opacity-100' : 'w-0 opacity-0 overflow-hidden'}`}>
         <div className="h-full w-72">
           <Sidebar currentView={currentView} onViewChange={handleViewChange} userRole={currentUser.role} unreadMessagesCount={unreadMessagesCount} />
         </div>
@@ -512,10 +512,10 @@ function AppContent({
         </SheetContent>
       </Sheet>
 
-      <main className={`relative z-10 ml-0 pt-20 transition-all duration-300 ${desktopSidebarOpen ? 'md:ml-72' : 'md:ml-0'}`}>
+      <main className={`relative z-10 ml-0 pt-[5.5rem] transition-all duration-300 ${desktopSidebarOpen ? 'md:ml-72' : 'md:ml-0'}`}>
         <div className="mx-auto max-w-[1500px] px-4 pb-8 sm:px-6 lg:px-8">
           <div className="flex justify-center gap-8 xl:gap-10">
-            <div className="flex-1 max-w-4xl w-full">{renderContent()}</div>
+            <div className={`flex-1 w-full ${currentView === 'messages' ? 'max-w-[1320px]' : 'max-w-4xl'}`}>{renderContent()}</div>
             {currentView === 'home' && (
               <div className="hidden lg:block w-80 pt-1 sticky top-[100px] self-start">
                 <TrendingContent onPostClick={handlePostClick} currentUser={currentUser} />

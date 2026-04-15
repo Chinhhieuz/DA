@@ -1,10 +1,26 @@
 const express = require('express');
-const router = express.Router();
+const multer = require('multer');
 const messageController = require('../controllers/messageController');
 const { protect } = require('../middlewares/authMiddleware');
 
-// Tất cả các route tin nhắn đều yêu cầu đăng nhập
+const router = express.Router();
+
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 }
+});
+
 router.use(protect);
+
+router.post('/upload', (req, res, next) => {
+    upload.single('file')(req, res, (err) => {
+        if (!err) return next();
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ status: 'fail', message: 'Kich thuoc tep toi da la 50MB' });
+        }
+        return res.status(400).json({ status: 'fail', message: err.message || 'Upload that bai' });
+    });
+}, messageController.uploadAttachment);
 
 router.get('/conversations', messageController.getConversations);
 router.post('/share', messageController.shareMessage);
@@ -18,5 +34,5 @@ router.delete('/conversations/:conversationId', messageController.deleteConversa
 router.get('/unread-count', messageController.getUnreadCount);
 router.get('/:conversationId', messageController.getMessages);
 
-console.log('[MESSAGES] ✅ Routes initialized and prioritized');
+console.log('[MESSAGES] Routes initialized and prioritized');
 module.exports = router;

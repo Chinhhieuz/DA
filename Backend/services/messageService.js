@@ -36,10 +36,80 @@ const normalizeContent = (content) => {
     return content.trim();
 };
 
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif', 'heic', 'heif'];
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v', '3gp'];
+
+const getUrlExtension = (url) => {
+    if (typeof url !== 'string') return '';
+    const safeUrl = url.split('?')[0].split('#')[0];
+    const segments = safeUrl.split('.');
+    if (segments.length < 2) return '';
+    return String(segments.pop() || '').toLowerCase();
+};
+
+const inferAttachmentKind = ({ url = '', mimeType = '', declaredKind = '' }) => {
+    const kind = String(declaredKind || '').trim().toLowerCase();
+    if (kind === 'image' || kind === 'video' || kind === 'file') return kind;
+
+    const mime = String(mimeType || '').trim().toLowerCase();
+    if (mime.startsWith('image/')) return 'image';
+    if (mime.startsWith('video/')) return 'video';
+
+    const extension = getUrlExtension(url);
+    if (IMAGE_EXTENSIONS.includes(extension)) return 'image';
+    if (VIDEO_EXTENSIONS.includes(extension)) return 'video';
+    return 'file';
+};
+
+const buildAttachmentFromString = (url) => {
+    const normalizedUrl = typeof url === 'string' ? url.trim() : '';
+    if (!normalizedUrl) return null;
+    return {
+        url: normalizedUrl,
+        kind: inferAttachmentKind({ url: normalizedUrl })
+    };
+};
+
+const buildAttachmentFromObject = (attachment) => {
+    if (!attachment || typeof attachment !== 'object') return null;
+
+    const url = typeof attachment.url === 'string'
+        ? attachment.url.trim()
+        : (typeof attachment.path === 'string' ? attachment.path.trim() : '');
+
+    if (!url) return null;
+
+    const mimeType = typeof attachment.mime_type === 'string'
+        ? attachment.mime_type.trim()
+        : (typeof attachment.mimeType === 'string' ? attachment.mimeType.trim() : '');
+
+    const kind = inferAttachmentKind({
+        url,
+        mimeType,
+        declaredKind: attachment.kind || attachment.type
+    });
+
+    const normalized = { url, kind };
+    if (typeof attachment.name === 'string' && attachment.name.trim()) {
+        normalized.name = attachment.name.trim();
+    }
+    if (mimeType) {
+        normalized.mime_type = mimeType;
+    }
+    if (Number.isFinite(attachment.size) && attachment.size > 0) {
+        normalized.size = Number(attachment.size);
+    }
+    return normalized;
+};
+
 const normalizeAttachments = (attachments) => {
     if (!Array.isArray(attachments)) return [];
     return attachments
-        .map((attachment) => (typeof attachment === 'string' ? attachment.trim() : ''))
+        .map((attachment) => {
+            if (typeof attachment === 'string') return buildAttachmentFromString(attachment);
+            if (attachment && typeof attachment === 'object') return buildAttachmentFromObject(attachment);
+            return null;
+        })
         .filter(Boolean);
 };
 

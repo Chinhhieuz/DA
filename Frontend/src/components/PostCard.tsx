@@ -215,6 +215,7 @@ export interface Post {
   content: string;
   image?: string;
   image_urls?: string[];
+  video?: string;
   upvotes: number;
   downvotes: number;
   comments: Comment[];
@@ -513,6 +514,11 @@ export function PostCard({
               dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(post.content) }}
             />
             {/* Multi-image Rendering — dùng ImageCollage */}
+            {post.video && (
+              <div className="mb-3" onClick={(e) => e.stopPropagation()}>
+                <video src={post.video} controls className="w-full rounded-xl bg-black max-h-[520px]" />
+              </div>
+            )}
             {post.image_urls && post.image_urls.length > 0 ? (
               <ImageCollage images={post.image_urls} title={post.title} />
             ) : post.image && (

@@ -6,53 +6,50 @@ const multer = require('multer');
 
 const router = express.Router();
 
-// Cấu hình Multer bộ nhớ để xử lý Buffer ảnh thô
 const storage = multer.memoryStorage();
-const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 } // Giới hạn 5MB/ảnh
+const fileFilter = (req, file, cb) => {
+    const mimetype = file?.mimetype || '';
+    if (file.fieldname === 'image' && mimetype.startsWith('image/')) {
+        return cb(null, true);
+    }
+    if (file.fieldname === 'video' && mimetype.startsWith('video/')) {
+        return cb(null, true);
+    }
+    return cb(new Error('File khong hop le cho truong upload'));
+};
+
+const upload = multer({
+    storage,
+    fileFilter,
+    limits: { fileSize: 50 * 1024 * 1024 }
 });
 
-// API Đăng bài viết (Hỗ trợ Multipart/FormData cho tốc độ cao)
-// upload.array() phải đứng trước postValidation để parse dữ liệu từ form-data vào req.body
-router.post('/', upload.array('image', 10), postValidation, postingController.createPost);
+const postUploadFields = upload.fields([
+    { name: 'image', maxCount: 10 },
+    { name: 'video', maxCount: 1 }
+]);
 
-// API Lấy danh sách bài viết đã duyệt
+router.post('/', (req, res, next) => {
+    postUploadFields(req, res, (err) => {
+        if (!err) return next();
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ status: 'fail', message: 'Kich thuoc file toi da la 50MB' });
+        }
+        return res.status(400).json({ status: 'fail', message: err.message || 'Upload file that bai' });
+    });
+}, postValidation, postingController.createPost);
+
 router.get('/', postingController.getAllPosts);
-
-// API Lấy danh sách bài viết thịnh hành
 router.get('/trending', postingController.getTrendingPosts);
-
-
-// API Tìm kiếm bài viết
 router.get('/search', postingController.searchPosts);
-
-// API Admin: Lấy danh sách bài viết chờ duyệt
 router.get('/pending', isAdmin, postingController.getPendingPosts);
-
-// API Admin: Lấy danh sách bài viết theo cộng đồng (tất cả trạng thái)
 router.get('/admin/community/:communityName', isAdmin, postingController.getCommunityPostsAdmin);
-
-// API Admin: Duyệt bài viết
 router.put('/:id/approve', isAdmin, postingController.approvePost);
-
-// API Admin: Từ chối bài viết
 router.put('/:id/reject', isAdmin, postingController.rejectPost);
-
-// API Thả cảm xúc
 router.put('/:id/react', postingController.reactToPost);
-
-// API Xóa bài viết (Chủ sở hữu)
 router.delete('/:id', postingController.deletePost);
-
-// API Lưu/Bỏ lưu bài viết
 router.post('/:id/save', postingController.toggleSavePost);
-
-// API Lấy danh sách bài viết đã lưu
 router.get('/saved/:userId', postingController.getSavedPosts);
-
-// API Lấy nội dung chi tiết một bài viết cụ thể
-// Lưu ý: Route này phải để cuối cùng trong các route GET có cấu trúc tương tự (/:id) để không đè lên các route khác
 router.get('/:id', postingController.getPostById);
 
 module.exports = router;

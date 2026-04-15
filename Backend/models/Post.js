@@ -25,6 +25,10 @@ const postSchema = new mongoose.Schema({
     image_urls: [{ 
         type: String 
     }],
+    video_url: {
+        type: String,
+        default: ''
+    },
     reactions: [{
         user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Account' },
         type: { type: String, default: '👍' }

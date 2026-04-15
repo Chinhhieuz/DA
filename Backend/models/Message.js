@@ -22,7 +22,7 @@ const messageSchema = new mongoose.Schema({
         trim: true
     },
     attachments: [{
-        type: String // URLs of images
+        type: mongoose.Schema.Types.Mixed
     }],
     is_read: {
         type: Boolean,

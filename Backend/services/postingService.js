@@ -21,10 +21,14 @@ cloudinary.config({
 /**
  * Helper: Tải ảnh lên Cloudinary từ Buffer sử dụng Stream
  */
-const uploadStreamToCloudinary = (fileBuffer) => {
+const uploadStreamToCloudinary = (fileBuffer, options = {}) => {
+    const { resourceType = 'image' } = options;
     return new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
-            { folder: 'social-media-uploads' },
+            {
+                folder: 'social-media-uploads',
+                resource_type: resourceType
+            },
             (error, result) => {
                 if (error) return reject(error);
                 resolve(result.secure_url || result.url);
@@ -41,11 +45,20 @@ const getPostCommentAndThreadCount = async (postId) => {
     return baseCommentCount + threadCount;
 };
 
-const createPostService = async (postDataInput, files = []) => {
+const createPostService = async (postDataInput, mediaFiles = {}) => {
     // 🛡️ PHÒNG THỦ TỐI ĐA: Ép kiểu về Object ngay lập tức
     const postData = postDataInput || {};
     const { author_id, title, content, community } = postData;
-    let { image_urls = [] } = postData; 
+    let { image_urls = [], video_url = '' } = postData;
+    const imageFilesRaw = Array.isArray(mediaFiles.imageFiles) ? mediaFiles.imageFiles : [];
+    const imageFiles = imageFilesRaw.filter(file => file?.mimetype?.startsWith('image/'));
+    const videoFile = mediaFiles.videoFile && mediaFiles.videoFile.mimetype?.startsWith('video/')
+        ? mediaFiles.videoFile
+        : null;
+
+    if (typeof image_urls === 'string') image_urls = image_urls ? [image_urls] : [];
+    if (!Array.isArray(image_urls)) image_urls = [];
+    if (Array.isArray(video_url)) video_url = video_url[0] || '';
     if (!author_id || !title || !content) {
         console.error('[POST SERVICE] Thiếu dữ liệu:', { author_id, title, hasContent: !!content });
         throw new Error('Bạn chưa điền đầy đủ tiêu đề hoặc nội dung cho bài viết này!');
@@ -54,6 +67,13 @@ const createPostService = async (postDataInput, files = []) => {
     const userExists = await Account.findById(author_id);
     if (!userExists) throw new Error('NOT_FOUND:Tài khoản người đăng không tồn tại!');
 
+    if (imageFilesRaw.length !== imageFiles.length) {
+        throw new Error('VALIDATION:Chỉ cho phép file ảnh trong trường image');
+    }
+    if (mediaFiles.videoFile && !videoFile) {
+        throw new Error('VALIDATION:Chỉ cho phép file video trong trường video');
+    }
+
     // 1️⃣ TẠO VÀ LƯU BÀI VIẾT NGAY LẬP TỨC VỚI STATUS PENDING (SIÊU TỐC)
     const newPost = new Post({
         author: author_id,
@@ -61,10 +81,11 @@ const createPostService = async (postDataInput, files = []) => {
         content,
         community: community || 'Chung',
         // Sẽ được cập nhật sau khi Cloudinary xong
-        image_url: '', 
-        image_urls: [], 
+        image_url: '',
+        image_urls: [],
+        video_url: '',
         status: 'pending',
-        ai_system_note: 'Hệ thống đang xử lý hình ảnh và kiểm duyệt AI...'
+        ai_system_note: 'Hệ thống đang xử lý media và kiểm duyệt AI...'
     });
 
     await newPost.save();
@@ -73,18 +94,28 @@ const createPostService = async (postDataInput, files = []) => {
     (async () => {
         try {
             // Chuẩn bị dữ liệu cho AI (Nếu có file thô thì dùng Buffer cho nhanh)
-            const aiImages = files.length > 0 ? files.map(f => f.buffer) : image_urls;
+            // AI se dung uploadedUrls va frame trich tu video sau khi upload xong
             
             // Chạy song song: (1) AI quét ảnh & (2) Up ảnh lên Cloudinary
-            const [aiDecision, uploadedUrls] = await Promise.all([
-                aiModerationService.checkContent(title, content, aiImages),
-                // Chỉ upload nếu có tệp tin mới
-                files.length > 0 ? Promise.all(files.map(f => uploadStreamToCloudinary(f.buffer))) : Promise.resolve(image_urls)
-            ]);
+            const uploadImagesPromise = imageFiles.length > 0
+                ? Promise.all(imageFiles.map(f => uploadStreamToCloudinary(f.buffer, { resourceType: 'image' })))
+                : Promise.resolve(image_urls);
+            const uploadVideoPromise = videoFile?.buffer
+                ? uploadStreamToCloudinary(videoFile.buffer, { resourceType: 'video' })
+                : Promise.resolve(video_url || '');
+
+            const [uploadedUrls, uploadedVideoUrl] = await Promise.all([uploadImagesPromise, uploadVideoPromise]);
+            const aiDecision = await aiModerationService.checkContent(
+                title,
+                content,
+                uploadedUrls,
+                uploadedVideoUrl ? [uploadedVideoUrl] : []
+            );
 
             // 🚦 Cập nhật nội dung bài viết dựa trên phán quyết AI và Link ảnh thật
             newPost.image_urls = uploadedUrls;
             newPost.image_url = uploadedUrls.length > 0 ? uploadedUrls[0] : '';
+            newPost.video_url = uploadedVideoUrl || '';
             
             if (aiDecision.status === 'PASS') {
                 newPost.status = 'approved';
@@ -105,7 +136,8 @@ const createPostService = async (postDataInput, files = []) => {
                         postId: newPost._id,
                         status: newPost.status,
                         reason: newPost.ai_system_note,
-                        image_urls: uploadedUrls
+                        image_urls: uploadedUrls,
+                        video_url: newPost.video_url
                     });
                     console.log(`📡 [AI_RESULT] Gửi tới Room: ${rIdStr}`);
                 }
@@ -113,7 +145,7 @@ const createPostService = async (postDataInput, files = []) => {
 
         } catch (error) {
             console.error('[POST ASYNC SERVICE] 🚨 Lỗi xử lý ngầm:', error.message);
-            newPost.ai_system_note = 'Lỗi trong quá trình xử lý hình ảnh.';
+            newPost.ai_system_note = 'Lỗi trong quá trình xử lý media.';
             await newPost.save();
         }
     })();
@@ -496,3 +528,4 @@ module.exports = {
     getCommunityPostsAdminService,
     getPostByIdService
 };
+
