@@ -34,57 +34,56 @@ export function TrendingContent({ onPostClick, currentUser }: TrendingContentPro
   }, [currentUser?.id]);
 
   return (
-    <div className="w-72 shrink-0">
-      <div className="sticky top-20">
-        <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-          {/* Header */}
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/50">
+    <div className="w-80 shrink-0">
+      <div className="page-section-card overflow-hidden">
+        <div className="border-b border-border/70 bg-[radial-gradient(circle_at_top_left,rgba(201,31,40,0.12),transparent_42%),linear-gradient(145deg,rgba(255,255,255,0.88),rgba(255,248,242,0.92))] px-5 py-4">
+          <div className="mb-1 flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-primary" />
-            <h3 className="font-semibold text-foreground text-sm">Nội dung thịnh hành</h3>
+            <h3 className="text-sm font-black uppercase tracking-[0.22em] text-foreground">Trending</h3>
           </div>
+          <p className="text-sm text-muted-foreground">Những bài viết đang kéo tương tác mạnh nhất lúc này.</p>
+        </div>
 
-          {/* Items */}
-          <div className="divide-y divide-border">
-            {loading ? (
-              <div className="flex justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-primary/40" />
-              </div>
-            ) : trendingPosts.length > 0 ? (
-              trendingPosts.map((post) => (
-                <div
-                  key={post.id}
-                  onClick={() => onPostClick(post)}
-                  className="px-4 py-3 hover:bg-muted cursor-pointer transition-colors group"
-                >
-                  <div className="flex gap-2.5">
-                    <span className="text-lg shrink-0 mt-0.5 group-hover:scale-110 transition-transform">🔥</span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground leading-snug line-clamp-2 group-hover:text-primary transition-colors">
-                        {post.title}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        <Avatar className="h-4 w-4 border border-border">
-                          <AvatarImage src={post.author.avatar} />
-                          <AvatarFallback className="text-[8px] bg-primary/5 text-primary">{post.author.name[0]}</AvatarFallback>
-                        </Avatar>
-                        <span className="text-[11px] text-muted-foreground truncate max-w-[80px]">{post.author.username}</span>
-                        <span className="text-[10px] text-muted-foreground/50">·</span>
-                        <span className="text-[10px] text-muted-foreground/70 truncate">{post.timestamp}</span>
-                      </div>
-                      <div className="flex items-center gap-1 mt-1.5 font-semibold text-orange-600">
-                        <ArrowBigUp className="h-3.5 w-3.5 fill-orange-500" />
-                        <span className="text-[11px]">{post.upvotes || 0}</span>
-                      </div>
-                    </div>
+        <div className="divide-y divide-border/70">
+          {loading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="h-5 w-5 animate-spin text-primary/40" />
+            </div>
+          ) : trendingPosts.length > 0 ? (
+            trendingPosts.map((post, index) => (
+              <button
+                key={post.id}
+                onClick={() => onPostClick(post)}
+                className="group flex w-full gap-3 px-4 py-4 text-left transition-colors hover:bg-muted/45"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 font-black text-primary">
+                  {index + 1}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold leading-snug text-foreground transition-colors group-hover:text-primary">
+                    {post.title}
+                  </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Avatar className="h-5 w-5 border border-border">
+                      <AvatarImage src={post.author.avatar} />
+                      <AvatarFallback className="bg-primary/5 text-[9px] text-primary">{post.author.name[0]}</AvatarFallback>
+                    </Avatar>
+                    <span className="truncate text-[11px] text-muted-foreground">{post.author.username}</span>
+                    <span className="text-[10px] text-muted-foreground/50">•</span>
+                    <span className="truncate text-[10px] text-muted-foreground/70">{post.timestamp}</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-orange-600">
+                    <ArrowBigUp className="h-3.5 w-3.5 fill-orange-500" />
+                    <span>{post.upvotes || 0} upvote</span>
                   </div>
                 </div>
-              ))
-            ) : (
-                <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  Chưa có nội dung trending
-                </div>
-            )}
-          </div>
+              </button>
+            ))
+          ) : (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              Chưa có nội dung trending
+            </div>
+          )}
         </div>
       </div>
     </div>

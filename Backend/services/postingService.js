@@ -96,19 +96,18 @@ const createPostService = async (postDataInput, files = []) => {
 
             await newPost.save();
 
-            // 📡 Thông báo cho người dùng qua Socket.io
+            // 📡 Thông báo cho người dùng qua Socket.io (Room-based)
             try {
                 const io = socketModule.getIO();
-                const connectedUsers = socketModule.getConnectedUsers();
-                const socketId = connectedUsers.get(author_id.toString());
-                
-                if (io && socketId) {
-                    io.to(socketId).emit('post_ai_result', {
+                if (io) {
+                    const rIdStr = author_id.toString();
+                    io.to(rIdStr).emit('post_ai_result', {
                         postId: newPost._id,
                         status: newPost.status,
                         reason: newPost.ai_system_note,
                         image_urls: uploadedUrls
                     });
+                    console.log(`📡 [AI_RESULT] Gửi tới Room: ${rIdStr}`);
                 }
             } catch (sErr) {}
 

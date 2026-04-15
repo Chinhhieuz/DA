@@ -5,14 +5,13 @@ const socketModule = require('../socket');
 const sendSocketEvent = (recipientId, eventName, payload) => {
     try {
         const io = socketModule.getIO ? socketModule.getIO() : null;
-        const connectedUsers = socketModule.getConnectedUsers ? socketModule.getConnectedUsers() : null;
         
-        if (io && connectedUsers) {
-            const socketId = connectedUsers.get(recipientId.toString());
-            if (socketId) {
-                io.to(socketId).emit(eventName, payload);
-                return true;
-            }
+        if (io) {
+            const rIdStr = recipientId.toString();
+            // Emit to the user's room (multi-tab support)
+            io.to(rIdStr).emit(eventName, payload);
+            console.log(`📡 [NOTIF] Gửi ${eventName} tới Room: ${rIdStr}`);
+            return true;
         }
         return false;
     } catch (e) {

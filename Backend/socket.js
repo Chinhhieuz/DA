@@ -1,65 +1,107 @@
-let io;
+﻿let io;
 const connectedUsers = new Map();
 
 module.exports = {
   init: (httpServer) => {
     io = require('socket.io')(httpServer, {
       cors: {
-        origin: "*",
-        methods: ["GET", "POST", "PUT", "DELETE"]
-      }
+        origin: '*',
+        methods: ['GET', 'POST', 'PUT', 'DELETE'],
+      },
     });
 
     io.on('connection', (socket) => {
-      console.log('🔗 Client kết nối Socket:', socket.id);
+      console.log('[SOCKET] client connected:', socket.id);
+
+      const emitPresence = () => {
+        io.emit('presence:update', Array.from(connectedUsers.keys()));
+      };
+
+      const detachSocketFromUser = (socketInstance, userId) => {
+        if (!userId) return;
+        const uid = String(userId);
+        const socketIds = connectedUsers.get(uid);
+        if (!socketIds) return;
+
+        socketIds.delete(socketInstance.id);
+        socketInstance.leave(uid);
+
+        if (socketIds.size === 0) connectedUsers.delete(uid);
+        else connectedUsers.set(uid, socketIds);
+      };
 
       socket.on('register', (userId) => {
-        if (userId) {
-          connectedUsers.set(userId, socket.id);
-          console.log(`👤 User ${userId} đã đăng ký socket ${socket.id}`);
+        if (!userId) {
+          console.warn('[SOCKET] register with null/undefined userId');
+          return;
         }
+
+        const nextUserId = String(userId);
+        const prevUserId = socket.data?.userId ? String(socket.data.userId) : '';
+
+        // Important: avoid one socket belonging to multiple account rooms
+        if (prevUserId && prevUserId !== nextUserId) {
+          detachSocketFromUser(socket, prevUserId);
+        }
+
+        socket.join(nextUserId);
+        socket.data.userId = nextUserId;
+
+        const socketIds = connectedUsers.get(nextUserId) || new Set();
+        socketIds.add(socket.id);
+        connectedUsers.set(nextUserId, socketIds);
+
+        emitPresence();
+        console.log(
+          `[SOCKET] user ${nextUserId} joined room ${nextUserId} (socket: ${socket.id})`,
+        );
+      });
+
+      socket.on('unregister', () => {
+        const userId = socket.data?.userId;
+        if (!userId) return;
+
+        detachSocketFromUser(socket, userId);
+        socket.data.userId = null;
+        emitPresence();
+        console.log(`[SOCKET] user ${String(userId)} unregistered from socket ${socket.id}`);
+      });
+
+      socket.on('typing_start', ({ recipientId, conversationId, senderId }) => {
+        if (!recipientId || !conversationId || !senderId) return;
+        io.to(String(recipientId)).emit('typing_start', {
+          conversationId: String(conversationId),
+          senderId: String(senderId),
+        });
+      });
+
+      socket.on('typing_stop', ({ recipientId, conversationId, senderId }) => {
+        if (!recipientId || !conversationId || !senderId) return;
+        io.to(String(recipientId)).emit('typing_stop', {
+          conversationId: String(conversationId),
+          senderId: String(senderId),
+        });
       });
 
       socket.on('disconnect', () => {
-        for (let [userId, socketId] of connectedUsers.entries()) {
-          if (socketId === socket.id) {
-            connectedUsers.delete(userId);
-            console.log(`❌ User ${userId} ngắt kết nối.`);
-            break;
-          }
+        const userId = socket.data?.userId;
+        if (userId) {
+          detachSocketFromUser(socket, userId);
+          console.log(`[SOCKET] user ${String(userId)} disconnected`);
         }
-      });
-
-      // --- CHỨC NĂNG NHẮN TIN TRỰC TUYẾN ---
-      socket.on('send_message', (data) => {
-        const { recipientId, message } = data;
-        const recipientSocketId = connectedUsers.get(recipientId);
-        
-        if (recipientSocketId) {
-          // Gửi trực tiếp tới recipient nếu họ đang online
-          io.to(recipientSocketId).emit('receive_message', message);
-          console.log(`✉️ Tin nhắn đã được chuyển tiếp tới User ${recipientId}`);
-        }
-      });
-
-      socket.on('revoke_message', (data) => {
-        const { recipientId, messageId, conversationId } = data;
-        const recipientSocketId = connectedUsers.get(recipientId);
-        
-        if (recipientSocketId) {
-          io.to(recipientSocketId).emit('message_revoked', { messageId, conversationId });
-          console.log(`✉️ Thông báo thu hồi tin nhắn ${messageId} đã được gửi tới User ${recipientId}`);
-        }
+        emitPresence();
       });
     });
 
     return io;
   },
+
   getIO: () => {
     if (!io) {
-      throw new Error('Socket.io chưa được khởi tạo!');
+      throw new Error('Socket.io is not initialized yet');
     }
     return io;
   },
-  getConnectedUsers: () => connectedUsers
+
+  getConnectedUsers: () => connectedUsers,
 };

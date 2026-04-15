@@ -54,6 +54,46 @@ interface PasswordModalProps {
   isChangingPassword: boolean;
 }
 
+const normalizeProfileId = (value: any): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number') return String(value);
+
+  if (typeof value === 'object') {
+    if (typeof value.$oid === 'string') return value.$oid.trim();
+    if (value._id !== undefined && value._id !== value) {
+      const nested = normalizeProfileId(value._id);
+      if (nested) return nested;
+    }
+    if (typeof value.id === 'string' || typeof value.id === 'number') {
+      const direct = String(value.id).trim();
+      if (direct) return direct;
+    }
+    if (typeof value.toHexString === 'function') {
+      const hex = value.toHexString();
+      if (typeof hex === 'string' && hex.trim()) return hex.trim();
+    }
+    if (typeof value.toString === 'function') {
+      const raw = value.toString().trim();
+      if (raw && raw !== '[object Object]') return raw;
+    }
+  }
+
+  return '';
+};
+
+const sanitizeProfileId = (value: any): string => {
+  const normalized = normalizeProfileId(value);
+  if (!normalized) return '';
+
+  const lowered = normalized.toLowerCase();
+  if (lowered === 'undefined' || lowered === 'null' || normalized === '[object Object]') {
+    return '';
+  }
+
+  return normalized;
+};
+
 const AppChangePasswordDialog = ({
   isOpen, onClose, onSubmit,
   oldPassword, setOldPassword,
@@ -184,8 +224,10 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
-  const effectiveUserId = viewedUserId || currentUser.id || (currentUser as any)._id;
-  const isOwnProfile = !viewedUserId || viewedUserId === (currentUser.id || (currentUser as any)._id);
+  const currentUserId = sanitizeProfileId(currentUser.id || (currentUser as any)._id);
+  const viewedProfileUserId = sanitizeProfileId(viewedUserId);
+  const effectiveUserId = viewedProfileUserId || currentUserId;
+  const isOwnProfile = !viewedProfileUserId || viewedProfileUserId === currentUserId;
 
   const [userComments, setUserComments] = useState<any[]>([]);
   const [userStats, setUserStats] = useState({ posts: 0, totalLikes: 0 });
@@ -204,7 +246,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
 
   useEffect(() => {
     if (effectiveUserId) {
-      const url = `${API_URL}/auth/profile/aggregated/${effectiveUserId}?currentUserId=${currentUser.id || ''}`;
+      const url = `${API_URL}/auth/profile/aggregated/${effectiveUserId}?currentUserId=${currentUserId || ''}`;
       fetch(url)
         .then(res => res.json())
         .then(data => {
@@ -244,7 +286,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
         })
         .catch(err => console.error('Lỗi khi tải thông tin hồ sơ tổng hợp:', err));
     }
-  }, [effectiveUserId, isOwnProfile, currentUser]);
+  }, [effectiveUserId, isOwnProfile, currentUserId]);
 
   const handleReactUpdate = (postId: string, action: string, type: string) => {
     // Cập nhật lạc quan (Optimistic update)
@@ -636,9 +678,39 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
 
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      <section className="page-hero px-5 py-6 sm:px-7 sm:py-7">
+        <div className="relative z-[1] flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="page-soft-surface mb-3 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-primary">
+              Profile
+            </div>
+            <h1 className="text-2xl font-black tracking-tight text-foreground sm:text-4xl">Ho so duoc trinh bay ro rang, gon va co diem nhan hon.</h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
+              Khu vuc gioi thieu, thong tin nhanh va cac tab noi dung da duoc tach lop de de doc tren ca desktop lan mobile.
+            </p>
+          </div>
+          <div className="page-stat-grid w-full max-w-xl">
+            <div className="page-stat-card">
+              <div className="text-xs font-black uppercase tracking-[0.24em] text-muted-foreground">Bài viết</div>
+              <div className="mt-2 text-2xl font-black text-foreground">{stats.posts}</div>
+              <div className="mt-1 text-sm text-muted-foreground">Tổng số hiện có</div>
+            </div>
+            <div className="page-stat-card">
+              <div className="text-xs font-black uppercase tracking-[0.24em] text-muted-foreground">Theo dõi</div>
+              <div className="mt-2 text-2xl font-black text-foreground">{followersCount}</div>
+              <div className="mt-1 text-sm text-muted-foreground">Người đang quan tâm</div>
+            </div>
+            <div className="page-stat-card">
+              <div className="text-xs font-black uppercase tracking-[0.24em] text-muted-foreground">Yeu thich</div>
+              <div className="mt-2 text-2xl font-black text-foreground">{stats.totalLikes}</div>
+              <div className="mt-1 text-sm text-muted-foreground">Tổng lượt tương tác</div>
+            </div>
+          </div>
+        </div>
+      </section>
       {/* Profile Header */}
-      <Card className="border-border bg-muted p-6">
+      <Card className="page-section-card p-6">
         <div className="flex flex-col items-center gap-4 md:flex-row">
           <div className="relative">
             <Avatar className="h-24 w-24 border-4 border-background shadow-lg">
@@ -654,13 +726,13 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
 
             <div className="mb-4 flex flex-wrap justify-center gap-3 md:justify-start">
               {profileData.location && (
-                <Badge variant="secondary" className="gap-1 bg-slate-100 text-slate-700">
+                <Badge variant="secondary" className="page-soft-surface gap-1 text-foreground">
                   <MapPin className="h-3 w-3" />
                   {profileData.location}
                 </Badge>
               )}
               {profileData.website && (
-                <Badge variant="secondary" className="gap-1 bg-slate-100 text-blue-600 hover:underline">
+                <Badge variant="secondary" className="page-soft-surface gap-1 text-blue-600 hover:underline">
                   <LinkIcon className="h-3 w-3" />
                   <a href={profileData.website} target="_blank" rel="noreferrer" className="truncate max-w-[150px]">Website</a>
                 </Badge>
@@ -683,7 +755,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
               {isOwnProfile ? (
                 <Button
                   size="sm"
-                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  className="rounded-full bg-primary px-5 text-primary-foreground hover:bg-primary/90"
                   onClick={() => setIsEditing(true)}
                 >
                   <Edit className="mr-2 h-4 w-4" />
@@ -694,7 +766,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                   {!isFollowing ? (
                     <Button 
                       size="sm" 
-                      className="bg-red-600 hover:bg-red-700 text-white"
+                      className="rounded-full bg-red-600 text-white hover:bg-red-700"
                       onClick={async () => {
                         const res = await fetch(`${API_URL}/auth/friends/follow`, {
                           method: 'POST',
@@ -718,7 +790,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                     <Button 
                       size="sm" 
                       variant="outline" 
-                      className="border-red-200 text-red-600 hover:bg-red-50"
+                      className="rounded-full border-red-200 text-red-600 hover:bg-red-50"
                       onClick={async () => {
                         const res = await fetch(`${API_URL}/auth/friends/unfollow`, {
                           method: 'POST',
@@ -739,14 +811,24 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                   <Button 
                     size="sm" 
                     variant="outline"
-                    className="border-primary text-primary hover:bg-primary/5"
+                    className="rounded-full border-primary text-primary hover:bg-primary/5"
                     onClick={() => {
                       if (onViewChange) {
-                        // Giả sử có trigger chuyển view sang messages với user cụ thể
-                        // Logic này sẽ được App.tsx xử lý nếu mình truyền state/id
-                        // Cho hiện tại, ta chỉ cần gọi chuyển hướng
-                        localStorage.setItem('startChatWith', effectiveUserId);
-                        onViewChange('messages');
+                        const targetId = sanitizeProfileId(
+                          profileData?.id || (profileData as any)?._id || effectiveUserId
+                        );
+                        const currentId = currentUserId;
+                        if (!targetId) {
+                          toast.error('Khong tim thay nguoi dung de nhan tin');
+                          return;
+                        }
+                        if (targetId === currentId) {
+                          toast.error('Ban dang o dung trang ca nhan cua minh');
+                          return;
+                        }
+
+                        localStorage.setItem('startChatWith', targetId);
+                        onViewChange(`messages?chatWith=${encodeURIComponent(targetId)}`);
                       }
                     }}
                   >
@@ -759,14 +841,14 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-4 border-t border-slate-300 pt-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-gray-900">{stats.posts}</div>
-            <div className="text-sm text-gray-600">Bài viết</div>
+        <div className="mt-6 grid grid-cols-2 gap-4 border-t border-border/70 pt-4">
+          <div className="page-soft-surface rounded-[22px] p-4 text-center">
+            <div className="text-2xl font-bold text-foreground">{stats.posts}</div>
+            <div className="text-sm text-muted-foreground">Bài viết</div>
           </div>
-          <div className="text-center cursor-pointer hover:bg-slate-50 transition-colors p-1 rounded" onClick={() => setActiveTab('friends')}>
-            <div className="text-2xl font-bold text-gray-900">{followersCount}</div>
-            <div className="text-sm text-gray-600">Theo dõi</div>
+          <div className="page-soft-surface page-soft-hover cursor-pointer rounded-[22px] p-4 text-center transition-colors" onClick={() => setActiveTab('friends')}>
+            <div className="text-2xl font-bold text-foreground">{followersCount}</div>
+            <div className="text-sm text-muted-foreground">Theo dõi</div>
           </div>
         </div>
       </Card>
@@ -853,8 +935,8 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                     <AvatarFallback>{(user.full_name || user.username || '?').charAt(0)}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold text-gray-900 truncate">{user.full_name || user.username}</div>
-                    <div className="text-xs text-gray-500 truncate">@{user.username}</div>
+                    <div className="text-sm font-bold text-foreground truncate">{user.full_name || user.username}</div>
+                    <div className="text-xs text-muted-foreground truncate">@{user.username}</div>
                   </div>
                 </Card>
               ))

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { PostCard, Post } from './PostCard';
 import { API_URL } from '@/lib/api';
-import { getImageUrl } from '@/lib/imageUtils';
 import { Loader2, Bookmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 interface SavedPostsProps {
   currentUser: any;
@@ -14,11 +14,11 @@ interface SavedPostsProps {
   onBackHome: () => void;
 }
 
-export function SavedPosts({ 
-  currentUser, 
-  onPostClick, 
-  onUserClick, 
-  onSaveToggle, 
+export function SavedPosts({
+  currentUser,
+  onPostClick,
+  onUserClick,
+  onSaveToggle,
   onCommunityClick,
   onBackHome
 }: SavedPostsProps) {
@@ -47,7 +47,6 @@ export function SavedPosts({
 
   const handleInternalSaveToggle = (postId: string, isSaved: boolean) => {
     if (!isSaved) {
-      // Nếu bỏ lưu, xóa khỏi danh sách hiển thị ngay lập tức để có cảm giác mượt mà
       setPosts(prev => prev.filter(p => p.id !== postId));
     }
     onSaveToggle(postId, isSaved);
@@ -59,33 +58,45 @@ export function SavedPosts({
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-        <p className="text-muted-foreground">Đang tải các bài viết đã lưu...</p>
-      </div>
+      <Card className="page-empty flex flex-col items-center justify-center py-20 text-center">
+        <Loader2 className="mb-4 h-8 w-8 animate-spin text-primary" />
+        <p className="text-lg font-bold text-foreground">Đang tải các bài viết đã lưu</p>
+        <p className="mt-2 text-sm text-muted-foreground">Hệ thống đang gom lại những nội dung bạn muốn đọc sau.</p>
+      </Card>
     );
   }
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="mb-6 flex items-center gap-3">
-        <div className="bg-primary/10 p-3 rounded-2xl text-primary shadow-sm">
-          <Bookmark className="h-6 w-6" />
+    <div className="animate-in slide-in-from-bottom-4 space-y-6 duration-500">
+      <section className="page-hero px-5 py-6 sm:px-7 sm:py-7">
+        <div className="relative z-[1] flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="page-soft-surface mb-3 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-primary">
+              Reading List
+            </div>
+            <h1 className="text-2xl font-black tracking-tight text-foreground sm:text-4xl">Không gian riêng cho những bài viết bạn muốn quay lại.</h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
+              Sắp xếp danh sách đã lưu thành một khu vực sạch sẽ, dễ nhìn và dễ tiếp tục đọc khi cần.
+            </p>
+          </div>
+          <div className="page-stat-grid w-full max-w-sm">
+            <div className="page-stat-card">
+              <div className="text-xs font-black uppercase tracking-[0.24em] text-muted-foreground">Đã lưu</div>
+              <div className="mt-2 text-2xl font-black text-foreground">{posts.length}</div>
+              <div className="mt-1 text-sm text-muted-foreground">Bài viết</div>
+            </div>
+          </div>
         </div>
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">Bài viết đã lưu</h2>
-          <p className="text-muted-foreground text-sm">Xem lại những nội dung bạn đã lưu lại để đọc sau</p>
-        </div>
-      </div>
+      </section>
 
       {posts.length > 0 ? (
-        <div className="space-y-2">
+        <div className="space-y-4">
           {posts.map((post) => (
-            <PostCard 
-              key={post.id} 
-              post={post} 
-              onPostClick={onPostClick} 
-              currentUser={currentUser} 
+            <PostCard
+              key={post.id}
+              post={post}
+              onPostClick={onPostClick}
+              currentUser={currentUser}
               onUserClick={onUserClick}
               onSaveToggle={handleInternalSaveToggle}
               onCommunityClick={onCommunityClick}
@@ -94,22 +105,18 @@ export function SavedPosts({
           ))}
         </div>
       ) : (
-        <div className="text-center py-20 bg-card rounded-2xl border border-dashed border-border flex flex-col items-center">
-          <div className="bg-muted p-4 rounded-full mb-4">
-            <Bookmark className="h-8 w-8 text-muted-foreground opacity-50" />
+        <Card className="page-empty flex flex-col items-center py-20 text-center">
+          <div className="mb-4 rounded-full bg-muted p-4">
+            <Bookmark className="h-8 w-8 text-muted-foreground opacity-60" />
           </div>
           <h3 className="text-lg font-semibold text-foreground">Chưa có bài viết nào</h3>
-          <p className="text-muted-foreground max-w-xs mx-auto mt-2">
-            Bạn chưa lưu bài viết nào. Hãy khám phá trang chủ và lưu lại những nội dung thú vị nhé!
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+            Bạn chưa lưu bài viết nào. Hãy khám phá trang chủ và đánh dấu những nội dung thực sự đáng xem lại.
           </p>
-          <Button 
-            variant="outline" 
-            className="mt-6 rounded-xl border-primary/20 text-primary hover:bg-primary/5"
-            onClick={onBackHome}
-          >
-            Về Trang Chủ
+          <Button variant="outline" className="mt-6 rounded-full border-primary/20 text-primary hover:bg-primary/5" onClick={onBackHome}>
+            Về trang chủ
           </Button>
-        </div>
+        </Card>
       )}
     </div>
   );

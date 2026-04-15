@@ -1,7 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Filter, X } from 'lucide-react';
-import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
 import { Header } from '@/components/Header'
 import { Sidebar } from '@/components/Sidebar'
@@ -24,17 +23,56 @@ import { AdminDashboard } from '@/components/AdminDashboard'
 import { ResetPassword } from '@/components/ResetPassword'
 import { SavedPosts } from '@/components/SavedPosts'
 import { getImageUrl } from '@/lib/imageUtils'
-import { API_BASE_URL, API_URL } from '@/lib/api'
+import { API_URL } from '@/lib/api'
+import { SocketProvider, useSocket } from "@/contexts/SocketContext";
 
 import '../index.css'
 
-
-
-
 const initialPosts: Post[] = [];
+
+const normalizeEntityId = (value: any): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number') return String(value);
+
+  if (typeof value === 'object') {
+    if (typeof value.$oid === 'string') return value.$oid.trim();
+    if (value._id !== undefined && value._id !== value) {
+      const nested = normalizeEntityId(value._id);
+      if (nested) return nested;
+    }
+    if (typeof value.id === 'string' || typeof value.id === 'number') {
+      const direct = String(value.id).trim();
+      if (direct) return direct;
+    }
+    if (typeof value.toHexString === 'function') {
+      const hex = value.toHexString();
+      if (typeof hex === 'string' && hex.trim()) return hex.trim();
+    }
+    if (typeof value.toString === 'function') {
+      const str = value.toString().trim();
+      if (str && str !== '[object Object]') return str;
+    }
+  }
+
+  return '';
+};
+
+const sanitizeEntityId = (value: any): string => {
+  const normalized = normalizeEntityId(value);
+  if (!normalized) return '';
+
+  const lowered = normalized.toLowerCase();
+  if (lowered === 'undefined' || lowered === 'null' || normalized === '[object Object]') {
+    return '';
+  }
+
+  return normalized;
+};
 
 export interface User {
   id?: string;
+  _id?: string;
   name: string;
   avatar: string;
   username: string;
@@ -60,410 +98,258 @@ const defaultUser: User = {
   savedPosts: []
 };
 
-export default function App() {
+// --- AppContent Component (Needs to be inside SocketProvider) ---
+interface AppContentProps {
+  currentUser: User;
+  setCurrentUser: React.Dispatch<React.SetStateAction<User>>;
+  isAuthenticated: boolean;
+  setIsAuthenticated: React.Dispatch<React.SetStateAction<boolean>>;
+  unreadNotifications: number;
+  setUnreadNotifications: React.Dispatch<React.SetStateAction<number>>;
+  unreadMessagesCount: number;
+  setUnreadMessagesCount: React.Dispatch<React.SetStateAction<number>>;
+  activeCommunity: string | null;
+  setActiveCommunity: React.Dispatch<React.SetStateAction<string | null>>;
+  feedFilter: 'all' | 'following';
+  setFeedFilter: React.Dispatch<React.SetStateAction<'all' | 'following'>>;
+  posts: Post[];
+  setPosts: React.Dispatch<React.SetStateAction<Post[]>>;
+  handleLogout: () => void;
+  fetchPosts: (userId?: string, comm?: string | null, filter?: string) => Promise<void>;
+  fetchUnreadMessagesCount: (userId: string) => Promise<void>;
+  fetchUnreadCount: (userId: string) => Promise<void>;
+}
+
+function AppContent({
+  currentUser,
+  setCurrentUser,
+  isAuthenticated,
+  setIsAuthenticated,
+  unreadNotifications,
+  setUnreadNotifications,
+  unreadMessagesCount,
+  setUnreadMessagesCount,
+  activeCommunity,
+  setActiveCommunity,
+  feedFilter,
+  setFeedFilter,
+  posts,
+  setPosts,
+  handleLogout,
+  fetchPosts,
+  fetchUnreadMessagesCount,
+  fetchUnreadCount
+}: AppContentProps) {
+  const { socket, isConnected } = useSocket();
   const location = useLocation();
   const navigate = useNavigate();
 
-  const pathParts = location.pathname.substring(1).split('/');
-  const currentView = pathParts[0] || 'home';
-  const urlUserId = currentView === 'profile' && pathParts[1] ? pathParts[1] : null;
-
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [posts, setPosts] = useState<Post[]>(initialPosts);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState(defaultUser);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [resetToken, setResetToken] = useState<string | null>(null);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [viewedUserIdState, setViewedUserIdState] = useState<string | null>(() => {
+    const savedViewedUserId = localStorage.getItem('viewedUserId');
+    const normalizedSavedViewedUserId = sanitizeEntityId(savedViewedUserId);
+    return normalizedSavedViewedUserId || null;
+  });
   const [initialPostId, setInitialPostId] = useState<string | null>(null);
-  const [viewedUserIdState, setViewedUserIdState] = useState<string | null>(null);
+  
+  // Use a ref for userId to ensure listeners always have current ID without re-attaching
+  const userIdRef = useRef<string>('');
+  useEffect(() => {
+    userIdRef.current = normalizeEntityId(currentUser.id || currentUser._id);
+  }, [currentUser]);
+
+  const pathParts = location.pathname.substring(1).split('/');
+  const currentView = pathParts[0] || 'home';
+  const rawUrlUserId = currentView === 'profile' && pathParts[1] ? decodeURIComponent(pathParts[1]) : null;
+  const urlUserId = sanitizeEntityId(rawUrlUserId);
   const viewedUserId = urlUserId || viewedUserIdState;
-  const [viewedUser, setViewedUser] = useState<User | null>(null);
-  const [activeCommunity, setActiveCommunity] = useState<string | null>(null);
-  const [feedFilter, setFeedFilter] = useState<'all' | 'following'>('all');
-  const [lastFetchId, setLastFetchId] = useState<number>(0);
-  const [socket, setSocket] = useState<Socket | null>(null);
 
-  // Khôi phục phiên đăng nhập từ localStorage
+  // Global socket listeners
   useEffect(() => {
-    const savedUser = localStorage.getItem('currentUser');
-    const savedToken = localStorage.getItem('token');
-    
-    if (savedUser && savedToken) {
-      try {
-        const userData = JSON.parse(savedUser);
-        if (userData._id && !userData.id) {
-            userData.id = userData._id;
+    if (socket && isConnected) {
+      console.log('📡 [App] Attaching global socket listeners');
+      
+      const handleNewNotification = (data: any) => {
+        setUnreadNotifications(prev => prev + 1);
+        if ('Notification' in window && Notification.permission === 'granted') {
+           // We use a small delay or check current state to ensure valid push
+           const currentPrefs = currentUser?.preferences; 
+           let shouldNotify = false;
+           if (data.type === 'like' && currentPrefs?.pushNotifications !== false) shouldNotify = true;
+           if (data.type === 'comment' && currentPrefs?.commentNotifications !== false) shouldNotify = true;
+           if (data.type === 'mention') shouldNotify = true;
+           if (data.type === 'friend_request') shouldNotify = true;
+           if (data.type === 'system') shouldNotify = true;
+
+           if (shouldNotify) {
+             const titleMap: Record<string, string> = {
+               friend_request: 'Lời mời kết bạn',
+               like: 'Thích bài viết',
+               comment: 'Bình luận mới',
+               mention: 'Bạn được nhắc tên',
+               system: 'Thông báo hệ thống'
+             };
+             const title = titleMap[data.type] || 'Thông báo mới';
+             const body = data.type === 'friend_request'
+                ? `${data.senderName} đã gửi lời mời kết bạn`
+                : (data.type === 'system' ? data.content : data.senderName + ' đã tương tác với bạn');
+
+             new window.Notification(title, { body });
+           }
         }
-        setCurrentUser(userData);
-        setIsAuthenticated(true);
-        
-        // Refresh profile data from server to get latest avatar/info
-        fetch(`${API_URL}/auth/profile/${userData.id || userData._id}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.status === 'success') {
-              const u = data.data;
-              const freshUser = {
-                ...userData,
-                name: u.full_name || u.username,
-                avatar: getImageUrl(u.avatar_url),
-                bio: u.bio,
-                location: u.location,
-                website: u.website,
-                preferences: u.preferences || userData.preferences,
-                savedPosts: u.savedPosts || userData.savedPosts || []
-              };
-              setCurrentUser(freshUser);
-              localStorage.setItem('currentUser', JSON.stringify(freshUser));
-            }
-          })
-          .catch(err => console.error('Failed to refresh profile:', err));
+      };
 
-        // Khôi phục view cuối cùng nếu có
-        // const lastView = localStorage.getItem('currentView');
-        // if (location.pathname === '/' && lastView && lastView !== 'home' && lastView !== 'login') {
-        //    navigate(`/${lastView}`, { replace: true });
-        // } else if (location.pathname === '/' && userData.role === 'admin') {
-        //    navigate('/admin', { replace: true });
-        // }
-        
-        fetchUnreadCount(userData.id || userData._id);
-        fetchUnreadMessagesCount(userData.id || userData._id);
-      } catch (e) {
-        console.error('Lỗi khôi phục session:', e);
-        localStorage.removeItem('currentUser');
-        localStorage.removeItem('token');
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if ('Notification' in window) {
-      if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
-        Notification.requestPermission();
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    let newSocket: Socket | null = null;
-    if (isAuthenticated && currentUser.id) {
-       newSocket = io(API_BASE_URL);
-       newSocket.emit('register', currentUser.id);
-       setSocket(newSocket);
-
-       newSocket.on('new_notification', (data) => {
-          setUnreadNotifications(prev => prev + 1);
-          // ... Notification permission check ...
-          if ('Notification' in window && Notification.permission === 'granted') {
-             const prefs = currentUser?.preferences;
-             
-             let shouldNotify = false;
-             if (data.type === 'like' && prefs?.pushNotifications !== false) shouldNotify = true;
-             if (data.type === 'comment' && prefs?.commentNotifications !== false) shouldNotify = true;
-             if (data.type === 'mention') shouldNotify = true;
-             if (data.type === 'friend_request') shouldNotify = true;
-             if (data.type === 'system') shouldNotify = true;
-
-             if (shouldNotify) {
-               let title = 'Thông báo mới';
-               if (data.type === 'friend_request') title = 'Lời mời kết bạn';
-               else if (data.type === 'like') title = 'Thích bài viết';
-               else if (data.type === 'comment') title = 'Bình luận mới';
-               else if (data.type === 'mention') title = 'Bạn được nhắc tên';
-               else if (data.type === 'system') title = 'Thông báo hệ thống';
-
-               const body = data.type === 'friend_request'
-                  ? `${data.senderName} đã gửi lời mời kết bạn`
-                  : (data.type === 'system'
-                    ? data.content
-                    : (data.type === 'mention'
-                       ? `${data.senderName} đã nhắc đến bạn trong một bình luận`
-                       : (data.type === 'like' 
-                          ? `${data.senderName} đã thích bài viết "${data.title}"`
-                          : `${data.senderName} đã bình luận: "${data.content}"`)));
-
-               new window.Notification(title, { body });
-             }
-          }
-       });
-
-       newSocket.on('notification_cancelled', (data) => {
-           setUnreadNotifications(prev => Math.max(0, prev - 1));
-       });
-
-       newSocket.on('receive_message', (message) => {
-          // Chỉ tăng đếm nếu không đang xem cuộc hội thoại đó
-          // Hoặc đơn giản là fetch lại tổng số
-          fetchUnreadMessagesCount(currentUser.id);
+      const handleReceiveMessage = (message: any) => {
+          const currentId = userIdRef.current;
+          const recipientId = normalizeEntityId(message.recipient);
+          const senderId = normalizeEntityId(message.sender);
+          const isIncomingForCurrentUser = recipientId === currentId && senderId !== currentId;
+          console.log('📩 [App] Global message received:', {
+            id: message._id,
+            conv: message.conversation?._id || message.conversation,
+            sender: senderId,
+            recipient: recipientId,
+            isIncomingForCurrentUser
+          });
           
-          // Toast thông báo tin nhắn mới nếu không ở trang messages
-          if (window.location.pathname !== '/messages') {
-            toast.message('Tin nhắn mới', {
-              description: `${message.content || '[Hình ảnh]'}`,
-            });
+          if (currentId && recipientId === currentId) {
+             const isMessagesPageRoute = window.location.pathname === '/messages' || window.location.pathname.startsWith('/messages/');
+             if (!isMessagesPageRoute && isIncomingForCurrentUser) {
+               setUnreadMessagesCount(prev => prev + 1);
+             }
+             console.log('🔄 [App] Refreshing unread counts for:', currentId);
+             fetchUnreadMessagesCount(currentId);
           }
-       });
-    }
-    return () => {
-       if (newSocket) {
-         newSocket.disconnect();
-         setSocket(null);
-       }
-    };
-  }, [isAuthenticated, currentUser.id, currentUser?.preferences]);
+          
+          const isMessagesPage = window.location.pathname === '/messages' || window.location.pathname.startsWith('/messages/');
+          if (!isMessagesPage && isIncomingForCurrentUser) {
+            console.log('📣 [App] Triggering toast notification');
+            toast('Tin nhắn mới', {
+              description: message.content || '[Hình ảnh]',
+              action: {
+                label: 'Xem',
+                onClick: () => navigate('/messages')
+              }
+            });
+          } else {
+            console.log('ℹ️ [App] Skipping toast (on messages page)');
+          }
+      };
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const viewQuery = params.get('view');
-    const tokenQuery = params.get('token');
-    const postIdQuery = params.get('postId');
-    
-    if (postIdQuery) {
-      setInitialPostId(postIdQuery);
-    }
-    
-    if (viewQuery === 'reset-password' && tokenQuery) {
-      setResetToken(tokenQuery);
-      navigate('/reset-password', { replace: true });
-    }
-  }, []);
+      socket.on('new_notification', handleNewNotification);
+      socket.on('receive_message', handleReceiveMessage);
+      socket.on('notification_cancelled', () => {
+        setUnreadNotifications(prev => Math.max(0, prev - 1));
+      });
 
-  // Xử lý luồng mở Deep Link bài viết từ URL
-  useEffect(() => {
-    if (initialPostId && posts.length > 0) {
-      const foundPost = posts.find((p) => p.id === initialPostId);
-      if (foundPost) {
-        setSelectedPost(foundPost);
-        // Dọn dẹp URL sau khi mở xong để F5 không khựng
-        const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-        window.history.replaceState({ path: newUrl }, '', newUrl);
-      }
-      setInitialPostId(null);
+      return () => {
+        console.log('📡 [App] Detaching global socket listeners');
+        socket.off('new_notification', handleNewNotification);
+        socket.off('receive_message', handleReceiveMessage);
+        socket.off('notification_cancelled');
+      };
     }
-  }, [initialPostId, posts]);
-
-  useEffect(() => {
-    if (currentUser?.preferences?.darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [currentUser?.preferences?.darkMode]);
+  }, [socket, isConnected, fetchUnreadMessagesCount]);
 
   const handleUserClick = (userId: string) => {
-    if (!userId) {
-      console.warn('App: handleUserClick called with empty userId');
+    const normalizedUserId = sanitizeEntityId(userId);
+    if (!normalizedUserId) {
+      toast.error('Khong tim thay ID nguoi dung');
       return;
     }
-    console.log('App: Navigating to user profile:', userId);
-    
-    if (userId === currentUser.id) {
+
+    const normalizedCurrentUserId = sanitizeEntityId(currentUser.id || currentUser._id);
+    if (normalizedUserId === normalizedCurrentUserId) {
       setViewedUserIdState(null);
-      setViewedUser(null);
       navigate('/profile');
-      localStorage.setItem('currentView', 'profile');
       localStorage.removeItem('viewedUserId');
     } else {
-      setViewedUserIdState(userId);
-      navigate(`/profile/${userId}`);
-      localStorage.setItem('currentView', 'profile');
-      localStorage.setItem('viewedUserId', userId);
+      setViewedUserIdState(normalizedUserId);
+      navigate(`/profile/${encodeURIComponent(normalizedUserId)}`);
+      localStorage.setItem('viewedUserId', normalizedUserId);
     }
     setSelectedPost(null);
   };
 
-  const fetchPosts = async (
-    userId: string = currentUser.id, 
-    community: string | null = activeCommunity, 
-    filter: string = feedFilter
-  ) => {
-    try {
-      let url = `${API_URL}/posts?userId=${userId || ''}`;
-      if (community) url += `&community=${community}`;
-      if (filter === 'following' && userId) url += `&followingOnly=true`;
-      
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.status === 'success') {
-         setPosts(data.data);
-      }
-    } catch (err) {
-      console.error('App: Failed to fetch posts:', err);
-    }
-  };
-
-  useEffect(() => {
-    if (currentView === 'home' || currentView === 'reset-password') {
-      fetchPosts(currentUser.id, activeCommunity, feedFilter);
-    }
-  }, [currentView, activeCommunity, feedFilter]);
-
-  const fetchUnreadCount = async (userId: string) => {
-    if (!userId) return;
-    try {
-      const res = await fetch(`${API_URL}/notifications?accountId=${userId}`);
-      const data = await res.json();
-      if (data.status === 'success') {
-        const unread = data.data.filter((n: any) => !n.isRead).length;
-        setUnreadNotifications(unread);
-      }
-    } catch (err) {
-      console.error('Lỗi tải thông báo:', err);
-    }
-  };
-
-  const fetchUnreadMessagesCount = async (userId: string) => {
-    if (!userId) return;
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/messages/unread-count?userId=${userId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (data.status === 'success') {
-        setUnreadMessagesCount(data.data);
-      }
-    } catch (err) {
-      console.error('Lỗi tải số tin nhắn chưa đọc:', err);
-    }
-  };
-
   const handleViewChange = (view: string) => {
+    const normalizedView = String(view || '').trim().replace(/^\/+/, '');
+    const [baseView] = normalizedView.split('?');
+    const targetView = baseView || 'home';
+
     const protectedViews = ['profile', 'create', 'messages', 'settings', 'notifications', 'groups', 'admin', 'saved'];
-    if (!isAuthenticated && protectedViews.includes(view)) {
+    if (!isAuthenticated && protectedViews.includes(targetView)) {
       navigate('/login');
       setMobileMenuOpen(false);
       return;
     }
-    fetchPosts(currentUser.id);
-    if (view === 'profile') {
+
+    fetchPosts(currentUser.id || currentUser._id);
+    if (targetView === 'profile') {
       setViewedUserIdState(null);
       localStorage.removeItem('viewedUserId');
     }
-    if (view === 'home') {
-      setActiveCommunity(null);
-    }
-    navigate(view === 'home' ? '/' : `/${view}`);
-    localStorage.setItem('currentView', view);
+    if (targetView === 'home') setActiveCommunity(null);
+    
+    navigate(targetView === 'home' ? '/' : `/${normalizedView || targetView}`);
     setSelectedPost(null);
     setMobileMenuOpen(false);
-    if (view === 'notifications') {
-      setUnreadNotifications(0);
-    }
-    if (view === 'messages') {
-      fetchUnreadMessagesCount(currentUser.id);
-    }
+    if (targetView === 'notifications') setUnreadNotifications(0);
+    if (targetView === 'messages') fetchUnreadMessagesCount(currentUser.id || String((currentUser as any)._id));
   };
 
-  const handlePostClick = (post: Post) => {
-    console.log('[App] handlePostClick triggered for post:', post.id);
-    setSelectedPost(post);
-  };
+  const handlePostClick = (post: Post) => setSelectedPost(post);
 
   const handleNotificationClick = async (notif: any) => {
-    // 1. Nếu là follow hoặc friend request -> Đi tới Profile của người gửi
     if (notif.type === 'follow' || notif.type === 'friend_request') {
-      const senderId = notif.sender?._id || notif.sender;
+      const senderId = sanitizeEntityId(notif.sender?._id || notif.sender?.id || notif.sender);
       if (senderId) handleUserClick(senderId);
       return;
     }
 
-    // 2. Nếu là các loại liên quan đến bài viết (like, comment, mention, system)
     let postId = '';
-    
-    // Logic bóc tách ID siêu an toàn từ mọi định dạng (string, object { _id }, raw ObjectId)
     if (notif.post) {
-      if (typeof notif.post === 'object') {
-        postId = (notif.post._id || notif.post).toString();
-      } else {
-        postId = notif.post.toString();
-      }
+      postId = typeof notif.post === 'object' ? (notif.post._id || notif.post).toString() : notif.post.toString();
     }
     
-    // Dọn dẹp chuỗi ID
-    postId = postId.trim();
-    if (postId === '[object Object]') postId = '';
-
-    console.log('[App] Final Extracted postId:', postId);
-
-    // Kiểm tra postId hợp lệ
     if (postId && (postId.length === 24 || postId.length === 12)) {
       try {
-        const url = `${API_URL}/posts/${postId}${currentUser ? `?userId=${currentUser.id}` : ''}`;
-        console.log('[App] Notification navigation fetching:', url);
-        
-        const res = await fetch(url);
-        
-        if (!res.ok) {
-          toast.error('Không thể tìm thấy bài viết này (có thể đã bị xóa hoặc bị khóa)');
-          return;
-        }
-
-        const data = await res.json();
-        
-        if (data.status === 'success') {
-          const p = data.data;
-
-          if (p.status === 'hidden' || p.status === 'rejected') {
-            toast.info('Bạn đang xem bài viết đã bị quản trị viên ẩn/khóa.');
-          } else if (p.status === 'pending') {
-            toast.info('Bài viết này đang trong trạng thái chờ duyệt.');
-          }
-
-          handlePostClick(p);
-        } else {
-          toast.error('Không thể tìm thấy bài viết này');
+        const res = await fetch(`${API_URL}/posts/${postId}${currentUser.id ? `?userId=${currentUser.id}` : ''}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'success') setSelectedPost(data.data);
         }
       } catch (err) {
-        console.error('Error fetching post detail for notification:', err);
-        toast.error('Lỗi khi tải chi tiết bài viết');
-      }
-    } else {
-      console.warn('[App] Invalid or missing postId in notification:', notif);
-      // Nếu là thông báo hệ thống, hiển thị nội dung thông báo
-      if (notif.type === 'system') {
-        toast.info('Thông báo hệ thống: ' + (notif.content || ''));
-      } else {
-        // Nếu là interaction (like/comment) mà post null -> Bài đã bị xóa
-        toast.info('Nội dung này không còn khả dụng do bài viết đã bị gỡ bỏ.');
+        console.error('Error fetching post for notification:', err);
       }
     }
   };
 
-  const handleCommunityClick = (community: string) => {
-    setActiveCommunity(community);
+  const handleCommunityClick = (comm: string) => {
+    setActiveCommunity(comm);
     navigate('/');
     setSelectedPost(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handlePostCreated = (newPost: Post) => {
-    fetchPosts(currentUser.id); // Cập nhật lại list bài từ CSDL
+  const handlePostCreated = () => {
+    fetchPosts(currentUser.id || currentUser._id);
     navigate('/');
   };
 
   const handlePostCommented = (postId: string, newComment: Comment) => {
-    const updatedPosts = posts.map(post => {
-      if (post.id === postId) {
-        return { 
-          ...post, 
-          comments: [newComment, ...post.comments],
-          commentCount: (post.commentCount || 0) + 1 
-        };
-      }
-      return post;
-    });
-    setPosts(updatedPosts);
-    if (selectedPost && selectedPost.id === postId) {
+    setPosts(prev => prev.map(post => post.id === postId ? { 
+      ...post, 
+      comments: [newComment, ...(post.comments || [])],
+      commentCount: (post.commentCount || 0) + 1 
+    } : post));
+    
+    if (selectedPost?.id === postId) {
       setSelectedPost({ 
         ...selectedPost, 
-        comments: [newComment, ...selectedPost.comments],
+        comments: [newComment, ...(selectedPost.comments || [])],
         commentCount: (selectedPost.commentCount || 0) + 1
       });
     }
@@ -481,239 +367,129 @@ export default function App() {
 
   const handlePostDeleted = (postId: string) => {
     setPosts(prev => prev.filter(p => p.id !== postId));
-    if (selectedPost?.id === postId) {
-      setSelectedPost(null);
-    }
-  };
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setCurrentUser(defaultUser);
-    fetchPosts(defaultUser.id);
-    navigate('/login');
-    localStorage.removeItem('currentUser');
-    localStorage.removeItem('token');
-    toast.success('Đã đăng xuất thành công');
+    if (selectedPost?.id === postId) setSelectedPost(null);
   };
 
   const renderContent = () => {
     switch (currentView) {
       case 'home':
-        const displayPosts = posts;
-
         return (
           <div className="space-y-6">
-            <div className="flex items-center gap-2 p-1 bg-muted/50 rounded-2xl w-fit border border-border/50">
-              <Button 
-                variant={feedFilter === 'all' ? 'default' : 'ghost'} 
-                size="sm" 
-                onClick={() => setFeedFilter('all')}
-                className={`rounded-xl px-6 h-9 font-bold transition-all ${feedFilter === 'all' ? 'shadow-md shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                Khám phá
-              </Button>
-              <Button 
-                variant={feedFilter === 'following' ? 'default' : 'ghost'} 
-                size="sm" 
-                onClick={() => {
-                  if (!isAuthenticated) {
-                    toast.error('Vui lòng đăng nhập để xem những người bạn đang theo dõi');
-                    return;
-                  }
-                  setFeedFilter('following');
-                }}
-                className={`rounded-xl px-6 h-9 font-bold transition-all ${feedFilter === 'following' ? 'shadow-md shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                Đang theo dõi
-              </Button>
-            </div>
-
-            <div>
-            {activeCommunity && (
-              <div className="mb-6 p-5 bg-card border border-border rounded-2xl shadow-sm flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-500 overflow-hidden relative">
-                <div className="absolute top-0 left-0 w-1.5 h-full bg-primary" />
-                <div className="flex items-center gap-4">
-                  <div className="bg-primary/10 p-2.5 rounded-xl text-primary shadow-inner">
-                    <Filter className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-0.5">Bộ lọc đang hoạt động</h2>
-                    <div className="flex items-center gap-2">
-                       <span className="text-xl font-bold text-foreground leading-tight">{activeCommunity}</span>
-                       <Badge variant="secondary" className="bg-primary/5 text-primary border-primary/20 text-[9px] uppercase font-bold px-1.5 py-0">Chủ đề</Badge>
+            <section className="glass-panel soft-ring overflow-hidden rounded-[28px]">
+              <div className="relative px-5 py-5 sm:px-7 sm:py-7">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(201,31,40,0.12),transparent_36%),radial-gradient(circle_at_bottom_right,rgba(18,59,116,0.12),transparent_34%)]" />
+                <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="max-w-2xl">
+                    <div className="page-soft-surface mb-3 inline-flex items-center rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.24em] text-primary">
+                      Bang tin Linky
                     </div>
+                    <h1 className="text-2xl font-black tracking-tight text-foreground sm:text-4xl">
+                      Không gian thảo luận gọn gàng, dễ đọc và nổi bật nội dung quan trọng.
+                    </h1>
+                    <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
+                      Theo dõi các bài viết mới, chuyển nhanh giữa chế độ khám phá và nội dung từ những người bạn quan tâm.
+                    </p>
+                  </div>
+                  <div className="page-soft-surface flex items-center gap-2 rounded-2xl p-1.5 shadow-sm">
+                    <Button 
+                      variant={feedFilter === 'all' ? 'default' : 'ghost'} 
+                      size="sm" 
+                      onClick={() => setFeedFilter('all')}
+                      className={`rounded-xl px-6 h-10 font-bold transition-all ${feedFilter === 'all' ? 'shadow-md shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                      Khám phá
+                    </Button>
+                    <Button 
+                      variant={feedFilter === 'following' ? 'default' : 'ghost'} 
+                      size="sm" 
+                      onClick={() => isAuthenticated ? setFeedFilter('following') : toast.error('Vui lòng đăng nhập')}
+                      className={`rounded-xl px-6 h-10 font-bold transition-all ${feedFilter === 'following' ? 'shadow-md shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                      Đang theo dõi
+                    </Button>
                   </div>
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => setActiveCommunity(null)}
-                  className="hover:bg-primary hover:text-white border-primary/20 text-primary font-bold transition-all px-4 rounded-xl"
-                >
-                  <X className="h-3.5 w-3.5 mr-2" />
-                  Xóa bộ lọc
-                </Button>
+              </div>
+            </section>
+            {activeCommunity && (
+              <div className="glass-panel mb-6 flex items-center justify-between rounded-[24px] p-5">
+                <div className="flex items-center gap-4">
+                  <div className="rounded-2xl bg-primary/10 p-3 text-primary"><Filter className="h-5 w-5" /></div>
+                  <div>
+                    <h2 className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Bộ lọc đang hoạt động</h2>
+                    <span className="text-xl font-bold">{activeCommunity}</span>
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setActiveCommunity(null)} className="rounded-xl"><X className="h-3.5 w-3.5 mr-2" /> Xóa</Button>
               </div>
             )}
-            {displayPosts.length > 0 ? (
-              displayPosts.map((post) => (
-                  <PostCard 
-                    key={post.id} 
-                    post={post} 
-                    onPostClick={handlePostClick} 
-                    currentUser={currentUser} 
- 
-                    onUserClick={handleUserClick}
-                    onSaveToggle={handleSaveToggle}
-                    onCommunityClick={handleCommunityClick}
-                    onDeleteSuccess={handlePostDeleted}
-                  />
-              ))
-            ) : (
-              <div className="text-center py-20 bg-card rounded-2xl border border-dashed border-border">
-                  <p className="text-muted-foreground">Không có bài viết nào trong chủ đề này.</p>
-                  <Button variant="link" onClick={() => setActiveCommunity(null)} className="mt-2 text-primary">
-                    Xem tất cả bài viết
-                  </Button>
-              </div>
-            )}
+            <div className="space-y-5">
+              {posts.map(post => (
+                <PostCard 
+                  key={post.id} 
+                  post={post} 
+                  onPostClick={handlePostClick} 
+                  currentUser={currentUser}
+                  onUserClick={handleUserClick}
+                  onSaveToggle={handleSaveToggle}
+                  onCommunityClick={handleCommunityClick}
+                  onDeleteSuccess={handlePostDeleted}
+                />
+              ))}
             </div>
           </div>
         );
-      case 'search':
-        return <SearchView onPostClick={handlePostClick} onUserClick={handleUserClick} currentUser={currentUser} />;
-      case 'profile':
-        return (
-          <Profile
-            currentUser={currentUser}
-            viewedUserId={viewedUserId}
-
-            onPostClick={handlePostClick}
-            onAvatarChange={(newAvatar: string) => setCurrentUser({ ...currentUser, avatar: newAvatar })}
-            onProfileUpdate={(updatedData: any) => setCurrentUser({
-               ...currentUser,
-               name: updatedData.full_name || currentUser.name,
-               bio: updatedData.bio,
-               location: updatedData.location,
-               website: updatedData.website
-            })}
-            onPostsChanged={() => fetchPosts(currentUser.id)}
-            onUserClick={handleUserClick}
-            onViewChange={handleViewChange}
-          />
-        );
-      case 'create':
-        return <CreatePost onPostCreated={handlePostCreated} currentUser={currentUser} />;
-      case 'messages':
-        return <Messages 
-          currentUser={currentUser} 
-          socket={socket} 
-          onUserClick={handleUserClick} 
-          onMessagesRead={() => fetchUnreadMessagesCount(currentUser.id)}
-        />;
-      case 'notifications':
-        return <Notifications 
-          currentUser={currentUser} 
-          socket={socket} 
-          onMarkAllAsRead={() => setUnreadNotifications(0)}
-          onNotificationClick={handleNotificationClick}
-        />;
-      case 'settings':
-        return <Settings 
-          currentUser={currentUser}
-          onUpdatePreferences={(newPrefs: any) => {
-            const updatedUser = { ...currentUser, preferences: newPrefs };
-            setCurrentUser(updatedUser);
-            localStorage.setItem('currentUser', JSON.stringify(updatedUser)); // Fix localStorage desync
-          }}
-          onLogout={handleLogout} />;
-      case 'admin':
-        return <AdminDashboard currentUser={currentUser} />;
-      case 'saved':
-        return <SavedPosts 
-          currentUser={currentUser} 
-          onPostClick={handlePostClick} 
-          onUserClick={handleUserClick} 
-          onSaveToggle={handleSaveToggle}
-          onCommunityClick={handleCommunityClick}
-          onBackHome={() => handleViewChange('home')}
-        />;
-      default:
-        return null;
+      case 'search': return <SearchView onPostClick={handlePostClick} onUserClick={handleUserClick} currentUser={currentUser} />;
+      case 'profile': return <Profile currentUser={currentUser} viewedUserId={viewedUserId} onPostClick={handlePostClick} onAvatarChange={(url) => setCurrentUser({...currentUser, avatar: url})} onProfileUpdate={(data) => setCurrentUser({...currentUser, ...data})} onPostsChanged={() => fetchPosts(currentUser.id)} onUserClick={handleUserClick} onViewChange={handleViewChange} />;
+      case 'create': return <CreatePost onPostCreated={handlePostCreated} currentUser={currentUser} />;
+      case 'messages': return <Messages currentUser={currentUser} onUserClick={handleUserClick} onMessagesRead={() => fetchUnreadMessagesCount(currentUser.id || currentUser._id || '')} />;
+      case 'notifications': return <Notifications currentUser={currentUser} onMarkAllAsRead={() => setUnreadNotifications(0)} onNotificationClick={handleNotificationClick} />;
+      case 'settings': return <Settings currentUser={currentUser} onUpdatePreferences={(prefs) => { const u = {...currentUser, preferences: prefs}; setCurrentUser(u); localStorage.setItem('currentUser', JSON.stringify(u)); }} onLogout={handleLogout} />;
+      case 'admin': return <AdminDashboard currentUser={currentUser} />;
+      case 'saved': return <SavedPosts currentUser={currentUser} onPostClick={handlePostClick} onUserClick={handleUserClick} onSaveToggle={handleSaveToggle} onCommunityClick={handleCommunityClick} onBackHome={() => handleViewChange('home')} />;
+      default: return null;
     }
   };
 
-  if (currentView === 'reset-password' && resetToken) {
-    return (
-      <>
-        <ResetPassword 
-          token={resetToken} 
-          onSuccess={() => {
-             setResetToken(null);
-             navigate('/login');
-          }} 
-        />
-        <Toaster position="top-center" />
-      </>
-    );
-  }
-
   if (currentView === 'login') {
     return (
-      <>
-        <Login 
-          onLogin={(userData: any) => { 
-            setIsAuthenticated(true); 
-            if (userData && userData.user) {
-              const u = userData.user;
-              const newUser: User = {
-                ...currentUser,
-                id: u._id || u.id || '',
-                name: u.full_name || u.username || 'Tài Khoản Mới',
-                username: u.username || 'user',
-                avatar: getImageUrl(u.avatar_url) || defaultUser.avatar,
-                bio: u.bio,
-                location: u.location,
-                website: u.website,
-                role: (u.role || 'user').toLowerCase() as 'user' | 'moderator' | 'admin',
-                preferences: u.preferences || defaultUser.preferences,
-                savedPosts: u.savedPosts || []
-              };
-              
-              setCurrentUser(newUser);
-
-              // Lưu vào localStorage để F5 không mất login
-              localStorage.setItem('currentUser', JSON.stringify(newUser));
-              if (userData.token) {
-                localStorage.setItem('token', userData.token);
-              }
-
-              if (u.role && u.role.toLowerCase() === 'admin') {
-                navigate('/admin');
-              } else {
-                navigate('/');
-              }
-              // Load số thông báo chưa đọc
-              fetchUnreadCount(u._id || u.id);
-              fetchUnreadMessagesCount(u._id || u.id);
-            } else {
-              navigate('/');
-            }
-          }} 
-          onBackToHome={() => navigate('/')}
-        />
-        <Toaster position="top-center" />
-      </>
+      <Login 
+        onLogin={(userData: any) => { 
+          setIsAuthenticated(true); 
+          if (userData?.user) {
+            const u = userData.user;
+            const newUser: User = {
+              ...currentUser,
+              id: u._id || u.id,
+              name: u.full_name || u.username,
+              username: u.username,
+              avatar: getImageUrl(u.avatar_url) || defaultUser.avatar,
+              role: (u.role || 'user').toLowerCase() as any,
+              preferences: u.preferences || defaultUser.preferences,
+              savedPosts: u.savedPosts || []
+            };
+            setCurrentUser(newUser);
+            const token = userData.token || u.token;
+            localStorage.setItem('currentUser', JSON.stringify(newUser));
+            localStorage.setItem('token', token);
+            navigate(u.role?.toLowerCase() === 'admin' ? '/admin' : '/');
+            fetchUnreadCount(u._id || u.id);
+            fetchUnreadMessagesCount(u._id || u.id);
+          }
+        }} 
+        onBackToHome={() => navigate('/')}
+      />
     );
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="app-shell min-h-screen bg-background text-foreground">
       <Header
         onViewChange={handleViewChange}
         onMenuToggle={() => setMobileMenuOpen(true)}
         onDesktopMenuToggle={() => setDesktopSidebarOpen(!desktopSidebarOpen)}
         notificationCount={unreadNotifications}
+        unreadMessagesCount={unreadMessagesCount}
         isAuthenticated={isAuthenticated}
         currentUser={currentUser}
         onLogout={handleLogout}
@@ -722,41 +498,26 @@ export default function App() {
         onCommunityClick={handleCommunityClick}
       />
 
-      <div 
-        className={`hidden md:block fixed left-0 top-16 bottom-0 z-40 transition-all duration-300 ${
-          desktopSidebarOpen ? 'w-60 opacity-100' : 'w-0 opacity-0 overflow-hidden'
-        }`}
-      >
-        <div className="w-60 h-full">
-          <Sidebar 
-            currentView={currentView} 
-            onViewChange={handleViewChange} 
-            userRole={currentUser.role} 
-            unreadMessagesCount={unreadMessagesCount}
-          />
+      <div className={`hidden md:block fixed left-0 top-20 bottom-6 z-40 transition-all duration-300 ${desktopSidebarOpen ? 'w-72 opacity-100' : 'w-0 opacity-0 overflow-hidden'}`}>
+        <div className="h-full w-72">
+          <Sidebar currentView={currentView} onViewChange={handleViewChange} userRole={currentUser.role} unreadMessagesCount={unreadMessagesCount} />
         </div>
       </div>
 
-      {/* Mobile Sidebar */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-        <SheetContent side="left" className="w-60 bg-background border-r border-border p-0">
+        <SheetContent side="left" className="w-60 bg-background p-0">
           <div className="p-4">
-            <Sidebar 
-              currentView={currentView} 
-              onViewChange={handleViewChange} 
-              userRole={currentUser.role} 
-              unreadMessagesCount={unreadMessagesCount}
-            />
+            <Sidebar currentView={currentView} onViewChange={handleViewChange} userRole={currentUser.role} unreadMessagesCount={unreadMessagesCount} />
           </div>
         </SheetContent>
       </Sheet>
 
-      <main className={`ml-0 pt-16 transition-all duration-300 ${desktopSidebarOpen ? 'md:ml-60' : 'md:ml-0'}`}>
-        <div className="mx-auto max-w-7xl p-4">
-          <div className="flex justify-center gap-8">
+      <main className={`relative z-10 ml-0 pt-20 transition-all duration-300 ${desktopSidebarOpen ? 'md:ml-72' : 'md:ml-0'}`}>
+        <div className="mx-auto max-w-[1500px] px-4 pb-8 sm:px-6 lg:px-8">
+          <div className="flex justify-center gap-8 xl:gap-10">
             <div className="flex-1 max-w-4xl w-full">{renderContent()}</div>
             {currentView === 'home' && (
-              <div className="hidden lg:block w-80">
+              <div className="hidden lg:block w-80 pt-1 sticky top-[100px] self-start">
                 <TrendingContent onPostClick={handlePostClick} currentUser={currentUser} />
               </div>
             )}
@@ -764,29 +525,18 @@ export default function App() {
         </div>
       </main>
 
-      <Dialog open={!!selectedPost} onOpenChange={(open) => {
-        if (!open) {
-          fetchPosts(currentUser.id);
-          setSelectedPost(null);
-        }
-      }}>
-        <DialogContent className="sm:max-w-2xl md:max-w-3xl lg:max-w-4xl w-[95vw] sm:w-[90vw] h-[90vh] max-h-[90vh] p-0 border border-border/50 bg-background shadow-2xl rounded-2xl flex flex-col focus:outline-none overflow-hidden">
-          {/* Header Sticky */}
-          <div className="sticky top-0 z-10 flex items-center justify-center p-4 border-b border-border bg-background/95 backdrop-blur-sm shrink-0">
-            <DialogTitle className="text-[19px] font-bold text-foreground">
+      <Dialog open={!!selectedPost} onOpenChange={(open) => { if (!open) setSelectedPost(null); }}>
+        <DialogContent className="sm:max-w-2xl md:max-w-3xl lg:max-w-4xl w-[95vw] h-[90vh] p-0 overflow-hidden">
+          <div className="sticky top-0 z-10 flex items-center justify-center p-4 border-b bg-background/95">
+            <DialogTitle className="text-lg font-bold">
               {selectedPost ? `Bài viết của ${selectedPost.author.name || selectedPost.author.username}` : 'Chi tiết bài viết'}
             </DialogTitle>
           </div>
-          
-          {/* Main Scrollable Content */}
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-hidden">
             {selectedPost && (
               <PostDetail
                 post={selectedPost}
-                onBack={() => {
-                  fetchPosts(currentUser.id);
-                  setSelectedPost(null);
-                }}
+                onBack={() => setSelectedPost(null)}
                 currentUser={currentUser}
                 onAddComment={handlePostCommented}
                 onUserClick={handleUserClick}
@@ -797,9 +547,106 @@ export default function App() {
           </div>
         </DialogContent>
       </Dialog>
-
       <Toaster position="top-center" />
-
     </div>
   );
 }
+
+// --- Main App Export ---
+export default function App() {
+  const [currentUser, setCurrentUser] = useState<User>(() => {
+    const saved = localStorage.getItem('currentUser');
+    return saved ? JSON.parse(saved) : defaultUser;
+  });
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('token'));
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [activeCommunity, setActiveCommunity] = useState<string | null>(null);
+  const [feedFilter, setFeedFilter] = useState<'all' | 'following'>('all');
+  const [posts, setPosts] = useState<Post[]>(initialPosts);
+
+  const fetchUnreadCount = useCallback(async (userId: string) => {
+    if (!userId) return;
+    try {
+      const res = await fetch(`${API_URL}/notifications?accountId=${userId}`);
+      const data = await res.json();
+      if (data.status === 'success') {
+        const unread = data.data.filter((n: any) => !n.isRead).length;
+        setUnreadNotifications(unread);
+      }
+    } catch (err) { console.error('Lỗi tải thông báo:', err); }
+  }, []);
+
+  const fetchUnreadMessagesCount = useCallback(async (userId: string) => {
+    if (!userId) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/messages/unread-count?userId=${encodeURIComponent(userId)}&_t=${Date.now()}`, {
+        headers: { 'Authorization': `Bearer ${token}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache' }
+      });
+      const data = await res.json();
+      if (data.status === 'success') setUnreadMessagesCount(data.data);
+    } catch (err) { console.error('Lỗi tải số tin nhắn chưa đọc:', err); }
+  }, []);
+
+  const fetchPosts = useCallback(async (userId: string = currentUser?.id || '', community: string | null = activeCommunity, filter: string = feedFilter) => {
+    try {
+      let url = `${API_URL}/posts?userId=${userId || ''}`;
+      if (community) url += `&community=${community}`;
+      if (filter === 'following' && userId) url += `&followingOnly=true`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.status === 'success') setPosts(data.data);
+    } catch (err) { console.error('Failed to fetch posts:', err); }
+  }, [activeCommunity, feedFilter, currentUser.id]);
+
+  useEffect(() => {
+    if (isAuthenticated && (currentUser.id || currentUser._id)) {
+      fetchUnreadCount(currentUser.id || String(currentUser._id));
+      fetchUnreadMessagesCount(currentUser.id || String(currentUser._id));
+    }
+  }, [isAuthenticated, currentUser.id, currentUser._id, fetchUnreadCount, fetchUnreadMessagesCount]);
+
+  useEffect(() => {
+    fetchPosts(currentUser?.id || '');
+  }, [activeCommunity, feedFilter, fetchPosts, currentUser?.id]);
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setCurrentUser(defaultUser);
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('token');
+    toast.success('Đã đăng xuất');
+  };
+
+  return (
+    <SocketProvider userId={currentUser?.id || currentUser?._id}>
+      <AppContent 
+        currentUser={currentUser}
+        setCurrentUser={setCurrentUser}
+        isAuthenticated={isAuthenticated}
+        setIsAuthenticated={setIsAuthenticated}
+        unreadNotifications={unreadNotifications}
+        setUnreadNotifications={setUnreadNotifications}
+        unreadMessagesCount={unreadMessagesCount}
+        setUnreadMessagesCount={setUnreadMessagesCount}
+        activeCommunity={activeCommunity}
+        setActiveCommunity={setActiveCommunity}
+        feedFilter={feedFilter}
+        setFeedFilter={setFeedFilter}
+        posts={posts}
+        setPosts={setPosts}
+        handleLogout={handleLogout}
+        fetchPosts={fetchPosts}
+        fetchUnreadMessagesCount={fetchUnreadMessagesCount}
+        fetchUnreadCount={fetchUnreadCount}
+      />
+    </SocketProvider>
+  );
+}
+
+
+
+

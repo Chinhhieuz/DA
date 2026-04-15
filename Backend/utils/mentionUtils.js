@@ -41,20 +41,18 @@ const processMentions = async (content, senderId, postId, postTitle) => {
             });
             await notif.save();
 
-            // Gửi qua Socket.io nếu người dùng đang online
+            // Gửi qua Socket.io (Room-based)
             const io = socketModule.getIO();
-            const connectedUsers = socketModule.getConnectedUsers();
-            const recipientSocketId = connectedUsers.get(recipient._id.toString());
+            const rIdStr = recipient._id.toString();
             
-            if (recipientSocketId) {
-                io.to(recipientSocketId).emit('new_notification', {
-                    type: 'mention',
-                    senderName: sender.display_name || sender.username,
-                    postId: postId,
-                    title: postTitle,
-                    content: content.substring(0, 50)
-                });
-            }
+            io.to(rIdStr).emit('new_notification', {
+                type: 'mention',
+                senderName: sender.display_name || sender.username,
+                postId: postId,
+                title: postTitle,
+                content: content.substring(0, 50)
+            });
+            console.log(`📡 [MENTION] Gửi thông báo nhắc tên tới Room: ${rIdStr}`);
         }
     } catch (error) {
         console.error('[MENTION UTILS] Lỗi khi xử lý nhắc tên:', error);

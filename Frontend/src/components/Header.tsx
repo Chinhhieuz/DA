@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Bell, User, Menu, Search, TrendingUp, Settings, LogOut, ChevronRight, CircleHelp, Moon, MessageSquareMore } from 'lucide-react';
+import { Bell, User, Menu, Search, TrendingUp, Settings, LogOut, ChevronRight, CircleHelp, Moon, MessageSquare, MessageSquareMore } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,7 @@ import { User as UserType } from '@/app/App';
 import { getImageUrl } from '@/lib/imageUtils';
 import { API_URL } from '@/lib/api';
 import { toast } from 'sonner';
+import { useSocket } from '@/contexts/SocketContext';
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,7 @@ interface HeaderProps {
   onMenuToggle?: () => void;
   onDesktopMenuToggle?: () => void;
   notificationCount: number;
+  unreadMessagesCount: number;
   isAuthenticated?: boolean;
   currentUser?: UserType;
   onLogout?: () => void;
@@ -32,7 +34,7 @@ interface HeaderProps {
   onCommunityClick?: (community: string) => void;
 }
 
-export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notificationCount, isAuthenticated, currentUser, onLogout, allPosts = [], onPostClick, onCommunityClick }: HeaderProps) {
+export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notificationCount, unreadMessagesCount, isAuthenticated, currentUser, onLogout, allPosts = [], onPostClick, onCommunityClick }: HeaderProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -43,6 +45,7 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
   const [trendingTopics, setTrendingTopics] = useState<any[]>([]);
   const searchRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const { isConnected } = useSocket();
 
   useEffect(() => {
     const fetchTrendingTopics = async () => {
@@ -117,14 +120,14 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
     : [];
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-primary text-primary-foreground shadow-md">
-      <div className="flex h-full items-center gap-4 px-4">
+    <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-[linear-gradient(135deg,#8f1820_0%,#c91f28_42%,#123b74_100%)] text-primary-foreground shadow-[0_20px_50px_rgba(15,23,42,0.22)]">
+      <div className="mx-auto flex h-20 max-w-[1500px] items-center gap-4 px-4 sm:px-6 lg:px-8">
         {/* Left: Menu + Logo */}
         <div className="flex items-center gap-2 shrink-0">
           <Button
             variant="ghost"
             size="icon"
-            className="md:hidden text-primary-foreground hover:bg-white/10"
+            className="md:hidden rounded-2xl text-primary-foreground hover:bg-white/10"
             onClick={onMenuToggle}
           >
             <Menu className="h-5 w-5" />
@@ -132,7 +135,7 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
           <Button
             variant="ghost"
             size="icon"
-            className="hidden md:flex text-primary-foreground hover:bg-white/10"
+            className="hidden md:flex rounded-2xl text-primary-foreground hover:bg-white/10"
             onClick={onDesktopMenuToggle}
           >
             <Menu className="h-5 w-5" />
@@ -141,10 +144,13 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
             className="flex items-center gap-2 cursor-pointer transition-opacity hover:opacity-80"
             onClick={() => onViewChange('home')}
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-background text-primary shadow-sm">
-              <span className="text-xl">🔗</span>
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/95 text-primary shadow-lg">
+              <span className="text-xl">L</span>
             </div>
-            <span className="hidden sm:inline text-xl font-bold text-white">Linky</span>
+            <div className="hidden sm:block">
+              <span className="block text-xl font-black tracking-tight text-white">Linky</span>
+              <span className="block text-[11px] uppercase tracking-[0.24em] text-white/70">Social hub</span>
+            </div>
           </div>
         </div>
 
@@ -157,7 +163,7 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setIsSearchOpen(true); }}
               onFocus={() => setIsSearchOpen(true)}
-              className="w-full rounded-full border-white/20 bg-white/15 pl-10 pr-4 text-white placeholder:text-white/60 focus:bg-background focus:text-foreground focus:placeholder:text-muted-foreground focus:border-white h-10 transition-colors"
+              className="h-11 w-full rounded-full border-white/15 bg-white/14 pl-10 pr-4 text-white placeholder:text-white/60 backdrop-blur-md focus:border-white/40 focus:bg-white focus:text-foreground focus:placeholder:text-muted-foreground"
             />
           </div>
 
@@ -216,8 +222,26 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
 
         {/* Right: Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Socket Status Indicator */}
+          <div 
+            className={`mr-2 h-2.5 w-2.5 rounded-full transition-all duration-500 ${isConnected ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.75)]' : 'bg-rose-400 animate-pulse outline outline-2 outline-offset-2 outline-rose-300/20'}`}
+            title={isConnected ? 'Đã kết nối Socket' : 'Mất kết nối Socket'}
+          />
           {isAuthenticated ? (
             <>
+              <Button
+                variant="ghost"
+                className="relative rounded-full text-primary-foreground hover:bg-white/10 hover:text-white"
+                onClick={() => onViewChange('messages')}
+              >
+                <MessageSquare className="h-5 w-5" />
+                {unreadMessagesCount > 0 && (
+                  <Badge className="absolute -right-1 -top-1 h-5 min-w-5 bg-red-500 text-white px-1 hover:bg-red-500">
+                    {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                  </Badge>
+                )}
+                <span className="hidden sm:ml-2 sm:inline">Tin nhắn</span>
+              </Button>
               <Button
                 variant="ghost"
                 className="relative text-primary-foreground hover:bg-white/10 hover:text-white"
@@ -246,7 +270,7 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
                 </Button>
 
                 {isUserMenuOpen && (
-                  <div className="absolute right-0 top-12 w-80 bg-card rounded-xl shadow-2xl border border-border py-4 z-50 animate-in fade-in zoom-in duration-200">
+                  <div className="glass-panel absolute right-0 top-14 z-50 w-80 rounded-[24px] py-4 animate-in fade-in zoom-in duration-200">
                     <div className="px-4 mb-4">
                       <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent cursor-pointer transition-colors" onClick={() => { onViewChange('profile'); setIsUserMenuOpen(false); }}>
                         <img src={getImageUrl(currentUser?.avatar)} alt="Avatar" className="h-10 w-10 rounded-full border border-border" />
