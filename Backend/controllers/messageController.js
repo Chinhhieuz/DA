@@ -1,6 +1,67 @@
 const messageService = require('../services/messageService');
 const socketModule = require('../socket');
 const Conversation = require('../models/Conversation');
+const cloudinary = require('cloudinary').v2;
+const path = require('path');
+
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+const inferAttachmentKind = (mimeType = '', fallbackName = '') => {
+    const normalizedMime = String(mimeType || '').toLowerCase();
+    if (normalizedMime.startsWith('image/')) return 'image';
+    if (normalizedMime.startsWith('video/')) return 'video';
+
+    const extension = String(fallbackName || '').split('.').pop()?.toLowerCase() || '';
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif', 'heic', 'heif'].includes(extension)) return 'image';
+    if (['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v', '3gp'].includes(extension)) return 'video';
+    return 'file';
+};
+
+const resolveCloudinaryResourceType = (kind) => {
+    if (kind === 'image') return 'image';
+    if (kind === 'video') return 'video';
+    return 'raw';
+};
+
+const buildCloudinaryUploadOptions = ({ resourceType, originalName = '' }) => {
+    const normalizedOriginalName = String(originalName || '').trim();
+    const extension = path.extname(normalizedOriginalName).replace(/^\./, '').toLowerCase();
+    const options = {
+        folder: 'social-media-message-uploads',
+        resource_type: resourceType,
+        use_filename: true,
+        unique_filename: true
+    };
+
+    if (normalizedOriginalName) {
+        options.filename_override = normalizedOriginalName;
+    }
+
+    // Raw files can lose extension on delivery URL if we do not specify format.
+    if (resourceType === 'raw' && extension) {
+        options.format = extension;
+    }
+
+    return options;
+};
+
+const uploadBufferToCloudinary = (fileBuffer, { resourceType, originalName } = {}) => {
+    const uploadOptions = buildCloudinaryUploadOptions({ resourceType, originalName });
+    return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+            uploadOptions,
+            (error, result) => {
+                if (error) return reject(error);
+                return resolve(result);
+            }
+        );
+        stream.end(fileBuffer);
+    });
+};
 
 const normalizeId = (value) => {
     if (value === null || value === undefined) return '';
@@ -66,6 +127,48 @@ const messageController = {
             res.status(200).json({
                 status: 'success',
                 data: messages
+            });
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    uploadAttachment: async (req, res, next) => {
+        try {
+            const file = req.file;
+            if (!file) {
+                return res.status(400).json({
+                    status: 'fail',
+                    message: 'Khong tim thay tep dinh kem'
+                });
+            }
+
+            const kind = inferAttachmentKind(file.mimetype, file.originalname);
+            const resourceType = resolveCloudinaryResourceType(kind);
+            const uploadResult = await uploadBufferToCloudinary(file.buffer, {
+                resourceType,
+                originalName: file.originalname
+            });
+            const fileUrl = uploadResult?.secure_url || uploadResult?.url;
+
+            if (!fileUrl) {
+                return res.status(500).json({
+                    status: 'error',
+                    message: 'Khong the tai tep len cloud'
+                });
+            }
+
+            return res.status(200).json({
+                status: 'success',
+                data: {
+                    attachment: {
+                        url: fileUrl,
+                        kind,
+                        name: file.originalname || '',
+                        mime_type: file.mimetype || '',
+                        size: file.size || 0
+                    }
+                }
             });
         } catch (error) {
             next(error);

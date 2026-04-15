@@ -121,7 +121,7 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-[linear-gradient(135deg,#8f1820_0%,#c91f28_42%,#123b74_100%)] text-primary-foreground shadow-[0_20px_50px_rgba(15,23,42,0.22)]">
-      <div className="mx-auto flex h-20 max-w-[1500px] items-center gap-4 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-[5.5rem] max-w-[1500px] items-center gap-4 px-4 sm:px-6 lg:px-8">
         {/* Left: Menu + Logo */}
         <div className="flex items-center gap-2 shrink-0">
           <Button

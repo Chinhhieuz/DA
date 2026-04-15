@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Image, Link2, FileText, X, Loader2, Upload, ChevronDown, ChevronUp } from 'lucide-react';
+import { Image, Video, X, Loader2, Upload, ChevronUp } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -84,11 +84,11 @@ function ImagePreviewStrip({
           </button>
         )}
 
-        {/* Nút thêm ảnh nhanh */}
-        <label className="flex-shrink-0 w-[72px] h-[72px] rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center cursor-pointer hover:border-primary/60 hover:bg-primary/5 transition-colors group">
-          <input type="file" className="hidden" accept="image/*" multiple onChange={onAddMore} />
-          <Image className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
-          <span className="text-[9px] text-muted-foreground group-hover:text-primary mt-0.5 font-medium">Thêm</span>
+        {/* Nút thêm media nhanh */}
+        <label className="flex-shrink-0 w-[72px] h-[72px] rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center cursor-pointer hover:border-primary/60 hover:bg-primary/5 transition-colors group bg-background">
+          <input type="file" className="hidden" accept="image/*,video/*" multiple onChange={onAddMore} />
+          <Upload className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors mb-0.5" />
+          <span className="text-[9px] text-muted-foreground group-hover:text-primary font-medium">Thêm</span>
         </label>
       </div>
     </div>
@@ -106,10 +106,14 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
   // Lưu trữ File object và preview URL cục bộ — CHƯA upload lên Cloudinary
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [selectedVideoFile, setSelectedVideoFile] = useState<File | null>(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState('');
 
   // Dọn dẹp object URLs khi component unmount để tránh memory leak
   const previewUrlsRef = useRef<string[]>([]);
   previewUrlsRef.current = previewUrls;
+  const videoPreviewUrlRef = useRef('');
+  videoPreviewUrlRef.current = videoPreviewUrl;
 
   useEffect(() => {
     fetch(`${API_URL}/communities`)
@@ -122,36 +126,77 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
     return () => {
       // Thu hồi các object URL tạm khi unmount
       previewUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+      if (videoPreviewUrlRef.current) {
+        URL.revokeObjectURL(videoPreviewUrlRef.current);
+      }
     };
   }, []);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUnifiedFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     if (!currentUser.id) {
-      toast.error('Bạn cần đăng nhập để đăng ảnh!');
+      toast.error('Bạn cần đăng nhập để đăng tệp đính kèm!');
       e.target.value = '';
       return;
     }
 
-    const newFiles = Array.from(files);
+    const imageFiles: File[] = [];
+    let newVideoFile: File | null = null;
+    let videoRejected = false;
 
-    // Tạo preview URL cục bộ từ File object — KHÔNG upload Cloudinary
-    const newPreviews = newFiles.map(file => URL.createObjectURL(file));
+    Array.from(files).forEach(file => {
+      if (file.type.startsWith('image/')) {
+        imageFiles.push(file);
+      } else if (file.type.startsWith('video/')) {
+        if (newVideoFile || selectedVideoFile) {
+          if (!videoRejected) {
+             toast.warning('Chỉ được phép tải lên tối đa 1 video. Các video sau sẽ bị bỏ qua.');
+             videoRejected = true;
+          }
+        } else {
+           const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
+           if (file.size > MAX_VIDEO_SIZE) {
+             toast.error(`Video quá lớn. Tối đa 50MB`);
+           } else {
+             newVideoFile = file;
+           }
+        }
+      }
+    });
 
-    setSelectedFiles(prev => [...prev, ...newFiles]);
-    setPreviewUrls(prev => [...prev, ...newPreviews]);
+    if (imageFiles.length > 0) {
+      const newPreviews = imageFiles.map(file => URL.createObjectURL(file));
+      setSelectedFiles(prev => [...prev, ...imageFiles]);
+      setPreviewUrls(prev => [...prev, ...newPreviews]);
+    }
 
-    toast.success(`Đã chọn ${newFiles.length} ảnh. Ảnh sẽ được tải lên khi bạn đăng bài.`);
+    if (newVideoFile) {
+      if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
+      const nextPreview = URL.createObjectURL(newVideoFile);
+      setSelectedVideoFile(newVideoFile);
+      setVideoPreviewUrl(nextPreview);
+    }
+
+    if (imageFiles.length > 0 || newVideoFile) {
+      toast.success('Tệp đã được chọn hợp lệ. Sẽ tải lên khi bạn đăng cài.');
+    }
     e.target.value = '';
   };
 
   const handleRemoveImage = (index: number) => {
-    // Thu hồi object URL trước khi xóa
     URL.revokeObjectURL(previewUrls[index]);
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
     setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleRemoveVideo = () => {
+    if (videoPreviewUrl) {
+      URL.revokeObjectURL(videoPreviewUrl);
+    }
+    setSelectedVideoFile(null);
+    setVideoPreviewUrl('');
   };
 
   const handleSubmit = async () => {
@@ -189,6 +234,9 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
       selectedFiles.forEach((file) => {
         formData.append('image', file);
       });
+      if (selectedVideoFile) {
+        formData.append('video', selectedVideoFile);
+      }
 
       const res = await fetch(`${API_URL}/posts`, {
         method: 'POST',
@@ -197,14 +245,19 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
       const data = await res.json();
 
       if (data.status === 'success') {
-        toast.success('Đã gửi bài! Hệ thống đang xử lý ảnh và kiểm duyệt ngầm, bài viết sẽ hiện ra sau giây lát.');
+        toast.success('Đã gửi bài! Hệ thống đang xử lý media và kiểm duyệt ngầm, bài viết sẽ hiện ra sau giây lát.');
         // Dọn dẹp form
         setTitle('');
         setContent('');
         // Thu hồi các object URL tạm
         previewUrls.forEach(url => URL.revokeObjectURL(url));
+        if (videoPreviewUrl) {
+          URL.revokeObjectURL(videoPreviewUrl);
+        }
         setSelectedFiles([]);
         setPreviewUrls([]);
+        setSelectedVideoFile(null);
+        setVideoPreviewUrl('');
         onPostCreated(data.data);
       } else {
         toast.error(data.message || 'Không thể đăng bài viết, vui lòng thử lại sau');
@@ -282,52 +335,78 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
              />
           </div>
 
-          {/* Image Upload Section — luôn hiện bên dưới nội dung */}
+          {/* Media Upload Section — luôn hiện bên dưới nội dung */}
           <div className="space-y-3 pt-2">
             <div className="flex items-center justify-between px-1">
-              <label className="text-[11px] uppercase tracking-[0.1em] font-bold text-muted-foreground">Hình ảnh đính kèm (Tùy chọn)</label>
-              {selectedFiles.length > 0 && (
-                <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+              <label className="text-[11px] uppercase tracking-[0.1em] font-bold text-muted-foreground">Tệp đính kèm (Tùy chọn)</label>
+              {(selectedFiles.length > 0 || selectedVideoFile) && (
+                <span className="text-[10px] font-semibold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full flex items-center gap-1">
                   <Upload className="h-3 w-3" />
-                  {selectedFiles.length} ảnh · Sẽ tải lên khi đăng
+                  {[
+                    selectedFiles.length > 0 ? `${selectedFiles.length} ảnh` : '',
+                    selectedVideoFile ? '1 video' : ''
+                  ].filter(Boolean).join(' · ')} · Sẽ tải lên khi đăng
                 </span>
               )}
             </div>
-            {/* Nút lớn để thêm ảnh (chỉ hiện khi chưa có ảnh nào) */}
-            {previewUrls.length === 0 && (
+
+            {/* Nút lớn để thêm Media (chỉ hiện khi chưa có ảnh VÀ chưa có video) */}
+            {previewUrls.length === 0 && !videoPreviewUrl && (
               <label className="block">
                 <div className={`relative flex flex-col items-center justify-center min-h-[120px] rounded-[2rem] border-2 border-dashed transition-all duration-300 cursor-pointer group border-border hover:border-primary/50 hover:bg-primary/5`}>
                   <input
                     type="file"
                     className="hidden"
-                    accept="image/*"
+                    accept="image/*,video/*"
                     multiple
-                    onChange={handleFileSelect}
+                    onChange={handleUnifiedFileSelect}
                   />
 
                   <div className="flex flex-col items-center p-6">
-                    <div className="w-12 h-12 bg-card rounded-2xl shadow-sm border border-border flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-                      <Image className="h-6 w-6 text-primary" />
+                    <div className="w-12 h-12 bg-card rounded-2xl shadow-sm border border-border flex items-center justify-center mb-2 group-hover:scale-110 transition-transform gap-2 flex-row">
+                      <Image className="h-5 w-5 text-primary" />
+                      <Video className="h-5 w-5 text-primary" />
                     </div>
-                    <p className="text-sm font-bold text-foreground line-clamp-1">Thêm ảnh đính kèm</p>
-                    <p className="text-[10px] text-muted-foreground font-medium">Hỗ trợ JPG, PNG, WEBP (Nhiều ảnh)</p>
+                    <p className="text-sm font-bold text-foreground line-clamp-1">Thêm tệp đính kèm</p>
+                    <p className="text-[10px] text-muted-foreground font-medium text-center mt-1">Hỗ trợ ảnh và video (Tối đa 50MB)</p>
                   </div>
                 </div>
               </label>
             )}
 
-            {/* Thumbnail strip — thu gọn 2 ảnh, click +X để xem thêm */}
-            {previewUrls.length > 0 && (
-              <ImagePreviewStrip
-                previewUrls={previewUrls}
-                onRemove={handleRemoveImage}
-                onAddMore={handleFileSelect}
-              />
-            )}
-            {previewUrls.length > 0 && (
-              <p className="text-[10px] text-muted-foreground font-medium mt-1.5 px-1">
-                {previewUrls.length} ảnh · Sẽ tải lên Cloudinary khi bạn nhấn <strong>Đăng</strong>
-              </p>
+            {/* Preview Area for mixed media */}
+            {(previewUrls.length > 0 || videoPreviewUrl) && (
+              <div className="space-y-3">
+                {previewUrls.length > 0 && (
+                  <ImagePreviewStrip
+                    previewUrls={previewUrls}
+                    onRemove={handleRemoveImage}
+                    onAddMore={handleUnifiedFileSelect}
+                  />
+                )}
+                {/* Nếu chưa có ảnh thì render một nút AddMore riêng */}
+                {previewUrls.length === 0 && videoPreviewUrl && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="flex-shrink-0 w-[72px] h-[72px] rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center cursor-pointer hover:border-primary/60 hover:bg-primary/5 transition-colors group bg-card">
+                      <input type="file" className="hidden" accept="image/*,video/*" multiple onChange={handleUnifiedFileSelect} />
+                      <Upload className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors mb-0.5" />
+                      <span className="text-[9px] text-muted-foreground group-hover:text-primary font-medium">Thêm</span>
+                    </label>
+                  </div>
+                )}
+                
+                {videoPreviewUrl && (
+                  <div className="relative rounded-2xl overflow-hidden border border-border bg-muted/30 p-2">
+                    <video src={videoPreviewUrl} controls className="w-full max-h-[320px] rounded-xl bg-black" />
+                    <button
+                      onClick={handleRemoveVideo}
+                      className="absolute top-4 right-4 bg-red-500/80 text-white rounded-full p-2 hover:bg-red-600 transition-colors shadow-md backdrop-blur-sm"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -340,8 +419,13 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
                 setTitle('');
                 setContent('');
                 previewUrls.forEach(url => URL.revokeObjectURL(url));
+                if (videoPreviewUrl) {
+                  URL.revokeObjectURL(videoPreviewUrl);
+                }
                 setSelectedFiles([]);
                 setPreviewUrls([]);
+                setSelectedVideoFile(null);
+                setVideoPreviewUrl('');
               }}
               className="flex-1 h-14 rounded-2xl border-border text-muted-foreground hover:bg-muted font-bold tracking-tight transition-all"
             >
@@ -355,7 +439,9 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
               {isSubmitting ? (
                 <span className="flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  {selectedFiles.length > 0 ? `Đang tải ${selectedFiles.length} ảnh...` : 'Đang đăng...'}
+                  {selectedFiles.length > 0 || selectedVideoFile
+                    ? `Đang tải ${selectedFiles.length} ảnh${selectedVideoFile ? ' + 1 video' : ''}...`
+                    : 'Đang đăng...'}
                 </span>
               ) : (
                 'Đăng bài ngay'

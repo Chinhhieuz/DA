@@ -7,6 +7,9 @@ const handleServiceError = (error, res) => {
     if (error.message.startsWith('FORBIDDEN:')) {
         return res.status(403).json({ status: 'fail', message: error.message.split(':')[1] });
     }
+    if (error.message.startsWith('VALIDATION:')) {
+        return res.status(400).json({ status: 'fail', message: error.message.split(':')[1] });
+    }
     if (error.message === 'Vui lòng cung cấp đủ author_id, tiêu đề và nội dung bài viết!') {
         return res.status(400).json({ status: 'fail', message: error.message });
     }
@@ -19,12 +22,15 @@ const createPost = async (req, res) => {
     try {
         // Đảm bảo body luôn là một object, không được là null
         const postData = req.body || {};
-        const files = req.files || [];
+        const mediaFiles = req.files || {};
+        const imageFiles = Array.isArray(mediaFiles.image) ? mediaFiles.image : [];
+        const videoFile = Array.isArray(mediaFiles.video) ? mediaFiles.video[0] : null;
         
         console.log('[CREATE POST CONTROLLER] Incoming Body Keys:', Object.keys(postData));
-        console.log('[CREATE POST CONTROLLER] Files Count:', files.length);
+        console.log('[CREATE POST CONTROLLER] Image Files Count:', imageFiles.length);
+        console.log('[CREATE POST CONTROLLER] Has Video File:', !!videoFile);
         
-        const newPost = await postingService.createPostService(postData, files);
+        const newPost = await postingService.createPostService(postData, { imageFiles, videoFile });
         
         let message = 'Đã đăng bài viết thành công!';
         if (newPost.status === 'pending') {

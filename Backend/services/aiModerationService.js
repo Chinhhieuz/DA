@@ -1,78 +1,89 @@
-const https = require('https');
-const http = require('http');
-
-// 🛡️ LỚP 1: DANH SÁCH TỪ CẤM TOÀN CẦU (GLOBAL BLOCKLIST)
-// Chặn ngay lập tức các từ chửi thề cực đoan bằng cả Tiếng Việt và Tiếng Anh
+// Global hard blocklist to reject obvious toxic/illegal content fast.
 const HARD_BLOCKLIST = [
-    // 🇻🇳 TIẾNG VIỆT
     'địt', 'djt', 'đjt', 'đ.ị.t', 'đýt', 'mọe', 'đm', 'đ.m', 'đkm', 'dcm', 'vcl', 'vkl', 'clgt', 'cmnr', 'vc', 'lồn', 'l0n', 'cặc', 'c@c', 'buồi', 'đầu buồi', 'súc vật', 'chó đẻ',
     'việt tân', 'cách mạng màu', 'biểu tình', 'lật đổ', 'đa đảng', 'đường lưỡi bò', 'ba que', 'đu càng', 'phản động', 'bạo loạn', 'bất tuân dân sự', 'xuyên tạc',
     'bắc kỳ', 'nam kỳ', 'hoa thanh quế', 'tộc cối', 'tọc cối', 'người rừng', 'mọi miên',
     'cá độ', 'lô đề', 'soi cầu', 'tín dụng đen', 'bốc bát họ', 'thuốc kích dục', 'ma túy', 'đập đá', 'ke kẹo',
-
-    // 🇺🇸 TIẾNG ANH (GLOBAL HIGH-RISK)
     'fuck', 'f*ck', 'motherfucker', 'shit', 'sh*it', 'asshole', 'bastard', 'bitch', 'pussy', 'dick', 'cock',
     'nigger', 'nigga', 'retard', 'slut', 'whore', 'hooker', 'porn', 'sex', 'hentai', 'terrorism', 'isisl'
 ];
 
-/**
- * Helper: Chuẩn hóa văn bản để phát hiện lách luật (Teencode, dấu chấm, khoảng trắng)
- * Ví dụ: "đ.m" -> "đm", "f u c k" -> "fuck"
- */
+const VIDEO_FRAME_SECONDS = [0, 1, 3, 5, 8];
+const MAX_VIDEO_FRAMES_TOTAL = 10;
+
 function normalizeText(text) {
     if (!text) return '';
-    // Loại bỏ tất cả khoảng trắng và các ký tự gây nhiễu phổ biến
     return text.toLowerCase().replace(/[\s\.\-\_\*\|\,\@\(\)\[\]\{\}\?\!]/g, '');
 }
 
-/**
- * Helper: Chuyển đổi Buffer ảnh thành format tương thích với Gemini
- */
+function ensureArray(value) {
+    if (!value) return [];
+    return Array.isArray(value) ? value : [value];
+}
+
+function normalizeCloudinaryUrl(url) {
+    if (!url || typeof url !== 'string') return '';
+    if (url.startsWith('http://res.cloudinary.com')) return url.replace('http://', 'https://');
+    return url;
+}
+
 function bufferToGenerativePart(buffer, mimeType = 'image/jpeg') {
     return {
-        inlineData: { data: buffer.toString("base64"), mimeType: mimeType },
+        inlineData: { data: buffer.toString('base64'), mimeType }
     };
 }
 
-/**
- * Hàm tải ảnh từ URL và chuyển thành format tương thích với Gemini
- */
 async function fetchImageToGenerativePart(url) {
     try {
-        if (!url || !url.startsWith('http')) return null;
-        if (url.startsWith('http://res.cloudinary.com')) url = url.replace('http://', 'https://');
-
-        const response = await fetch(url);
+        if (!url || typeof url !== 'string' || !url.startsWith('http')) return null;
+        const safeUrl = normalizeCloudinaryUrl(url);
+        const response = await fetch(safeUrl);
         if (!response.ok) return null;
 
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         const mimeType = response.headers.get('content-type') || 'image/jpeg';
-        
         return bufferToGenerativePart(buffer, mimeType);
     } catch (e) {
-        console.error('[AI Moderation] Lỗi khi tải ảnh từ URL:', e.message);
+        console.error('[AI Moderation] Loi tai anh/frame:', e.message);
         return null;
     }
 }
 
-/**
- * Hệ thống kiểm duyệt AI Quốc tế - Bảo vệ đa quốc gia và đa ngôn ngữ
- */
-const checkContent = async (title, content, imageUrls = []) => {
-    // ⚔️ KIỂM TRA LỚP 1: GLOBAL HARD BLOCKLIST (CASE-INSENSITIVE)
-    const rawText = (title + ' ' + content).toLowerCase();
-    const cleanText = normalizeText(title + ' ' + content);
+function buildVideoFrameUrls(videoUrl) {
+    const safeUrl = normalizeCloudinaryUrl(videoUrl);
+    if (!safeUrl || !safeUrl.includes('/video/upload/')) return [];
+
+    const [prefix, afterUpload] = safeUrl.split('/video/upload/');
+    if (!prefix || !afterUpload) return [];
+
+    const [pathNoQuery, query = ''] = afterUpload.split('?');
+    const querySuffix = query ? `?${query}` : '';
+    return VIDEO_FRAME_SECONDS.map((sec) => (
+        `${prefix}/video/upload/so_${sec},du_0.1,f_jpg/${pathNoQuery}${querySuffix}`
+    ));
+}
+
+function extractVideoFrameUrls(videoUrls) {
+    const urls = ensureArray(videoUrls).filter((u) => typeof u === 'string' && u);
+    const allFrames = [];
+    for (const url of urls) {
+        allFrames.push(...buildVideoFrameUrls(url));
+    }
+    return [...new Set(allFrames)].slice(0, MAX_VIDEO_FRAMES_TOTAL);
+}
+
+const checkContent = async (title, content, imageInputs = [], videoInputs = []) => {
+    const rawText = `${title || ''} ${content || ''}`.toLowerCase();
+    const cleanText = normalizeText(`${title || ''} ${content || ''}`);
 
     for (const word of HARD_BLOCKLIST) {
-        // Kiểm tra cả văn bản gốc và văn bản đã chuẩn hóa
         if (rawText.includes(word) || cleanText.includes(word)) {
-            console.log(`[AI Moderation] 🛡️ GLOBAL BLOCKLIST CATCH: "${word}" found. REJECT!`);
-            return { status: 'REJECT', reason: `Phát hiện từ ngữ bị cấm: ${word}` };
+            console.log(`[AI Moderation] BLOCKLIST CATCH: "${word}"`);
+            return { status: 'REJECT', reason: `Phat hien tu ngu bi cam: ${word}` };
         }
     }
 
-    // 🧠 KIỂM TRA LỚP 2: INTERNATIONAL SYSTEM PROMPT (Gemini)
     return new Promise(async (resolve) => {
         try {
             const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -80,61 +91,51 @@ const checkContent = async (title, content, imageUrls = []) => {
             if (!apiKey) return resolve({ status: 'PASS', reason: '' });
 
             const genAI = new GoogleGenerativeAI(apiKey);
-            // Sử dụng model 2.0-flash mà tài khoản của bạn có quyền truy cập
-            const model = genAI.getGenerativeModel({ 
+            const model = genAI.getGenerativeModel({
                 model: 'gemini-2.0-flash',
                 generationConfig: {
                     temperature: 0.1,
                     maxOutputTokens: 1024,
-                    responseMimeType: "application/json"
+                    responseMimeType: 'application/json'
                 }
             });
 
-            const prompt = `[INTERNATIONAL CONTENT MODERATION SYSTEM - GLOBAL SAFETY SHIELD]
-You are an Elite International Content Moderator. You are highly proficient in multiple languages, including Vietnamese, English, Spanish, French, and common internet slang across cultures.
+            const frameUrls = extractVideoFrameUrls(videoInputs);
+            const prompt = `[INTERNATIONAL CONTENT MODERATION SYSTEM]
+Analyze title/content and all attached media.
+- Media includes images and sampled frames extracted from attached videos.
+- Return strict JSON with:
+  - status: "REJECT" or "PASS"
+  - reason: short Vietnamese reason (max 20 words), empty when PASS
 
-TASK: Analyze the content and images provided. Return a JSON object with two fields:
-- "status": "REJECT" if it violates policies, or "PASS" if safe.
-- "reason": A short explanation in Vietnamese (max 20 words) detailing why it was rejected, or an empty string if PASS.
+REJECT if any of: profanity/hate speech, political-sensitive violations, nudity/porn, extreme violence, illegal content.
 
-GLOBAL SAFETY POLICIES (REJECT IF ANY):
-1. OFFENSIVE LANGUAGE (ALL LANGUAGES):
-   - Profanity, insults, slurs in any language (Vietnamese, English, Spanish, etc.).
-   - Hidden or "Leetspeak" variants (e.g., "f*ck", "đ.m", "vcl").
-2. HARASSMENT & HATE SPEECH:
-   - Attacks based on race, religion, sexual orientation, disability, or nationality.
-   - Regional discrimination (e.g., "Bắc Kỳ", "Nam Kỳ").
-3. SENSITIVE POLITICS (VIETNAM FOCUS):
-   - Incitement of protests, illegal acts against the Vietnamese state.
-   - Prohibited maps (Cow-tongue line) or flags (3rd Republic).
-4. MULTIMODAL VISION:
-   - Nudity, pornography, extreme violence, or blood in images.
-   - OCR Check: Read text within images for violations.
+Title: ${title || ''}
+Content: ${content || ''}
+Video frames count: ${frameUrls.length}
 
-Title: ${title}
-Content: ${content}
+ONLY return JSON.`;
 
-RULES: Return ONLY JSON {"status": "REJECT"/"PASS", "reason": "Short text"}. NO intro/outro.`;
+            const contentsParts = [{ text: prompt }];
+            const mediaPromises = [];
 
-            let contentsParts = [{ text: prompt }];
-
-            // 🚀 Xử lý danh sách Ảnh
-            const allPromises = [];
-            if (Array.isArray(imageUrls) && imageUrls.length > 0 && imageUrls[0] instanceof Buffer) {
-                imageUrls.forEach(buf => {
-                    allPromises.push(Promise.resolve(bufferToGenerativePart(buf)));
-                });
-            } else if (imageUrls && imageUrls.length > 0) {
-                imageUrls.forEach(url => {
-                    allPromises.push(fetchImageToGenerativePart(url));
-                });
+            for (const input of ensureArray(imageInputs)) {
+                if (Buffer.isBuffer(input)) {
+                    mediaPromises.push(Promise.resolve(bufferToGenerativePart(input)));
+                } else if (typeof input === 'string') {
+                    mediaPromises.push(fetchImageToGenerativePart(input));
+                }
             }
 
-            if (allPromises.length > 0) {
-                const imgParts = await Promise.all(allPromises);
-                imgParts.forEach(part => {
+            for (const frameUrl of frameUrls) {
+                mediaPromises.push(fetchImageToGenerativePart(frameUrl));
+            }
+
+            if (mediaPromises.length > 0) {
+                const mediaParts = await Promise.all(mediaPromises);
+                for (const part of mediaParts) {
                     if (part) contentsParts.push(part);
-                });
+                }
             }
 
             const result = await model.generateContent({
@@ -145,28 +146,21 @@ RULES: Return ONLY JSON {"status": "REJECT"/"PASS", "reason": "Short text"}. NO 
             let aiResult;
             try {
                 aiResult = JSON.parse(textResponse);
-            } catch (e) {
-                // Xử lý trường hợp AI trả về markdown code blocks
+            } catch (_) {
                 const cleaned = textResponse.replace(/^```json\s*|\s*```$/g, '').trim();
                 aiResult = JSON.parse(cleaned);
             }
 
             if (aiResult.status === 'REJECT') {
-                console.log(`[AI Moderation] 🛡️ REJECTED: "${title}", Lý do: ${aiResult.reason}`);
-                resolve({ status: 'REJECT', reason: aiResult.reason || 'Vi phạm chính sách cộng đồng' });
-            } else {
-                resolve({ status: 'PASS', reason: '' });
+                return resolve({ status: 'REJECT', reason: aiResult.reason || 'Vi pham chinh sach cong dong' });
             }
-
-        } catch (error) { 
-            console.error('[AI Moderation] Lỗi hệ thống AI:', error.message);
-            // Nếu lỗi là do hết hạn mức (Quota), chúng ta cho phép bài viết đi qua để Admin duyệt thủ công
-            // thay vì chặn cứng bài viết của người dùng.
+            return resolve({ status: 'PASS', reason: '' });
+        } catch (error) {
+            console.error('[AI Moderation] Loi he thong AI:', error.message);
             if (error.message.includes('429') || error.message.includes('quota')) {
-                console.log('[AI Moderation] ⚠️ Hết hạn mức API Gemini. Chuyển sang chế độ duyệt thủ công.');
-                return resolve({ status: 'PASS', reason: 'Hệ thống AI đang bảo trì - Đang chờ Admin duyệt' });
+                return resolve({ status: 'PASS', reason: 'He thong AI dang bao tri - Dang cho Admin duyet' });
             }
-            resolve({ status: 'REJECT', reason: 'Lỗi hệ thống xử lý nội dung' }); 
+            return resolve({ status: 'REJECT', reason: 'Loi he thong xu ly noi dung' });
         }
     });
 };

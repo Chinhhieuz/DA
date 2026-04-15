@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { getImageUrl } from '@/lib/imageUtils';
-import { Search, Send, MoreVertical, ImagePlus, X, Loader2, MoreHorizontal, Share2, RotateCcw, Trash2 } from 'lucide-react';
+import { Search, Send, MoreVertical, ImagePlus, Video, FileText, X, Loader2, MoreHorizontal, Share2, RotateCcw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -217,6 +217,74 @@ const dedupeMessagesById = (messages: any[]) => {
   return result;
 };
 
+type AttachmentKind = 'image' | 'video' | 'file';
+
+interface MessageAttachment {
+  url: string;
+  kind: AttachmentKind;
+  name?: string;
+  mime_type?: string;
+  size?: number;
+}
+
+const inferAttachmentKind = (url: string = '', mimeType: string = '', declaredKind: string = ''): AttachmentKind => {
+  const normalizedKind = String(declaredKind || '').toLowerCase();
+  if (normalizedKind === 'image' || normalizedKind === 'video' || normalizedKind === 'file') {
+    return normalizedKind as AttachmentKind;
+  }
+
+  const normalizedMime = String(mimeType || '').toLowerCase();
+  if (normalizedMime.startsWith('image/')) return 'image';
+  if (normalizedMime.startsWith('video/')) return 'video';
+
+  const cleanUrl = String(url || '').split('?')[0].split('#')[0];
+  const ext = cleanUrl.includes('.') ? cleanUrl.split('.').pop()?.toLowerCase() || '' : '';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif', 'heic', 'heif'].includes(ext)) return 'image';
+  if (['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v', '3gp'].includes(ext)) return 'video';
+  return 'file';
+};
+
+const normalizeAttachment = (attachment: any): MessageAttachment | null => {
+  if (!attachment) return null;
+  if (typeof attachment === 'string') {
+    const url = attachment.trim();
+    if (!url) return null;
+    return {
+      url,
+      kind: inferAttachmentKind(url)
+    };
+  }
+  if (typeof attachment !== 'object') return null;
+
+  const url = String(attachment.url || attachment.path || '').trim();
+  if (!url) return null;
+  const mimeType = String(attachment.mime_type || attachment.mimeType || '').trim();
+  const kind = inferAttachmentKind(url, mimeType, String(attachment.kind || attachment.type || ''));
+
+  const normalized: MessageAttachment = { url, kind };
+  if (attachment.name && String(attachment.name).trim()) normalized.name = String(attachment.name).trim();
+  if (mimeType) normalized.mime_type = mimeType;
+  if (Number.isFinite(attachment.size) && Number(attachment.size) > 0) normalized.size = Number(attachment.size);
+  return normalized;
+};
+
+const getNormalizedAttachments = (message: any): MessageAttachment[] => {
+  if (!Array.isArray(message?.attachments)) return [];
+  return message.attachments
+    .map((attachment: any) => normalizeAttachment(attachment))
+    .filter(Boolean) as MessageAttachment[];
+};
+
+const getMessageAttachmentSummary = (message: any): string => {
+  const attachments = getNormalizedAttachments(message);
+  if (!attachments.length) return '';
+  const hasVideo = attachments.some((attachment) => attachment.kind === 'video');
+  const hasFile = attachments.some((attachment) => attachment.kind === 'file');
+  if (hasVideo) return '[Video]';
+  if (hasFile) return '[Tệp đính kèm]';
+  return '[Hình ảnh]';
+};
+
 const isOutgoingMessage = (message: any, currentUserId: string = '') => {
   const normalizedCurrentUserId = normalizeId(currentUserId);
   if (!normalizedCurrentUserId) return false;
@@ -272,7 +340,7 @@ interface ChatMessage {
   createdAt?: string;
   created_at?: string;
   is_revoked?: boolean;
-  attachments?: string[];
+  attachments?: Array<string | MessageAttachment>;
 }
 
 const mockConversations: Conversation[] = [
@@ -298,6 +366,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
   const [loading, setLoading] = useState(true);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewKind, setPreviewKind] = useState<AttachmentKind | null>(null);
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [userSearchResults, setUserSearchResults] = useState<any[]>([]);
@@ -798,7 +867,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
         const isActiveConversation = !!currentConvId && msgConvId === currentConvId;
 
-        console.log('📩 [Messages] Incoming:', {
+        console.log('[Messages] Incoming:', {
           msgId: message._id,
           msgConvId,
           currentConvId,
@@ -808,7 +877,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         });
 
         if (isActiveConversation) {
-          console.log('✅ [Messages] Appending message to current view');
+          console.log('[Messages] Appending message to current view');
           setMessages(prev => {
             if (msgId && prev.some(m => getMessageId(m) === msgId)) return prev;
             return dedupeMessagesById([...prev, normalizedMessage]);
@@ -817,9 +886,9 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
             markAsRead(currentConvId);
           }
         } else if (isToCurrentUser && !isFromCurrentUser) {
-          console.log('📣 [Messages] Notifying of incoming message for other conversation');
+          console.log('[Messages] Notifying of incoming message for other conversation');
           toast('Tin nhắn mới', {
-            description: message.content || '[Hình ảnh]',
+            description: message.content || getMessageAttachmentSummary(message),
             duration: 4000
           });
         }
@@ -914,8 +983,8 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Ảnh quá lớn (tối đa 5MB)');
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error('Tệp quá lớn (tối đa 50MB)');
         e.target.value = '';
         return;
       }
@@ -923,8 +992,13 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         URL.revokeObjectURL(previewUrl);
       }
       setSelectedFile(file);
-      const url = URL.createObjectURL(file);
-      setPreviewUrl(url);
+      const detectedKind = inferAttachmentKind('', file.type || '', '');
+      if (detectedKind === 'image' || detectedKind === 'video') {
+        setPreviewUrl(URL.createObjectURL(file));
+      } else {
+        setPreviewUrl(null);
+      }
+      setPreviewKind(detectedKind);
     }
   };
 
@@ -934,6 +1008,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
     }
+    setPreviewKind(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -992,13 +1067,13 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       if (typingTimeoutRef.current) {
         window.clearTimeout(typingTimeoutRef.current);
       }
-      const attachments: string[] = [];
+      const attachments: MessageAttachment[] = [];
 
       if (selectedFile) {
         const formData = new FormData();
-        formData.append('image', selectedFile);
+        formData.append('file', selectedFile, selectedFile.name);
 
-        const uploadRes = await fetch(`${API_URL}/upload?user_id=${currentUserId}`, {
+        const uploadRes = await fetch(withAuthParam(`${API_URL}/messages/upload`), {
           method: 'POST',
           headers: getAuthHeaders({ includeJsonContentType: false, includeAuthorization: false }),
           body: formData,
@@ -1006,9 +1081,21 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
         const uploadData = await uploadRes.json();
         if (uploadRes.ok && uploadData.status === 'success') {
-          attachments.push(uploadData.data.url);
+          const uploadedRawAttachment = uploadData?.data?.attachment || uploadData?.data || {};
+          const uploadedAttachment = normalizeAttachment({
+            ...uploadedRawAttachment,
+            name: uploadedRawAttachment?.name || selectedFile.name,
+            mime_type: uploadedRawAttachment?.mime_type || selectedFile.type || '',
+            size: uploadedRawAttachment?.size || selectedFile.size || 0
+          });
+          if (!uploadedAttachment) {
+            toast.error('Upload khong hop le');
+            setUploading(false);
+            return;
+          }
+          attachments.push(uploadedAttachment);
         } else {
-          toast.error(uploadData?.message || 'Không thể tải ảnh lên');
+          toast.error(uploadData?.message || 'Khong the tai tep len');
           setUploading(false);
           return;
         }
@@ -1063,6 +1150,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       setSelectedFile(null);
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
+      setPreviewKind(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -1213,9 +1301,9 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     <div className="relative pt-1">
       <div className="pointer-events-none absolute -left-10 top-6 h-44 w-44 rounded-full bg-primary/10 blur-3xl" />
       <div className="pointer-events-none absolute -right-14 top-16 h-52 w-52 rounded-full bg-blue-500/10 blur-3xl" />
-      <div className={`relative z-[1] flex min-h-[calc(100vh-6.5rem)] flex-col gap-4 md:flex-row ${selectedConversation ? '' : 'md:justify-center'}`}>
+      <div className={`relative z-[1] flex min-h-[calc(100vh-6rem)] flex-col gap-4 md:flex-row ${selectedConversation ? '' : 'md:justify-center'}`}>
         {/* Sidebar - Conversations List */}
-        <Card className={`page-section-card flex w-full min-h-[520px] max-h-[calc(100vh-6.5rem)] flex-col overflow-hidden transition-all duration-300 ${selectedConversation ? 'md:w-[21rem] xl:w-[24rem]' : 'max-w-3xl'}`}>
+        <Card className={`page-section-card flex w-full min-h-[560px] max-h-[calc(100vh-6rem)] flex-col overflow-hidden transition-all duration-300 ${selectedConversation ? 'md:w-[22rem] xl:w-[24rem] md:shrink-0' : 'max-w-3xl'}`}>
           <div className="border-b border-border/70 bg-[linear-gradient(130deg,rgba(201,31,40,0.12),transparent_70%)] p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-foreground">Tin nhắn</h2>
@@ -1296,7 +1384,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
                           <p className={`text-sm truncate ${isUnread ? 'text-foreground font-semibold' : 'text-muted-foreground'} max-w-[155px]`}>
                             {lastMsg?.is_revoked
                               ? REVOKED_MESSAGE_LABEL
-                              : (lastMsg?.content || (lastMsg?.attachments?.length > 0 ? '[Hình ảnh]' : 'Chưa có tin nhắn'))}
+                              : (lastMsg?.content || getMessageAttachmentSummary(lastMsg) || 'Chưa có tin nhắn')}
                           </p>
                           {isUnread && (
                             <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
@@ -1362,7 +1450,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
         {/* Main Chat Area */}
         {selectedConversation && (
-          <Card className="page-section-card flex min-h-[520px] max-h-[calc(100vh-6.5rem)] flex-1 flex-col overflow-hidden">
+          <Card className="page-section-card flex min-h-[560px] max-h-[calc(100vh-6rem)] flex-1 md:flex-[1.45] md:min-w-0 flex-col overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-border/70 bg-[linear-gradient(120deg,rgba(201,31,40,0.12),transparent_64%)] p-4">
               <div
@@ -1426,13 +1514,14 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
               {!hasMore && messages.length >= 20 && (
                 <div className="text-center py-2 text-xs text-muted-foreground italic">
-                  — Đây là điểm bắt đầu cuộc trò chuyện —
+                  Đây là điểm bắt đầu cuộc trò chuyện
                 </div>
               )}
 
               {messages.map((message, index) => {
                 const isMe = isOutgoingMessage(message, currentUserId);
                 const isLastMessage = index === messages.length - 1;
+                const messageAttachments = getNormalizedAttachments(message);
                 return (
                   <div
                     key={message._id || message.id}
@@ -1486,16 +1575,40 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
                           <p className="text-sm italic opacity-70">{REVOKED_MESSAGE_LABEL}</p>
                         ) : (
                           <>
-                            {message.attachments && message.attachments.length > 0 && (
+                            {messageAttachments.length > 0 && (
                               <div className="mb-1.5 flex flex-wrap gap-1.5">
-                                {message.attachments.map((url: string, idx: number) => (
-                                  <img
-                                    key={idx}
-                                    src={getImageUrl(url)}
-                                    alt="attachment"
-                                    className="max-h-60 max-w-full rounded-xl object-cover cursor-pointer hover:opacity-95 transition-opacity"
-                                    onClick={() => setZoomedImage(getImageUrl(url))}
-                                  />
+                                {messageAttachments.map((attachment, idx: number) => (
+                                  <React.Fragment key={`${attachment.url}-${idx}`}>
+                                    {attachment.kind === 'image' && (
+                                      <img
+                                        src={getImageUrl(attachment.url)}
+                                        alt={attachment.name || 'attachment'}
+                                        className="max-h-60 max-w-full rounded-xl object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                                        onClick={() => setZoomedImage(getImageUrl(attachment.url))}
+                                      />
+                                    )}
+                                    {attachment.kind === 'video' && (
+                                      <video
+                                        src={getImageUrl(attachment.url)}
+                                        controls
+                                        className="max-h-72 max-w-full rounded-xl border border-border bg-black"
+                                      />
+                                    )}
+                                    {attachment.kind === 'file' && (
+                                      <a
+                                        href={getImageUrl(attachment.url)}
+                                        download={attachment.name || ''}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className={`flex max-w-[240px] items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
+                                          isMe ? 'border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20' : 'border-border bg-background hover:bg-muted'
+                                        }`}
+                                      >
+                                        <FileText className="h-4 w-4 shrink-0" />
+                                        <span className="truncate">{attachment.name || 'Tệp đính kèm'}</span>
+                                      </a>
+                                    )}
+                                  </React.Fragment>
                                 ))}
                               </div>
                             )}
@@ -1520,9 +1633,23 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
             {/* Input Area */}
             <div className="border-t border-border/70 bg-gradient-to-b from-background/75 to-background/95 p-4 backdrop-blur-md">
-              {previewUrl && (
+              {selectedFile && (
                 <div className="mb-3 relative inline-block animate-in fade-in slide-in-from-bottom-2">
-                  <img src={previewUrl} alt="preview" className="h-20 w-20 rounded-xl border border-border object-cover shadow-sm" />
+                  {previewKind === 'image' && previewUrl && (
+                    <img src={previewUrl} alt="preview" className="h-20 w-20 rounded-xl border border-border object-cover shadow-sm" />
+                  )}
+                  {previewKind === 'video' && previewUrl && (
+                    <video src={previewUrl} controls className="h-24 w-36 rounded-xl border border-border bg-black object-cover shadow-sm" />
+                  )}
+                  {previewKind === 'file' && (
+                    <div className="flex min-w-[220px] items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 shadow-sm">
+                      <FileText className="h-5 w-5 text-primary" />
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium text-foreground">{selectedFile.name}</p>
+                        <p className="text-[11px] text-muted-foreground">{Math.max(1, Math.round(selectedFile.size / 1024))} KB</p>
+                      </div>
+                    </div>
+                  )}
                   <button
                     onClick={removeSelectedFile}
                     className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 shadow-md hover:scale-110 transition-transform"
@@ -1537,7 +1664,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
                   id="msg-file-upload"
                   ref={fileInputRef}
                   className="hidden"
-                  accept="image/*"
+                  accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.7z,.csv,.json"
                   onChange={handleFileSelect}
                 />
                 <Button
@@ -1645,3 +1772,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     </div>
   );
 }
+
+
+
+

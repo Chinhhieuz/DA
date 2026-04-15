@@ -20,6 +20,7 @@ const formatPostData = (post, commentCount, recentComments, userVote, isFollowin
         content: post.content || '',
         image: post.image_url ? getImageUrl(post.image_url, '') : undefined,
         image_urls: post.image_urls ? post.image_urls.map(url => getImageUrl(url, '')) : [],
+        video: post.video_url ? getImageUrl(post.video_url, '') : undefined,
         upvotes: post.upvotes || 0,
         downvotes: post.downvotes || 0,
         comments: [],

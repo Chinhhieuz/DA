@@ -760,9 +760,23 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                         <span className="text-[11px] font-bold uppercase tracking-wider">Robot cảnh báo: {post.ai_system_note}</span>
                       </div>
                     )}
-                    {post.image_url && (
-                      <div className="mt-2">
-                        <img src={post.image_url.startsWith('http') ? post.image_url : `${API_BASE_URL}${post.image_url}`} alt="Post content" className="h-16 w-16 object-cover rounded-md border border-border" />
+                    {(post.image_url || post.video_url) && (
+                      <div className="mt-2 flex items-center gap-2">
+                        {post.image_url && (
+                          <img
+                            src={post.image_url.startsWith('http') ? post.image_url : `${API_BASE_URL}${post.image_url}`}
+                            alt="Post content"
+                            className="h-16 w-16 object-cover rounded-md border border-border"
+                          />
+                        )}
+                        {post.video_url && (
+                          <video
+                            src={post.video_url.startsWith('http') ? post.video_url : `${API_BASE_URL}${post.video_url}`}
+                            className="h-16 w-20 object-cover rounded-md border border-border bg-black"
+                            muted
+                            controls
+                          />
+                        )}
                       </div>
                     )}
                   </div>
@@ -1260,7 +1274,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                 />
 
                 {/* Media Section */}
-                {(viewingPost?.image_urls?.length > 0 || viewingPost?.image_url) && (
+                {(viewingPost?.image_urls?.length > 0 || viewingPost?.image_url || viewingPost?.video_url) && (
                   <div className="pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                     {viewingPost?.image_urls?.map((url: string, i: number) => (
                       <div key={i} className="group relative rounded-2xl overflow-hidden border border-border shadow-sm aspect-square bg-muted/20">
@@ -1275,13 +1289,22 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                         </div>
                       </div>
                     ))}
-                    {!viewingPost?.image_urls && viewingPost?.image_url && (
+                    {(!viewingPost?.image_urls || viewingPost.image_urls.length === 0) && viewingPost?.image_url && (
                       <div className="rounded-3xl overflow-hidden border border-border shadow-sm col-span-full group relative bg-muted/20">
                         <img
                           src={getImageUrl(viewingPost.image_url)}
                           className="w-full h-auto object-cover max-h-[800px] cursor-zoom-in group-hover:opacity-95 transition-opacity"
                           alt="Main Post Media"
                           onClick={() => setZoomedImage(getImageUrl(viewingPost.image_url))}
+                        />
+                      </div>
+                    )}
+                    {viewingPost?.video_url && (
+                      <div className="rounded-3xl overflow-hidden border border-border shadow-sm col-span-full bg-black/90 p-2">
+                        <video
+                          src={getImageUrl(viewingPost.video_url)}
+                          controls
+                          className="w-full max-h-[720px] rounded-2xl bg-black"
                         />
                       </div>
                     )}
