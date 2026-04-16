@@ -51,15 +51,27 @@ export function Notifications({
   const currentUserId = currentUser?.id || currentUser?._id;
   const [filter, setFilter] = useState<'all' | 'unread' | 'social' | 'content'>('all');
 
+  const getAuthHeaders = (includeJson = false) => {
+    const token = localStorage.getItem('token');
+    const headers: Record<string, string> = {};
+    if (includeJson) headers['Content-Type'] = 'application/json';
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  };
+
   useEffect(() => {
     if (currentUserId) {
-      fetch(`${API_URL}/notifications?accountId=${currentUserId}`)
-        .then(res => res.json())
+      fetch(`${API_URL}/notifications?accountId=${currentUserId}`, {
+        cache: 'no-store',
+        headers: getAuthHeaders(false)
+      })
+        .then(res => res.ok ? res.json() : Promise.reject(new Error('Fetch notifications failed')))
         .then(data => {
           if (data.status === 'success') {
             setNotifications(data.data);
           }
-        });
+        })
+        .catch(() => setNotifications([]));
     }
   }, [currentUserId]);
 
@@ -103,8 +115,8 @@ export function Notifications({
     try {
       await fetch(`${API_URL}/notifications/read-all`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountId: currentUserId })
+        headers: getAuthHeaders(true),
+        body: JSON.stringify({})
       });
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
       if (onMarkAllAsRead) onMarkAllAsRead();
@@ -117,7 +129,10 @@ export function Notifications({
   const handleMarkAsRead = async (id: string, isRead: boolean) => {
     if (isRead) return;
     try {
-      await fetch(`${API_URL}/notifications/${id}/read`, { method: 'PUT' });
+      await fetch(`${API_URL}/notifications/${id}/read`, {
+        method: 'PUT',
+        headers: getAuthHeaders(false)
+      });
       setNotifications(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
     } catch (e) {}
   };
@@ -127,7 +142,7 @@ export function Notifications({
       const endpoint = action === 'accept' ? 'accept' : 'reject';
       const res = await fetch(`${API_URL}/auth/friends/${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(true),
         body: JSON.stringify({ userId: currentUserId, senderId })
       });
       if (res.ok) {
@@ -231,7 +246,7 @@ export function Notifications({
                 <Avatar className="h-12 w-12 border-2 border-white shadow-sm">
                   <AvatarImage src={notification.sender?.avatar_url} />
                   <AvatarFallback className="bg-muted text-muted-foreground">
-                    {notification.sender?.display_name?.[0] || notification.sender?.username?.[0] || 'U'}
+                    {notification.sender?.full_name?.[0] || notification.sender?.username?.[0] || 'U'}
                   </AvatarFallback>
                 </Avatar>
                 <div className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border border-border bg-background shadow-sm">
@@ -241,7 +256,7 @@ export function Notifications({
 
               <div className="min-w-0 flex-1">
                 <div className="mb-1 text-sm leading-6 text-foreground">
-                  <span className="font-bold">{notification.sender?.display_name || notification.sender?.username}</span>
+                  <span className="font-bold">{notification.sender?.full_name || notification.sender?.username}</span>
                   <span className="text-muted-foreground">
                     {notification.type === 'like' && ' đã thích bài viết của bạn'}
                     {notification.type === 'comment' && ' đã bình luận về bài viết'}

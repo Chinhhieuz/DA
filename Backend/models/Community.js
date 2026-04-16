@@ -27,4 +27,6 @@ const communitySchema = new mongoose.Schema({
     }
 });
 
+communitySchema.index({ created_at: -1 });
+
 module.exports = mongoose.model('Community', communitySchema);

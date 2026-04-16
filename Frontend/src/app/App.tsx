@@ -30,6 +30,10 @@ import '../index.css'
 
 const initialPosts: Post[] = [];
 
+const isAbortError = (error: unknown) => {
+  return error instanceof DOMException && error.name === 'AbortError';
+};
+
 const normalizeEntityId = (value: any): string => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value.trim();
@@ -80,6 +84,8 @@ export interface User {
   bio?: string;
   location?: string;
   website?: string;
+  mssv?: string;
+  faculty?: string;
   preferences?: {
     darkMode: boolean;
     pushNotifications: boolean;
@@ -96,6 +102,40 @@ const defaultUser: User = {
   role: 'admin',
   preferences: { darkMode: false, pushNotifications: true, commentNotifications: true },
   savedPosts: []
+};
+
+const readAuthStorageItem = (key: 'token' | 'currentUser') => {
+  try {
+    return sessionStorage.getItem(key) || localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const writeAuthStorageItem = (key: 'token' | 'currentUser', value: string) => {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // ignore storage write failures
+  }
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore storage write failures
+  }
+};
+
+const removeAuthStorageItem = (key: 'token' | 'currentUser') => {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // ignore storage remove failures
+  }
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore storage remove failures
+  }
 };
 
 // --- AppContent Component (Needs to be inside SocketProvider) ---
@@ -166,6 +206,72 @@ function AppContent({
   const rawUrlUserId = currentView === 'profile' && pathParts[1] ? decodeURIComponent(pathParts[1]) : null;
   const urlUserId = sanitizeEntityId(rawUrlUserId);
   const viewedUserId = urlUserId || viewedUserIdState;
+
+  const clearSharedPostQueryFromUrl = useCallback(() => {
+    const params = new URLSearchParams(location.search);
+    const view = (params.get('view') || '').toLowerCase();
+    const sharedPostId = sanitizeEntityId(params.get('id'));
+    if (view !== 'post' || !sharedPostId) return;
+
+    params.delete('view');
+    params.delete('id');
+    const nextQuery = params.toString();
+    const nextUrl = `${location.pathname}${nextQuery ? `?${nextQuery}` : ''}`;
+    navigate(nextUrl, { replace: true });
+  }, [location.pathname, location.search, navigate]);
+
+  const closeSelectedPost = useCallback(() => {
+    setSelectedPost(null);
+    clearSharedPostQueryFromUrl();
+  }, [clearSharedPostQueryFromUrl]);
+
+  const fetchAndOpenPostById = useCallback(async (postId: string): Promise<boolean> => {
+    const normalizedPostId = sanitizeEntityId(postId);
+    if (!normalizedPostId) return false;
+
+    try {
+      const normalizedCurrentUserId = sanitizeEntityId(currentUser.id || currentUser._id);
+      const query = normalizedCurrentUserId ? `?userId=${encodeURIComponent(normalizedCurrentUserId)}` : '';
+      const res = await fetch(`${API_URL}/posts/${encodeURIComponent(normalizedPostId)}${query}`, { cache: 'no-store' });
+      if (!res.ok) return false;
+
+      const data = await res.json();
+      if (data?.status === 'success' && data?.data) {
+        setSelectedPost(data.data);
+        return true;
+      }
+    } catch (error) {
+      console.error('Failed to fetch post by id:', error);
+    }
+
+    return false;
+  }, [currentUser.id, currentUser._id]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const view = (params.get('view') || '').toLowerCase();
+    const sharedPostId = sanitizeEntityId(params.get('id'));
+
+    if (view !== 'post' || !sharedPostId) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const opened = await fetchAndOpenPostById(sharedPostId);
+      if (!opened && !cancelled) {
+        toast.error('Không tìm thấy bài viết được chia sẻ');
+        return;
+      }
+
+      if (!cancelled && opened) {
+        clearSharedPostQueryFromUrl();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.search, fetchAndOpenPostById, clearSharedPostQueryFromUrl]);
 
   // Global socket listeners
   useEffect(() => {
@@ -286,7 +392,9 @@ function AppContent({
       return;
     }
 
-    fetchPosts(currentUser.id || currentUser._id);
+    if (targetView === 'home') {
+      fetchPosts(currentUser.id || currentUser._id);
+    }
     if (targetView === 'profile') {
       setViewedUserIdState(null);
       localStorage.removeItem('viewedUserId');
@@ -314,16 +422,8 @@ function AppContent({
       postId = typeof notif.post === 'object' ? (notif.post._id || notif.post).toString() : notif.post.toString();
     }
     
-    if (postId && (postId.length === 24 || postId.length === 12)) {
-      try {
-        const res = await fetch(`${API_URL}/posts/${postId}${currentUser.id ? `?userId=${currentUser.id}` : ''}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === 'success') setSelectedPost(data.data);
-        }
-      } catch (err) {
-        console.error('Error fetching post for notification:', err);
-      }
+    if (postId) {
+      await fetchAndOpenPostById(postId);
     }
   };
 
@@ -362,13 +462,51 @@ function AppContent({
       
     const updatedUser = { ...currentUser, savedPosts: updatedSavedPosts };
     setCurrentUser(updatedUser);
-    localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+    writeAuthStorageItem('currentUser', JSON.stringify(updatedUser));
   };
 
   const handlePostDeleted = (postId: string) => {
     setPosts(prev => prev.filter(p => p.id !== postId));
     if (selectedPost?.id === postId) setSelectedPost(null);
   };
+
+  const syncCurrentUserToVisiblePosts = useCallback((nextUser: User, previousUser?: User) => {
+    const nextUserId = sanitizeEntityId(nextUser.id || nextUser._id);
+    const prevUserId = sanitizeEntityId(previousUser?.id || previousUser?._id);
+    const matchIds = [nextUserId, prevUserId].filter(Boolean);
+
+    const nextName = nextUser.name || previousUser?.name || '';
+    const prevUsername = previousUser?.username || '';
+    const nextUsername = nextUser.username || prevUsername || '';
+    const nextAvatar = nextUser.avatar || previousUser?.avatar || '';
+    const matchUsernames = [nextUsername, prevUsername]
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean);
+
+    const shouldPatchAuthor = (author: any) => {
+      const authorId = sanitizeEntityId(author?.id || author?._id || author);
+      if (authorId && matchIds.includes(authorId)) return true;
+
+      const authorUsername = String(author?.username || '').trim().toLowerCase();
+      return !!authorUsername && matchUsernames.includes(authorUsername);
+    };
+
+    const patchPostAuthor = (post: Post): Post => {
+      if (!post?.author || !shouldPatchAuthor(post.author)) return post;
+      return {
+        ...post,
+        author: {
+          ...post.author,
+          ...(nextName ? { name: nextName } : {}),
+          ...(nextUsername ? { username: nextUsername } : {}),
+          ...(nextAvatar ? { avatar: nextAvatar } : {})
+        }
+      };
+    };
+
+    setPosts(prev => prev.map(patchPostAuthor));
+    setSelectedPost(prev => (prev ? patchPostAuthor(prev) : prev));
+  }, [setPosts]);
 
   const renderContent = () => {
     switch (currentView) {
@@ -440,11 +578,65 @@ function AppContent({
           </div>
         );
       case 'search': return <SearchView onPostClick={handlePostClick} onUserClick={handleUserClick} currentUser={currentUser} />;
-      case 'profile': return <Profile currentUser={currentUser} viewedUserId={viewedUserId} onPostClick={handlePostClick} onAvatarChange={(url) => setCurrentUser({...currentUser, avatar: url})} onProfileUpdate={(data) => setCurrentUser({...currentUser, ...data})} onPostsChanged={() => fetchPosts(currentUser.id)} onUserClick={handleUserClick} onViewChange={handleViewChange} />;
+      case 'profile': return (
+        <Profile
+          currentUser={currentUser}
+          viewedUserId={viewedUserId}
+          onPostClick={handlePostClick}
+          onAvatarChange={(url) => {
+            const updatedUser: User = { ...currentUser, avatar: getImageUrl(url) };
+            setCurrentUser(updatedUser);
+            writeAuthStorageItem('currentUser', JSON.stringify(updatedUser));
+            syncCurrentUserToVisiblePosts(updatedUser, currentUser);
+          }}
+          onProfileUpdate={(data) => {
+            const normalizedCurrentUserId = sanitizeEntityId(currentUser.id || currentUser._id);
+            const normalizedUpdatedUserId = sanitizeEntityId(data?.id || data?._id || currentUser.id || currentUser._id);
+            const updatedDisplayName = data?.full_name || data?.name || currentUser.name;
+            const updatedUser: User = {
+              ...currentUser,
+              id: data?.id || currentUser.id,
+              _id: data?.id || currentUser._id,
+              name: updatedDisplayName,
+              username: data?.username || currentUser.username,
+              avatar: data?.avatar_url ? getImageUrl(data.avatar_url) : currentUser.avatar,
+              bio: data?.bio ?? currentUser.bio,
+              location: data?.location ?? currentUser.location,
+              website: data?.website ?? currentUser.website,
+              mssv: data?.mssv ?? currentUser.mssv,
+              faculty: data?.faculty ?? currentUser.faculty
+            };
+            setCurrentUser(updatedUser);
+            writeAuthStorageItem('currentUser', JSON.stringify(updatedUser));
+            syncCurrentUserToVisiblePosts(updatedUser, currentUser);
+
+            if (normalizedUpdatedUserId && normalizedUpdatedUserId === normalizedCurrentUserId) {
+              const nextUserId = updatedUser.id || updatedUser._id || '';
+              fetchPosts(nextUserId);
+
+              if (selectedPost?.id) {
+                const currentSelectedPostId = selectedPost.id;
+                const query = nextUserId ? `?userId=${encodeURIComponent(String(nextUserId))}` : '';
+                fetch(`${API_URL}/posts/${currentSelectedPostId}${query}`, { cache: 'no-store' })
+                  .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Fetch post failed'))))
+                  .then((payload) => {
+                    if (payload?.status === 'success' && payload?.data) {
+                      setSelectedPost(payload.data);
+                    }
+                  })
+                  .catch((err) => console.error('Failed to refresh selected post after profile update:', err));
+              }
+            }
+          }}
+          onPostsChanged={() => fetchPosts(currentUser.id || currentUser._id || '')}
+          onUserClick={handleUserClick}
+          onViewChange={handleViewChange}
+        />
+      );
       case 'create': return <CreatePost onPostCreated={handlePostCreated} currentUser={currentUser} />;
       case 'messages': return <Messages currentUser={currentUser} onUserClick={handleUserClick} onMessagesRead={() => fetchUnreadMessagesCount(currentUser.id || currentUser._id || '')} />;
       case 'notifications': return <Notifications currentUser={currentUser} onMarkAllAsRead={() => setUnreadNotifications(0)} onNotificationClick={handleNotificationClick} />;
-      case 'settings': return <Settings currentUser={currentUser} onUpdatePreferences={(prefs) => { const u = {...currentUser, preferences: prefs}; setCurrentUser(u); localStorage.setItem('currentUser', JSON.stringify(u)); }} onLogout={handleLogout} />;
+      case 'settings': return <Settings currentUser={currentUser} onUpdatePreferences={(prefs) => { const u = {...currentUser, preferences: prefs}; setCurrentUser(u); writeAuthStorageItem('currentUser', JSON.stringify(u)); }} onLogout={handleLogout} />;
       case 'admin': return <AdminDashboard currentUser={currentUser} />;
       case 'saved': return <SavedPosts currentUser={currentUser} onPostClick={handlePostClick} onUserClick={handleUserClick} onSaveToggle={handleSaveToggle} onCommunityClick={handleCommunityClick} onBackHome={() => handleViewChange('home')} />;
       default: return null;
@@ -470,8 +662,8 @@ function AppContent({
             };
             setCurrentUser(newUser);
             const token = userData.token || u.token;
-            localStorage.setItem('currentUser', JSON.stringify(newUser));
-            localStorage.setItem('token', token);
+            writeAuthStorageItem('currentUser', JSON.stringify(newUser));
+            writeAuthStorageItem('token', token);
             navigate(u.role?.toLowerCase() === 'admin' ? '/admin' : '/');
             fetchUnreadCount(u._id || u.id);
             fetchUnreadMessagesCount(u._id || u.id);
@@ -525,18 +717,28 @@ function AppContent({
         </div>
       </main>
 
-      <Dialog open={!!selectedPost} onOpenChange={(open) => { if (!open) setSelectedPost(null); }}>
+      <Dialog open={!!selectedPost} onOpenChange={(open) => { if (!open) closeSelectedPost(); }}>
         <DialogContent className="sm:max-w-2xl md:max-w-3xl lg:max-w-4xl w-[95vw] h-[90vh] p-0 overflow-hidden">
           <div className="sticky top-0 z-10 flex items-center justify-center p-4 border-b bg-background/95">
             <DialogTitle className="text-lg font-bold">
               {selectedPost ? `Bài viết của ${selectedPost.author.name || selectedPost.author.username}` : 'Chi tiết bài viết'}
             </DialogTitle>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={closeSelectedPost}
+              className="absolute right-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Dong bai viet"
+            >
+              <X className="h-5 w-5" />
+            </Button>
           </div>
           <div className="flex-1 overflow-hidden">
             {selectedPost && (
               <PostDetail
                 post={selectedPost}
-                onBack={() => setSelectedPost(null)}
+                onBack={closeSelectedPost}
                 currentUser={currentUser}
                 onAddComment={handlePostCommented}
                 onUserClick={handleUserClick}
@@ -555,51 +757,115 @@ function AppContent({
 // --- Main App Export ---
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User>(() => {
-    const saved = localStorage.getItem('currentUser');
-    return saved ? JSON.parse(saved) : defaultUser;
+    const saved = readAuthStorageItem('currentUser');
+    if (!saved) return defaultUser;
+    try {
+      const parsed = JSON.parse(saved);
+      const normalizedUser: User = {
+        ...defaultUser,
+        ...parsed,
+        id: parsed?.id || parsed?._id || defaultUser.id,
+        _id: parsed?._id || parsed?.id || defaultUser._id,
+        name: parsed?.name || parsed?.full_name || parsed?.display_name || parsed?.username || defaultUser.name,
+        username: parsed?.username || defaultUser.username,
+        avatar: parsed?.avatar || (parsed?.avatar_url ? getImageUrl(parsed.avatar_url) : defaultUser.avatar),
+        role: ((parsed?.role || defaultUser.role) as string).toLowerCase() as User['role']
+      };
+      return normalizedUser;
+    } catch {
+      return defaultUser;
+    }
   });
-  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('token'));
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!readAuthStorageItem('token'));
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [activeCommunity, setActiveCommunity] = useState<string | null>(null);
   const [feedFilter, setFeedFilter] = useState<'all' | 'following'>('all');
   const [posts, setPosts] = useState<Post[]>(initialPosts);
+  const postsAbortRef = useRef<AbortController | null>(null);
+  const unreadNotificationsAbortRef = useRef<AbortController | null>(null);
+  const unreadMessagesAbortRef = useRef<AbortController | null>(null);
+  const lastUnreadNotificationsFetchAtRef = useRef(0);
+  const lastUnreadMessagesFetchAtRef = useRef(0);
 
   const fetchUnreadCount = useCallback(async (userId: string) => {
-    if (!userId) return;
+    const normalizedUserId = String(userId || '').trim();
+    if (!normalizedUserId) return;
+
+    const now = Date.now();
+    if (now - lastUnreadNotificationsFetchAtRef.current < 1500) return;
+    lastUnreadNotificationsFetchAtRef.current = now;
+
+    unreadNotificationsAbortRef.current?.abort();
+    const controller = new AbortController();
+    unreadNotificationsAbortRef.current = controller;
+
     try {
-      const res = await fetch(`${API_URL}/notifications?accountId=${userId}`);
+      const token = readAuthStorageItem('token');
+      const res = await fetch(`${API_URL}/notifications/unread-count?accountId=${encodeURIComponent(normalizedUserId)}`, {
+        signal: controller.signal,
+        cache: 'no-store',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
       const data = await res.json();
       if (data.status === 'success') {
-        const unread = data.data.filter((n: any) => !n.isRead).length;
-        setUnreadNotifications(unread);
+        setUnreadNotifications(Number(data.data || 0));
       }
-    } catch (err) { console.error('Lỗi tải thông báo:', err); }
+    } catch (err) {
+      if (isAbortError(err)) return;
+      console.error('Failed to fetch unread notifications count:', err);
+    }
   }, []);
 
   const fetchUnreadMessagesCount = useCallback(async (userId: string) => {
-    if (!userId) return;
+    const normalizedUserId = String(userId || '').trim();
+    if (!normalizedUserId) return;
+
+    const now = Date.now();
+    if (now - lastUnreadMessagesFetchAtRef.current < 1500) return;
+    lastUnreadMessagesFetchAtRef.current = now;
+
+    unreadMessagesAbortRef.current?.abort();
+    const controller = new AbortController();
+    unreadMessagesAbortRef.current = controller;
+
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/messages/unread-count?userId=${encodeURIComponent(userId)}&_t=${Date.now()}`, {
-        headers: { 'Authorization': `Bearer ${token}`,
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache' }
+      const token = readAuthStorageItem('token');
+      const res = await fetch(`${API_URL}/messages/unread-count?userId=${encodeURIComponent(normalizedUserId)}`, {
+        signal: controller.signal,
+        cache: 'no-store',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       const data = await res.json();
-      if (data.status === 'success') setUnreadMessagesCount(data.data);
-    } catch (err) { console.error('Lỗi tải số tin nhắn chưa đọc:', err); }
+      if (data.status === 'success') setUnreadMessagesCount(Number(data.data || 0));
+    } catch (err) {
+      if (isAbortError(err)) return;
+      console.error('Failed to fetch unread messages count:', err);
+    }
   }, []);
 
   const fetchPosts = useCallback(async (userId: string = currentUser?.id || '', community: string | null = activeCommunity, filter: string = feedFilter) => {
+    const normalizedUserId = String(userId || '').trim();
+
+    const params = new URLSearchParams();
+    if (normalizedUserId) params.set('userId', normalizedUserId);
+    if (community) params.set('community', community);
+    if (filter === 'following' && normalizedUserId) params.set('followingOnly', 'true');
+
+    postsAbortRef.current?.abort();
+    const controller = new AbortController();
+    postsAbortRef.current = controller;
+
     try {
-      let url = `${API_URL}/posts?userId=${userId || ''}`;
-      if (community) url += `&community=${community}`;
-      if (filter === 'following' && userId) url += `&followingOnly=true`;
-      const res = await fetch(url);
+      const queryString = params.toString();
+      const url = queryString ? `${API_URL}/posts?${queryString}` : `${API_URL}/posts`;
+      const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
       const data = await res.json();
       if (data.status === 'success') setPosts(data.data);
-    } catch (err) { console.error('Failed to fetch posts:', err); }
+    } catch (err) {
+      if (isAbortError(err)) return;
+      console.error('Failed to fetch posts:', err);
+    }
   }, [activeCommunity, feedFilter, currentUser.id]);
 
   useEffect(() => {
@@ -613,11 +879,19 @@ export default function App() {
     fetchPosts(currentUser?.id || '');
   }, [activeCommunity, feedFilter, fetchPosts, currentUser?.id]);
 
+  useEffect(() => {
+    return () => {
+      postsAbortRef.current?.abort();
+      unreadNotificationsAbortRef.current?.abort();
+      unreadMessagesAbortRef.current?.abort();
+    };
+  }, []);
+
   const handleLogout = () => {
     setIsAuthenticated(false);
     setCurrentUser(defaultUser);
-    localStorage.removeItem('currentUser');
-    localStorage.removeItem('token');
+    removeAuthStorageItem('currentUser');
+    removeAuthStorageItem('token');
     toast.success('Đã đăng xuất');
   };
 

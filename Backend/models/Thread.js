@@ -37,4 +37,7 @@ const threadSchema = new mongoose.Schema({
     }
 }, { collection: 'Threads' });
 
+threadSchema.index({ comment: 1, created_at: 1 });
+threadSchema.index({ author: 1, created_at: -1 });
+
 module.exports = mongoose.model('Thread', threadSchema);

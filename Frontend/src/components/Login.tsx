@@ -77,20 +77,21 @@ export function Login({
         throw new Error('Dữ liệu đăng nhập trả về không hợp lệ!');
       }
 
+      const serializedUser = JSON.stringify({
+        id: account._id || account.id,
+        _id: account._id || account.id,
+        name: account.full_name || account.username,
+        username: account.username,
+        avatar: account.avatar_url || '',
+        role: (account.role || 'user').toLowerCase(),
+        preferences: account.preferences,
+        savedPosts: account.savedPosts || [],
+      });
+
+      sessionStorage.setItem('token', token);
+      sessionStorage.setItem('currentUser', serializedUser);
       localStorage.setItem('token', token);
-      localStorage.setItem(
-        'currentUser',
-        JSON.stringify({
-          id: account._id || account.id,
-          _id: account._id || account.id,
-          name: account.full_name || account.username,
-          username: account.username,
-          avatar: account.avatar_url || '',
-          role: (account.role || 'user').toLowerCase(),
-          preferences: account.preferences,
-          savedPosts: account.savedPosts || [],
-        }),
-      );
+      localStorage.setItem('currentUser', serializedUser);
 
       onLogin(userData);
     } catch (err: unknown) {
@@ -131,12 +132,12 @@ export function Login({
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(201,31,40,0.2),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(18,59,116,0.16),transparent_38%),linear-gradient(145deg,#fffefc_0%,#f5f7fb_55%,#eef2f7_100%)]">
+    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(201,31,40,0.12),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(18,59,116,0.12),transparent_38%),linear-gradient(145deg,#fffefc_0%,#f5f7fb_55%,#eef2f7_100%)] dark:bg-[linear-gradient(145deg,#0d1320_0%,#111827_55%,#0f172a_100%)]">
       <div className="pointer-events-none absolute -left-24 top-8 h-64 w-64 rounded-full bg-primary/15 blur-3xl" />
       <div className="pointer-events-none absolute -right-20 bottom-10 h-64 w-64 rounded-full bg-secondary/20 blur-3xl" />
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-[96rem] items-center px-3 py-4 sm:px-6 lg:px-8">
-        <div className="grid min-h-[88vh] w-full overflow-hidden rounded-[38px] border border-white/70 bg-white/85 shadow-[0_30px_90px_rgba(15,23,42,0.14)] backdrop-blur-xl lg:grid-cols-[1.15fr_1fr]">
+        <div className="grid min-h-[88vh] w-full overflow-hidden rounded-[38px] border border-white/70 dark:border-white/10 bg-white/85 dark:bg-slate-900/80 shadow-[0_30px_90px_rgba(15,23,42,0.14)] backdrop-blur-xl lg:grid-cols-[1.15fr_1fr]">
           <section className="relative hidden overflow-hidden bg-[linear-gradient(145deg,#ab111f_0%,#c91f28_46%,#7c102d_100%)] p-12 text-white lg:flex lg:flex-col lg:justify-between">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.22),transparent_34%),radial-gradient(circle_at_88%_82%,rgba(18,59,116,0.45),transparent_36%)]" />
             <div className="relative z-10">
@@ -200,10 +201,10 @@ export function Login({
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary/80">
                   {isForgotView ? 'Password support' : 'Secure login'}
                 </p>
-                <h2 className="text-3xl font-black tracking-tight text-zinc-900">
+                <h2 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white">
                   {isForgotView ? 'Khôi phục mật khẩu' : 'Đăng nhập'}
                 </h2>
-                <p className="text-sm leading-6 text-zinc-500">
+                <p className="text-sm leading-6 text-zinc-500 dark:text-slate-400">
                   {isForgotView
                     ? 'Nhập tài khoản hoặc email, hệ thống sẽ gửi hướng dẫn về hộp thư của bạn.'
                     : 'Nhập thông tin tài khoản đã được cấp để tiếp tục.'}

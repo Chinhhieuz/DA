@@ -9,7 +9,7 @@ const formatPostData = (post, commentCount, recentComments, userVote, isFollowin
         id: post._id.toString(),
         author: post.author ? {
             id: authorId,
-            name: post.author.display_name || post.author.username || 'Unknown',
+            name: post.author.full_name || post.author.username || 'Unknown',
             avatar: getImageUrl(post.author.avatar_url),
             username: post.author.username || 'unknown',
             isFollowing
@@ -26,7 +26,7 @@ const formatPostData = (post, commentCount, recentComments, userVote, isFollowin
         comments: [],
         commentCount: commentCount || 0,
         recentComment: recentComments && recentComments.length > 0 ? {
-            authorName: recentComments[0].author?.display_name || recentComments[0].author?.username || 'Unknown',
+            authorName: recentComments[0].author?.full_name || recentComments[0].author?.username || 'Unknown',
             content: recentComments[0].content
         } : undefined,
         userVote: userVote || null,

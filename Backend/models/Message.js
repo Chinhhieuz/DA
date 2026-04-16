@@ -46,6 +46,8 @@ const messageSchema = new mongoose.Schema({
 });
 
 // Index để tìm nhanh tin nhắn trong cuộc hội thoại
-messageSchema.index({ conversation: 1, created_at: 1 });
+messageSchema.index({ conversation: 1, createdAt: -1 });
+messageSchema.index({ recipient: 1, is_read: 1 });
+messageSchema.index({ conversation: 1, recipient: 1, is_read: 1 });
 
 module.exports = mongoose.model('Message', messageSchema);

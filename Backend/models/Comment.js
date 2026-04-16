@@ -37,4 +37,8 @@ const commentSchema = new mongoose.Schema({
     }
 }, { collection: 'Comments' });
 
+commentSchema.index({ post: 1, upvotes: -1, created_at: -1 });
+commentSchema.index({ post: 1, created_at: -1 });
+commentSchema.index({ author: 1, created_at: -1 });
+
 module.exports = mongoose.model('Comment', commentSchema);

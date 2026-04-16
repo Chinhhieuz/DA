@@ -3,6 +3,9 @@ const socketModule = require('../socket');
 const Conversation = require('../models/Conversation');
 const cloudinary = require('cloudinary').v2;
 const path = require('path');
+const fs = require('fs');
+const net = require('net');
+const { Readable } = require('stream');
 
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -63,6 +66,138 @@ const uploadBufferToCloudinary = (fileBuffer, { resourceType, originalName } = {
     });
 };
 
+const parseHostList = (raw = '') => {
+    return String(raw || '')
+        .split(',')
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+};
+
+const getAllowedAttachmentHosts = (req) => {
+    const hosts = new Set(['res.cloudinary.com']);
+
+    const envHosts = parseHostList(process.env.ALLOWED_ATTACHMENT_HOSTS);
+    envHosts.forEach((host) => hosts.add(host));
+
+    const backendUrl = String(process.env.BACKEND_URL || process.env.RENDER_EXTERNAL_URL || '').trim();
+    if (backendUrl) {
+        try {
+            hosts.add(new URL(backendUrl).hostname.toLowerCase());
+        } catch {
+            // Ignore malformed env URL and fallback to request host.
+        }
+    }
+
+    if (req?.headers?.host) {
+        hosts.add(String(req.headers.host).split(':')[0].toLowerCase());
+    }
+
+    return hosts;
+};
+
+const isLocalOrPrivateHost = (host = '') => {
+    const normalized = String(host || '').trim().toLowerCase();
+    if (!normalized) return true;
+
+    if (normalized === 'localhost' || normalized === '::1' || normalized.endsWith('.local')) return true;
+    if (normalized.startsWith('127.')) return true;
+    if (normalized.startsWith('10.')) return true;
+    if (normalized.startsWith('192.168.')) return true;
+
+    if (normalized.startsWith('172.')) {
+        const secondOctet = Number(normalized.split('.')[1] || -1);
+        if (secondOctet >= 16 && secondOctet <= 31) return true;
+    }
+
+    const ipVersion = net.isIP(normalized);
+    if (ipVersion === 6) {
+        if (normalized === '::1') return true;
+        if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+        if (normalized.startsWith('fe80:')) return true;
+    }
+
+    return false;
+};
+
+const isSafeRelativeUploadsPath = (rawUrl = '') => {
+    const normalized = String(rawUrl || '').trim().replace(/\\/g, '/');
+    if (!normalized.startsWith('/uploads/')) return false;
+    return !normalized.includes('..');
+};
+
+const sanitizeFilename = (name = '') => {
+    const cleaned = String(name || '')
+        .replace(/[/\\?%*:|"<>]/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return cleaned || 'downloaded-file';
+};
+
+const getFileExtension = (input = '') => {
+    const cleanInput = String(input || '').split('?')[0].split('#')[0].trim();
+    const ext = path.extname(cleanInput).replace(/^\./, '').toLowerCase();
+    return ext;
+};
+
+const guessContentType = (filename = '', fallback = '') => {
+    const ext = getFileExtension(filename);
+    const lookup = {
+        pdf: 'application/pdf',
+        doc: 'application/msword',
+        docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        xls: 'application/vnd.ms-excel',
+        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ppt: 'application/vnd.ms-powerpoint',
+        pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        txt: 'text/plain; charset=utf-8',
+        csv: 'text/csv; charset=utf-8',
+        json: 'application/json; charset=utf-8',
+        zip: 'application/zip',
+        rar: 'application/vnd.rar',
+        '7z': 'application/x-7z-compressed',
+        mp4: 'video/mp4',
+        mov: 'video/quicktime',
+        webm: 'video/webm',
+        mkv: 'video/x-matroska',
+        avi: 'video/x-msvideo',
+        m4v: 'video/x-m4v',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        gif: 'image/gif',
+        webp: 'image/webp'
+    };
+
+    return lookup[ext] || fallback || 'application/octet-stream';
+};
+
+const withExtension = (filename = '', sourceUrl = '', fallback = 'downloaded-file') => {
+    const safeName = sanitizeFilename(filename || fallback);
+    const existingExt = getFileExtension(safeName);
+    if (existingExt) return safeName;
+
+    const sourceExt = getFileExtension(sourceUrl);
+    if (!sourceExt) return safeName;
+    return `${safeName}.${sourceExt}`;
+};
+
+const safeDecodeURIComponent = (value = '') => {
+    try {
+        return decodeURIComponent(String(value || ''));
+    } catch {
+        return String(value || '');
+    }
+};
+
+const setDownloadHeaders = (res, filename, contentType = '') => {
+    const safeFilename = sanitizeFilename(filename);
+    const encodedFilename = encodeURIComponent(safeFilename);
+
+    res.setHeader('Content-Type', guessContentType(safeFilename, contentType));
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
+    res.setHeader('Cache-Control', 'no-store');
+};
+
 const normalizeId = (value) => {
     if (value === null || value === undefined) return '';
     if (typeof value === 'string') return value.trim();
@@ -108,6 +243,7 @@ const messageController = {
         try {
             const userId = req.user.id;
             const conversations = await messageService.getConversations(userId);
+            res.set('Cache-Control', 'no-store');
             res.status(200).json({
                 status: 'success',
                 data: conversations
@@ -124,6 +260,7 @@ const messageController = {
             const { limit, before } = req.query;
             const userId = req.user.id;
             const messages = await messageService.getMessages(conversationId, userId, limit, before);
+            res.set('Cache-Control', 'no-store');
             res.status(200).json({
                 status: 'success',
                 data: messages
@@ -175,6 +312,75 @@ const messageController = {
         }
     },
 
+    downloadAttachment: async (req, res, next) => {
+        try {
+            const rawUrl = String(req.query?.url || '').trim();
+            const rawName = String(req.query?.name || '').trim();
+
+            if (!rawUrl) {
+                return res.status(400).json({
+                    status: 'fail',
+                    message: 'Missing file url'
+                });
+            }
+
+            // Legacy local attachments: /uploads/...
+            if (isSafeRelativeUploadsPath(rawUrl)) {
+                const uploadsRoot = path.resolve(__dirname, '..', 'uploads');
+                const localPath = path.resolve(__dirname, '..', `.${rawUrl}`);
+                if (!localPath.startsWith(uploadsRoot)) {
+                    return res.status(400).json({ status: 'fail', message: 'Invalid file path' });
+                }
+
+                if (!fs.existsSync(localPath)) {
+                    return res.status(404).json({ status: 'fail', message: 'File not found' });
+                }
+
+                const fileName = withExtension(rawName, localPath, path.basename(localPath));
+                setDownloadHeaders(res, fileName);
+                return fs.createReadStream(localPath).pipe(res);
+            }
+
+            let parsedUrl;
+            try {
+                parsedUrl = new URL(rawUrl);
+            } catch {
+                return res.status(400).json({ status: 'fail', message: 'Invalid file url' });
+            }
+
+            if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+                return res.status(400).json({ status: 'fail', message: 'Unsupported file protocol' });
+            }
+
+            const allowedHosts = getAllowedAttachmentHosts(req);
+            const host = parsedUrl.hostname.toLowerCase();
+            if (!allowedHosts.has(host) && isLocalOrPrivateHost(host)) {
+                return res.status(403).json({ status: 'fail', message: 'File host is not allowed' });
+            }
+
+            const upstream = await fetch(parsedUrl.toString(), {
+                method: 'GET',
+                redirect: 'follow'
+            });
+
+            if (!upstream.ok || !upstream.body) {
+                return res.status(502).json({
+                    status: 'fail',
+                    message: 'Cannot download file from source'
+                });
+            }
+
+            const upstreamType = String(upstream.headers.get('content-type') || '').trim();
+            const inferredFromUrl = safeDecodeURIComponent(path.basename(parsedUrl.pathname || 'downloaded-file'));
+            const fileName = withExtension(rawName, inferredFromUrl, inferredFromUrl || 'downloaded-file');
+            setDownloadHeaders(res, fileName, upstreamType);
+
+            return Readable.fromWeb(upstream.body).pipe(res);
+        } catch (error) {
+            next(error);
+        }
+    },
+
     // API: send message
     sendMessage: async (req, res, next) => {
         try {
@@ -217,6 +423,7 @@ const messageController = {
             const { userId: recipientId } = req.params;
             const conversation = await messageService.startConversation(senderId, recipientId);
 
+            res.set('Cache-Control', 'no-store');
             res.status(200).json({
                 status: 'success',
                 data: conversation
@@ -369,6 +576,7 @@ const messageController = {
         try {
             const userId = req.user.id;
             const count = await messageService.getTotalUnreadCount(userId);
+            res.set('Cache-Control', 'no-store');
             res.status(200).json({
                 status: 'success',
                 data: count

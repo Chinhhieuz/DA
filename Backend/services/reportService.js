@@ -122,10 +122,10 @@ const getPendingReportsService = async (admin_id) => {
     }
 
     const reports = await Report.find({ status: 'pending' })
-        .populate('reporter', 'username email display_name avatar_url')
+        .populate('reporter', 'username email full_name avatar_url')
         .populate({
             path: 'post',
-            populate: { path: 'author', select: 'username email display_name avatar_url' }
+            populate: { path: 'author', select: 'username email full_name avatar_url' }
         })
         .sort({ created_at: -1 });
 

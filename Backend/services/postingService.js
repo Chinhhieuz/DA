@@ -172,7 +172,7 @@ const getAllPostsService = async ({ userId, community, followingOnly }) => {
 
     console.log(`[POST SERVICE] Step 1: Querying posts (Community: ${community || 'all'}, FollowingOnly: ${followingOnly || 'false'})`);
     const posts = await Post.find(query)
-        .populate('author', 'username email role avatar_url display_name')
+        .populate('author', 'username email role avatar_url full_name')
         .sort({ created_at: -1 })
         .lean();
     console.log(`[POST SERVICE] Step 2: Found ${posts.length} posts.`);
@@ -182,7 +182,7 @@ const getAllPostsService = async ({ userId, community, followingOnly }) => {
         const recentComments = await Comment.find({ post: post._id })
             .sort({ created_at: -1 })
             .limit(1)
-            .populate('author', 'username display_name')
+            .populate('author', 'username full_name')
             .lean();
             
         let userVote = null;
@@ -213,7 +213,7 @@ const searchPostsService = async ({ keyword, userId }) => {
     };
 
     const posts = await Post.find(query)
-        .populate('author', 'username email role avatar_url display_name')
+        .populate('author', 'username email role avatar_url full_name')
         .sort({ created_at: -1 })
         .lean();
 
@@ -229,7 +229,7 @@ const searchPostsService = async ({ keyword, userId }) => {
         const recentComments = await Comment.find({ post: post._id })
             .sort({ created_at: -1 })
             .limit(1)
-            .populate('author', 'username display_name')
+            .populate('author', 'username full_name')
             .lean();
             
         let userVote = null;
@@ -247,7 +247,7 @@ const searchPostsService = async ({ keyword, userId }) => {
 
 const getTrendingPostsService = async (userId) => {
     const posts = await Post.find({ status: 'approved' })
-        .populate('author', 'username email role avatar_url display_name')
+        .populate('author', 'username email role avatar_url full_name')
         .sort({ upvotes: -1, created_at: -1 })
         .limit(5)
         .lean();
@@ -263,7 +263,7 @@ const getTrendingPostsService = async (userId) => {
         const recentComments = await Comment.find({ post: post._id })
             .sort({ created_at: -1 })
             .limit(1)
-            .populate('author', 'username display_name')
+            .populate('author', 'username full_name')
             .lean();
             
         let userVote = null;
@@ -327,7 +327,7 @@ const reactToPostService = async ({ id, user_id, action, type }) => {
 
 const getPendingPostsService = async () => {
     return await Post.find({ status: 'pending' })
-        .populate('author', 'username email display_name avatar_url')
+        .populate('author', 'username email full_name avatar_url')
         .sort({ created_at: -1 })
         .lean();
 };
@@ -429,7 +429,7 @@ const toggleSavePostService = async ({ id, user_id }) => {
 const getSavedPostsService = async (userId) => {
     const user = await Account.findById(userId).populate({
         path: 'savedPosts',
-        populate: { path: 'author', select: 'username display_name avatar_url' }
+        populate: { path: 'author', select: 'username full_name avatar_url' }
     });
 
     if (!user) throw new Error('NOT_FOUND:Không tìm thấy người dùng');
@@ -447,7 +447,7 @@ const getSavedPostsService = async (userId) => {
         const recentComments = await Comment.find({ post: post._id })
             .sort({ created_at: -1 })
             .limit(1)
-            .populate('author', 'username display_name')
+            .populate('author', 'username full_name')
             .lean();
         
         let userVote = null;
@@ -475,7 +475,7 @@ const getCommunityPostsAdminService = async ({ communityName, admin_id }) => {
     const posts = await Post.find({ 
         community: { $regex: new RegExp(`^${communityName}$`, 'i') } 
     })
-    .populate('author', 'username email role avatar_url display_name')
+    .populate('author', 'username email role avatar_url full_name')
     .sort({ created_at: -1 })
     .lean();
 
@@ -484,7 +484,7 @@ const getCommunityPostsAdminService = async ({ communityName, admin_id }) => {
 
 const getPostByIdService = async ({ id, userId }) => {
     const post = await Post.findById(id)
-        .populate('author', 'username email role avatar_url display_name')
+        .populate('author', 'username email role avatar_url full_name')
         .lean();
 
     if (!post) throw new Error('NOT_FOUND:Không tìm thấy bài viết');
@@ -501,7 +501,7 @@ const getPostByIdService = async ({ id, userId }) => {
 
     const [commentCount, recentComments] = await Promise.all([
         getPostCommentAndThreadCount(post._id),
-        Comment.find({ post: post._id }).sort({ created_at: -1 }).limit(1).populate('author', 'username display_name').lean()
+        Comment.find({ post: post._id }).sort({ created_at: -1 }).limit(1).populate('author', 'username full_name').lean()
     ]);
 
     let userVote = null;

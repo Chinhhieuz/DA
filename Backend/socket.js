@@ -1,13 +1,21 @@
-﻿let io;
+let io;
 const connectedUsers = new Map();
+const { isAllowedOrigin } = require('./utils/originAllowlist');
 
 module.exports = {
   init: (httpServer) => {
     io = require('socket.io')(httpServer, {
       cors: {
-        origin: '*',
-        methods: ['GET', 'POST', 'PUT', 'DELETE'],
+        origin: (origin, callback) => {
+          if (isAllowedOrigin(origin)) return callback(null, true);
+          return callback(new Error('Not allowed by CORS'));
+        },
+        methods: ['GET', 'POST'],
+        credentials: true,
       },
+      transports: ['websocket', 'polling'],
+      pingInterval: 25000,
+      pingTimeout: 20000,
     });
 
     io.on('connection', (socket) => {
@@ -39,7 +47,6 @@ module.exports = {
         const nextUserId = String(userId);
         const prevUserId = socket.data?.userId ? String(socket.data.userId) : '';
 
-        // Important: avoid one socket belonging to multiple account rooms
         if (prevUserId && prevUserId !== nextUserId) {
           detachSocketFromUser(socket, prevUserId);
         }

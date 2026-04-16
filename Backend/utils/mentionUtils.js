@@ -47,7 +47,7 @@ const processMentions = async (content, senderId, postId, postTitle) => {
             
             io.to(rIdStr).emit('new_notification', {
                 type: 'mention',
-                senderName: sender.display_name || sender.username,
+                senderName: sender.full_name || sender.username,
                 postId: postId,
                 title: postTitle,
                 content: content.substring(0, 50)

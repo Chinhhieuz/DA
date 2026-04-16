@@ -35,7 +35,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
     if (propUserId) return propUserId;
 
     try {
-      const savedUserStr = localStorage.getItem('currentUser');
+      const savedUserStr = sessionStorage.getItem('currentUser') || localStorage.getItem('currentUser');
       if (!savedUserStr) return '';
       const savedUser = JSON.parse(savedUserStr);
       return String(savedUser?._id || savedUser?.id || '');
@@ -46,10 +46,15 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
 
   useEffect(() => {
     const newSocket = io(API_BASE_URL, {
+      transports: ['websocket', 'polling'],
+      rememberUpgrade: true,
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 800,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
       autoConnect: true,
+      withCredentials: true,
     });
 
     setSocket(newSocket);

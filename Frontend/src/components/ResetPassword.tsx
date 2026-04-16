@@ -56,28 +56,30 @@ export function ResetPassword({ token, onSuccess }: ResetPasswordProps) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-      <Card className="w-full max-w-md p-8 shadow-xl border-slate-200 bg-white rounded-2xl">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 relative overflow-hidden">
+      <div className="pointer-events-none absolute -left-10 top-10 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+      <div className="pointer-events-none absolute -right-10 bottom-10 h-64 w-64 rounded-full bg-secondary/10 blur-3xl" />
+      <Card className="relative z-10 w-full max-w-md p-8 shadow-2xl border-border bg-card rounded-[28px] glass-panel transition-all duration-300">
         <div className="mb-8 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
              <Lock className="h-8 w-8 text-green-600" />
           </div>
-          <h1 className="mb-2 text-2xl font-bold text-gray-900">Tạo Mật Khẩu Mới</h1>
-          <p className="text-gray-600 text-sm">
+          <h1 className="mb-2 text-2xl font-black tracking-tight text-foreground">Tạo Mật Khẩu Mới</h1>
+          <p className="text-muted-foreground text-sm leading-relaxed">
             Vui lòng tạo một mật khẩu mới mạnh mẽ và an toàn.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2 relative">
-            <Label className="text-sm font-bold text-gray-700">Mật khẩu mới</Label>
+            <Label className="text-sm font-bold text-foreground/80">Mật khẩu mới</Label>
             <div className="relative">
               <Input 
                 type={showPass ? 'text' : 'password'} 
                 placeholder="Nhập mật khẩu mới..." 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="h-11 rounded-lg border-slate-300 bg-slate-50 px-4 pr-10 focus:bg-white transition-colors"
+                className="h-12 rounded-xl border-border bg-muted/30 px-4 pr-10 focus:bg-background transition-all focus:ring-primary/20"
                 required 
               />
               <button 
@@ -91,13 +93,13 @@ export function ResetPassword({ token, onSuccess }: ResetPasswordProps) {
           </div>
           
           <div className="space-y-2 relative">
-            <Label className="text-sm font-bold text-gray-700">Xác nhận mật khẩu</Label>
+            <Label className="text-sm font-bold text-foreground/80">Xác nhận mật khẩu</Label>
             <Input 
               type={showPass ? 'text' : 'password'} 
               placeholder="Nhập lại mật khẩu mới..." 
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="h-11 rounded-lg border-slate-300 bg-slate-50 px-4 focus:bg-white transition-colors"
+              className="h-12 rounded-xl border-border bg-muted/30 px-4 focus:bg-background transition-all focus:ring-primary/20"
               required 
             />
           </div>

@@ -27,4 +27,6 @@ conversationSchema.index({ participants: 1 });
 // Khóa hội thoại 1-1 để tránh tạo trùng khi nhiều request song song
 conversationSchema.index({ conversation_key: 1 }, { unique: true, sparse: true });
 
+conversationSchema.index({ participants: 1, updated_at: -1 });
+
 module.exports = mongoose.model('Conversation', conversationSchema);

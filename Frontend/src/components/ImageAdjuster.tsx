@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { X, Check, ZoomIn, ZoomOut } from 'lucide-react';
@@ -71,7 +72,7 @@ export function ImageAdjuster({ imageSrc, onConfirm, onCancel, aspectRatio = 1, 
     }, 'image/jpeg', 0.9);
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-lg bg-card rounded-[2.5rem] overflow-hidden shadow-2xl border border-border">
         <div className="p-6 border-b border-border flex justify-between items-center">
@@ -129,6 +130,7 @@ export function ImageAdjuster({ imageSrc, onConfirm, onCancel, aspectRatio = 1, 
             </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
