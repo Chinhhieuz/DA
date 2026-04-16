@@ -44,7 +44,7 @@ const createAndPushNotification = async ({ recipient, sender, type, post, commen
         if (sender) {
             const senderAcc = await Account.findById(sender);
             if (senderAcc) {
-                senderName = senderAcc.display_name || senderAcc.username;
+                senderName = senderAcc.full_name || senderAcc.username;
                 senderData = { username: senderAcc.username, avatar_url: senderAcc.avatar_url };
             }
         }
@@ -71,17 +71,29 @@ const createAndPushNotification = async ({ recipient, sender, type, post, commen
 const getNotificationsService = async (accountId) => {
     const notifications = await Notification.find({ recipient: accountId })
         .sort({ created_at: -1 })
-        .populate('sender', 'username display_name avatar_url full_name')
+        .populate('sender', 'username full_name avatar_url')
         .populate('post', 'title');
     return notifications;
 };
 
-const markAsReadService = async (id) => {
-    await Notification.findByIdAndUpdate(id, { isRead: true });
+const getUnreadCountService = async (accountId) => {
+    return Notification.countDocuments({
+        recipient: accountId,
+        isRead: false
+    });
+};
+
+const markAsReadService = async (id, accountId) => {
+    const filter = accountId
+        ? { _id: id, recipient: accountId }
+        : { _id: id };
+    const result = await Notification.updateOne(filter, { $set: { isRead: true } });
+    return result.modifiedCount > 0;
 };
 
 const markAllAsReadService = async (accountId) => {
-    await Notification.updateMany({ recipient: accountId, isRead: false }, { isRead: true });
+    const result = await Notification.updateMany({ recipient: accountId, isRead: false }, { isRead: true });
+    return Number(result.modifiedCount || 0);
 };
 
 const deleteNotificationsByPost = async (postId) => {
@@ -100,6 +112,7 @@ module.exports = {
     sendSocketEvent,
     createAndPushNotification,
     getNotificationsService,
+    getUnreadCountService,
     markAsReadService,
     markAllAsReadService,
     deleteNotificationsByPost,

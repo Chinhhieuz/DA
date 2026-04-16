@@ -80,9 +80,13 @@ export function SearchView({ onPostClick, onUserClick, currentUser }: SearchView
     setFilteredUsers(prev => prev.map(u => u._id === user._id ? { ...u, isFollowing: !isFollowing } : u));
 
     try {
+      const token = localStorage.getItem('token');
       const res = await fetch(`${API_URL}/auth/friends/${action}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({ followerId: currentUser.id, targetId: user._id })
       });
 

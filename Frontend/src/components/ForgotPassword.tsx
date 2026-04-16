@@ -46,9 +46,11 @@ export function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-      <Card className="w-full max-w-md p-8 shadow-xl border-slate-200 bg-white rounded-2xl">
-        <div className="mb-6 flex items-center gap-2 cursor-pointer text-gray-500 hover:text-gray-900 transition-colors" onClick={onBackToLogin}>
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 relative overflow-hidden">
+      <div className="pointer-events-none absolute -left-10 top-10 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+      <div className="pointer-events-none absolute -right-10 bottom-10 h-64 w-64 rounded-full bg-secondary/10 blur-3xl" />
+      <Card className="relative z-10 w-full max-w-md p-8 shadow-2xl border-border bg-card rounded-[28px] glass-panel transition-all duration-300">
+        <div className="mb-6 flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground transition-colors" onClick={onBackToLogin}>
            <ArrowLeft className="h-4 w-4" />
            <span className="text-sm font-medium">Quay lại đăng nhập</span>
         </div>
@@ -57,8 +59,8 @@ export function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
              <Mail className="h-8 w-8 text-blue-600" />
           </div>
-          <h1 className="mb-2 text-2xl font-bold text-gray-900">Quên Mật Khẩu?</h1>
-          <p className="text-gray-600 text-sm">
+          <h1 className="mb-2 text-2xl font-black tracking-tight text-foreground">Quên Mật Khẩu?</h1>
+          <p className="text-muted-foreground text-sm leading-relaxed">
             {isSent 
               ? 'Chúng tôi đã gửi một liên kết khôi phục vào email của bạn. Vui lòng kiểm tra hộp thư đến.' 
               : 'Đừng lo lắng, hãy nhập email mà bạn đã đăng ký tài khoản, chúng tôi sẽ gửi liên kết để đặt lại mật khẩu.'}
@@ -68,14 +70,14 @@ export function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
         {!isSent ? (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-bold text-gray-700">Địa chỉ Email</Label>
+              <Label htmlFor="email" className="text-sm font-bold text-foreground/80">Địa chỉ Email</Label>
               <Input 
                 id="email" 
                 type="email" 
                 placeholder="Ví dụ: nguyenvan@gmail.com" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="h-11 rounded-lg border-slate-300 bg-slate-50 px-4 focus:bg-white transition-colors"
+                className="h-12 rounded-xl border-border bg-muted/30 px-4 focus:bg-background transition-all focus:ring-primary/20"
                 required 
               />
             </div>

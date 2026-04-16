@@ -11,17 +11,20 @@ const login = async (req, res) => {
     try {
         const { email, password } = req.body;
         if (!email || !password) {
-            return res.status(400).json({ status: 'fail', message: 'Vui lòng nhập đầy đủ email và mật khẩu!' });
+            return res.status(400).json({ status: 'fail', message: 'Vui long nhap day du email va mat khau!' });
         }
         const result = await authService.loginUser(email, password);
         return res.status(200).json({
             status: 'success',
-            message: 'Đăng nhập thành công!',
+            message: 'Dang nhap thanh cong!',
             data: { token: result.token, user: result.account, profile: result.profile }
         });
     } catch (error) {
-        const statusCode = error.message.includes('không tồn tại') || error.message.includes('Sai') ? 401 : 500;
-        return res.status(statusCode).json({ status: 'error', message: error.message || 'Lỗi máy chủ nội bộ!' });
+        const lowerMessage = String(error.message || '').toLowerCase();
+        const statusCode = (lowerMessage.includes('khong ton tai') || lowerMessage.includes('sai'))
+            ? 401
+            : 500;
+        return res.status(statusCode).json({ status: 'error', message: error.message || 'Loi may chu noi bo!' });
     }
 };
 
@@ -29,21 +32,36 @@ const register = async (req, res) => {
     try {
         const { username, email, password } = req.body;
         if (!username || !email || !password) {
-            return res.status(400).json({ status: 'fail', message: 'Vui lòng cung cấp đủ tài khoản, email và mật khẩu!' });
+            return res.status(400).json({ status: 'fail', message: 'Vui long cung cap du tai khoan, email va mat khau!' });
         }
         const newUser = await authService.registerUser(req.body);
-        return res.status(201).json({ status: 'success', message: 'Tạo tài khoản thành công!', data: newUser });
+        return res.status(201).json({ status: 'success', message: 'Tao tai khoan thanh cong!', data: newUser });
     } catch (error) {
-        const statusCode = error.message.includes('đã tồn tại') ? 409 : 500;
-        return res.status(statusCode).json({ status: 'error', message: error.message || 'Lỗi máy chủ nội bộ!' });
+        const lowerMessage = String(error.message || '').toLowerCase();
+        const statusCode = lowerMessage.includes('da ton tai') ? 409 : 500;
+        return res.status(statusCode).json({ status: 'error', message: error.message || 'Loi may chu noi bo!' });
     }
 };
 
 const updateProfile = async (req, res) => {
     try {
         const { accountId, ...updateData } = req.body;
-        if (!accountId) return res.status(400).json({ status: 'fail', message: 'Thiếu định danh accountId' });
-        const updatedProfile = await authService.updateProfileService(accountId, updateData);
+        const authUserId = req.user?._id ? String(req.user._id) : '';
+        const targetAccountId = authUserId || accountId;
+
+        if (!targetAccountId) {
+            return res.status(400).json({ status: 'fail', message: 'Missing accountId' });
+        }
+
+        // If client sends stale accountId, trust authenticated user id from token.
+        if (authUserId && accountId && String(accountId) !== authUserId) {
+            console.warn('[AUTH] Ignoring mismatched accountId in updateProfile', {
+                tokenUserId: authUserId,
+                bodyAccountId: String(accountId)
+            });
+        }
+
+        const updatedProfile = await authService.updateProfileService(targetAccountId, updateData);
         return res.status(200).json({ status: 'success', data: updatedProfile });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
@@ -64,12 +82,13 @@ const getProfile = async (req, res) => {
 const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;
-        if (!email) return res.status(400).json({ status: 'fail', message: 'Vui lòng cung cấp email!' });
+        if (!email) return res.status(400).json({ status: 'fail', message: 'Vui long cung cap email!' });
         const result = await authService.generateResetPasswordToken(email);
         return res.status(200).json({ status: 'success', message: result.message });
     } catch (error) {
-        console.error("FORGOT_PASSWORD_ERROR:", error);
-        const statusCode = error.message.includes('không tồn tại') ? 404 : 500;
+        console.error('FORGOT_PASSWORD_ERROR:', error);
+        const lowerMessage = String(error.message || '').toLowerCase();
+        const statusCode = lowerMessage.includes('khong ton tai') ? 404 : 500;
         return res.status(statusCode).json({ status: 'error', message: error.message });
     }
 };
@@ -77,11 +96,12 @@ const forgotPassword = async (req, res) => {
 const resetPassword = async (req, res) => {
     try {
         const { token, newPassword } = req.body;
-        if (!token || !newPassword) return res.status(400).json({ status: 'fail', message: 'Thiếu token hoặc mật khẩu mới!' });
+        if (!token || !newPassword) return res.status(400).json({ status: 'fail', message: 'Thieu token hoac mat khau moi!' });
         const result = await authService.resetPassword(token, newPassword);
         return res.status(200).json({ status: 'success', message: result.message });
     } catch (error) {
-        const statusCode = error.message.includes('không hợp lệ') ? 400 : 500;
+        const lowerMessage = String(error.message || '').toLowerCase();
+        const statusCode = lowerMessage.includes('khong hop le') ? 400 : 500;
         return res.status(statusCode).json({ status: 'error', message: error.message });
     }
 };
@@ -89,7 +109,7 @@ const resetPassword = async (req, res) => {
 const changePassword = async (req, res) => {
     try {
         const { accountId, oldPassword, newPassword } = req.body;
-        if (!accountId || !oldPassword || !newPassword) return res.status(400).json({ status: 'fail', message: 'Thiếu dữ liệu đổi mật khẩu' });
+        if (!accountId || !oldPassword || !newPassword) return res.status(400).json({ status: 'fail', message: 'Thieu du lieu doi mat khau' });
         const result = await authService.changePasswordAuth(accountId, oldPassword, newPassword);
         return res.status(200).json({ status: 'success', message: result.message });
     } catch (error) {
@@ -100,7 +120,7 @@ const changePassword = async (req, res) => {
 const updateSettings = async (req, res) => {
     try {
         const { accountId, preferences } = req.body;
-        if (!accountId || !preferences) return res.status(400).json({ status: 'fail', message: 'Thiếu dữ liệu' });
+        if (!accountId || !preferences) return res.status(400).json({ status: 'fail', message: 'Thieu du lieu' });
         const prefs = await authService.updateSettingsService(accountId, preferences);
         return res.status(200).json({ status: 'success', data: prefs });
     } catch (error) {
@@ -142,10 +162,10 @@ const sendFriendRequest = async (req, res) => {
                 const rIdStr = targetId.toString();
                 io.to(rIdStr).emit('new_notification', {
                     type: 'friend_request',
-                    senderName: senderAcc.display_name || senderAcc.username,
+                    senderName: senderAcc.full_name || senderAcc.username,
                     senderId: senderId
                 });
-                console.log(`📡 [FRIEND_REQ] Gửi tới Room: ${rIdStr}`);
+                console.log(`Y" [FRIEND_REQ] Gửi t>i Room: ${rIdStr}`);
             }
         } catch (e) { console.error('Socket error (send):', e.message); }
 
@@ -167,11 +187,11 @@ const acceptFriendRequest = async (req, res) => {
             if (userAcc) {
                 const rIdStr = senderId.toString();
                 io.to(rIdStr).emit('new_notification', {
-                    type: 'like', // Dùng type like để hiện thông báo thường
-                    senderName: userAcc.display_name || userAcc.username,
-                    content: 'đã chấp nhận lời mời kết bạn của bạn'
+                    type: 'like', // Dùng type like f hi?n thông báo thường
+                    senderName: userAcc.full_name || userAcc.username,
+                    content: 'ã chấp nhận lời mời kết bạn của bạn'
                 });
-                console.log(`📡 [FRIEND_ACCEPT] Gửi tới Room: ${rIdStr}`);
+                console.log(`Y" [FRIEND_ACCEPT] Gửi t>i Room: ${rIdStr}`);
             }
 
             // Xóa thông báo friend_request cũ của người nhận
@@ -198,7 +218,7 @@ const cancelFriendRequest = async (req, res) => {
                 senderId: senderId,
                 type: 'friend_request'
             });
-            console.log(`📡 [FRIEND_CANCEL] Gửi tới Room: ${rIdStr}`);
+            console.log(`Y" [FRIEND_CANCEL] Gửi t>i Room: ${rIdStr}`);
         } catch (e) { console.error('Socket error (cancel):', e.message); }
 
         return res.status(200).json({ status: 'success', message: result.message });
@@ -238,7 +258,7 @@ const followUser = async (req, res) => {
         const { followerId, targetId } = req.body;
         const result = await authService.followUserService(followerId, targetId);
 
-        // Gửi Socket Notification cho người được follow
+        // Gửi Socket Notification cho người ược follow
         try {
             const followerAcc = await Account.findById(followerId);
             const io = socketModule.getIO();
@@ -246,11 +266,11 @@ const followUser = async (req, res) => {
                 const rIdStr = targetId.toString();
                 io.to(rIdStr).emit('new_notification', {
                     type: 'follow',
-                    senderName: followerAcc.display_name || followerAcc.username,
-                    content: 'đã bắt đầu theo dõi bạn',
+                    senderName: followerAcc.full_name || followerAcc.username,
+                    content: 'ã bắt ầu theo dõi bạn',
                     senderId: followerId
                 });
-                console.log(`📡 [FOLLOW] Gửi tới Room: ${rIdStr}`);
+                console.log(`Y" [FOLLOW] Gửi t>i Room: ${rIdStr}`);
             }
         } catch (e) { console.error('Socket error (follow):', e.message); }
 
@@ -336,19 +356,19 @@ const getAggregatedProfile = async (req, res) => {
             .sort({ created_at: -1 })
             .lean();
 
-        // 3. THỐNG KÊ NGƯỜI DÙNG (POSTS, LIKES)
+        // 3. THỐNG KS NGƯoI DTNG (POSTS, LIKES)
         let authorQuery = userId;
         try { if (mongoose.Types.ObjectId.isValid(userId)) authorQuery = new mongoose.Types.ObjectId(userId); } catch (e) { }
 
-        // BÀI THỰC TẾ: Chỉ đếm các bài viết đã được phê duyệt (status: approved)
-        // Dù là xem profile của chính mình hay người khác, con số thống kê chỉ tính bài công khai
+        // B?I THỰC TẾ: Ch? ếm các bài viết ã ược phê duy?t (status: approved)
+        // Dù là xem profile của chính mình hay người khác, con s thng kê ch? tính bài công khai
         const postStatusFilter = { status: 'approved' };
 
         const [postCount, postLikes, commentLikes, threadLikes] = await Promise.all([
-            Post.countDocuments({ author: authorQuery, ...postStatusFilter }), // Đếm số bài viết
-            Post.aggregate([{ $match: { author: authorQuery, ...postStatusFilter } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]), // Tổng upvotes bài viết
-            Comment.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]), // Tổng upvotes bình luận
-            Thread.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]) // Tổng upvotes threads
+            Post.countDocuments({ author: authorQuery, ...postStatusFilter }), // Đếm s bài viết
+            Post.aggregate([{ $match: { author: authorQuery, ...postStatusFilter } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]), // T.ng upvotes bài viết
+            Comment.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]), // T.ng upvotes bình luận
+            Thread.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]) // T.ng upvotes threads
         ]);
         const totalLikes = (postLikes[0]?.total || 0) + (commentLikes[0]?.total || 0) + (threadLikes[0]?.total || 0);
 
@@ -361,13 +381,13 @@ const getAggregatedProfile = async (req, res) => {
         let savedPosts = [];
         const { formatPostData } = require('../utils/postFormatter');
 
-        // 6. DANH SÁCH BÀI VIẾT CỦA NGƯỜI DÙNG
-        // CHỈ LẤY CÁC BÀI ĐÃ ĐƯỢC PHÊ DUYỆT (status: approved) để hiển thị trong profile
+        // 6. DANH SÁCH B?I VIẾT CỦA NGƯoI DTNG
+        // CH^ LẤY CÁC B?I Đf ĐƯỢC PHS DUY?T (status: approved) f hifn th< trong profile
         const postFilter = { author: userId, status: 'approved' };
 
         const rawUserPosts = await Post.find(postFilter)
-            .populate('author', 'username email role avatar_url display_name')
-            .sort({ created_at: -1 }) // Bài mới nhất lên trên
+            .populate('author', 'username email role avatar_url full_name')
+            .sort({ created_at: -1 }) // Bài m>i nhất lên trên
             .lean();
             
         let followingListForPosts = [];
@@ -381,7 +401,7 @@ const getAggregatedProfile = async (req, res) => {
             const pRecentComments = await Comment.find({ post: post._id })
                 .sort({ created_at: -1 })
                 .limit(1)
-                .populate('author', 'username display_name')
+                .populate('author', 'username full_name')
                 .lean();
                 
             let pUserVote = null;
@@ -400,7 +420,7 @@ const getAggregatedProfile = async (req, res) => {
             
             const user = await Account.findById(userId).populate({
                 path: 'savedPosts',
-                populate: { path: 'author', select: 'username display_name avatar_url' }
+                populate: { path: 'author', select: 'username full_name avatar_url' }
             });
             if (user && user.savedPosts) {
                 const validPosts = user.savedPosts.filter(p => p !== null);
@@ -412,7 +432,7 @@ const getAggregatedProfile = async (req, res) => {
                     const recentComments = await Comment.find({ post: post._id })
                         .sort({ created_at: -1 })
                         .limit(1)
-                        .populate('author', 'username display_name')
+                        .populate('author', 'username full_name')
                         .lean();
                     
                     let userVote = null;
@@ -443,8 +463,8 @@ const getAggregatedProfile = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('[AUTH CONTROLLER] 🚨 Lỗi getAggregatedProfile:', error);
-        return res.status(500).json({ status: 'error', message: `Lỗi máy chủ: ${error.message}` });
+        console.error('[AUTH CONTROLLER] Ys L-i getAggregatedProfile:', error);
+        return res.status(500).json({ status: 'error', message: `L-i máy chủ: ${error.message}` });
     }
 };
 

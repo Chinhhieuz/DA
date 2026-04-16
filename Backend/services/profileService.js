@@ -24,10 +24,14 @@ const updateProfileService = async (accountId, updateData) => {
         email: updatedAccount.email,
         username: updatedAccount.username,
         full_name: updatedAccount.full_name,
+        display_name: updatedAccount.full_name || updatedAccount.username,
+        name: updatedAccount.full_name || updatedAccount.username,
         avatar_url: updatedAccount.avatar_url,
         bio: updatedAccount.bio,
         location: updatedAccount.location,
         website: updatedAccount.website,
+        mssv: updatedAccount.mssv,
+        faculty: updatedAccount.faculty,
         role: updatedAccount.role
     };
 };

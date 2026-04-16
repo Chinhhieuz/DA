@@ -275,7 +275,7 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <div className="relative">
-            <Avatar className="h-14 w-14 border-4 border-background shadow-xl ring-2 ring-primary/10">
+            <Avatar className="h-14 w-14 border-4 border-background shadow-xl ring-2 ring-primary/20 dark:ring-primary/40">
               <AvatarImage src={getImageUrl(currentUser.avatar)} className="object-cover" />
               <AvatarFallback className="bg-primary/10 text-primary font-bold">{currentUser.name?.[0] || 'U'}</AvatarFallback>
             </Avatar>

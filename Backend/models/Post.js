@@ -64,5 +64,9 @@ postSchema.index({ created_at: 1 }, {
         status: { $in: ['pending', 'rejected'] } 
     } 
 });
+postSchema.index({ status: 1, created_at: -1 });
+postSchema.index({ status: 1, upvotes: -1, created_at: -1 });
+postSchema.index({ community: 1, status: 1, created_at: -1 });
+postSchema.index({ author: 1, created_at: -1 });
 
 module.exports = mongoose.model('Post', postSchema);

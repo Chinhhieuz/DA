@@ -3,13 +3,25 @@ const Post = require('../models/Post');
 
 const getAllCommunitiesService = async () => {
     const communities = await Community.find().sort({ created_at: -1 });
-    
-    const communitiesWithStats = await Promise.all(communities.map(async (com) => {
-        const postCount = await Post.countDocuments({ 
-            community: { $regex: new RegExp(`^${com.name}$`, 'i') } 
-        });
+
+    const postCounts = await Post.aggregate([
+        {
+            $group: {
+                _id: { $toLower: { $ifNull: ['$community', ''] } },
+                postCount: { $sum: 1 }
+            }
+        }
+    ]);
+
+    const postCountMap = new Map(
+        postCounts.map((item) => [String(item._id || ''), Number(item.postCount || 0)])
+    );
+
+    const communitiesWithStats = communities.map((com) => {
+        const key = String(com.name || '').toLowerCase();
+        const postCount = postCountMap.get(key) || 0;
         return { ...com.toObject(), postCount };
-    }));
+    });
 
     return communitiesWithStats;
 };

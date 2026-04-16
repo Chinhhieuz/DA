@@ -46,7 +46,7 @@ export function Sidebar({ currentView, onViewChange, userRole, unreadMessagesCou
                 variant={currentView === item.id ? 'secondary' : 'ghost'}
                 className={`group relative h-14 w-full justify-start gap-3 rounded-2xl ${currentView === item.id
                     ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90'
-                    : 'text-muted-foreground hover:bg-white/70 hover:text-foreground'
+                    : 'text-muted-foreground hover:bg-white/70 dark:hover:bg-white/10 hover:text-foreground'
                   }`}
                 onClick={() => onViewChange(item.id)}
               >
@@ -71,7 +71,7 @@ export function Sidebar({ currentView, onViewChange, userRole, unreadMessagesCou
           variant={currentView === 'settings' ? 'secondary' : 'ghost'}
           className={`h-14 w-full justify-start gap-3 rounded-2xl ${currentView === 'settings'
               ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90'
-              : 'text-muted-foreground hover:bg-white/70 hover:text-foreground'
+              : 'text-muted-foreground hover:bg-white/70 dark:hover:bg-white/10 hover:text-foreground'
             }`}
           onClick={() => onViewChange('settings')}
         >

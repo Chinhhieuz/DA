@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+
 import { getImageUrl } from '@/lib/imageUtils';
 import { API_URL } from '@/lib/api';
 import { toast } from 'sonner';
@@ -17,74 +19,133 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ReportModal } from './ReportModal';
 
-// Component lightbox xem toàn bộ ảnh
+// Component lightbox xem toÃ n bá»™ áº£nh
 function ImageLightbox({ images, startIndex, onClose }: { images: string[]; startIndex: number; onClose: () => void }) {
   const [current, setCurrent] = useState(startIndex);
-  const prev = () => setCurrent(i => (i - 1 + images.length) % images.length);
-  const next = () => setCurrent(i => (i + 1) % images.length);
+  const [isZoomed, setIsZoomed] = useState(false);
+
+  const closeLightbox = useCallback((e?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    setIsZoomed(false);
+    onClose();
+  }, [onClose]);
+
+  const prev = useCallback((e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    setIsZoomed(false);
+    setCurrent(i => (i - 1 + images.length) % images.length);
+  }, [images.length]);
+
+  const next = useCallback((e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    setIsZoomed(false);
+    setCurrent(i => (i + 1) % images.length);
+  }, [images.length]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') prev();
-      if (e.key === 'ArrowRight') next();
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        e.stopPropagation();
+        prev();
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        e.stopPropagation();
+        next();
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeLightbox();
+      }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [closeLightbox, next, prev]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
   }, []);
 
-  return (
-    <div
-      className="fixed inset-0 z-[9999] bg-black/95 flex flex-col items-center justify-center"
-      onClick={onClose}
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] h-[100dvh] w-screen bg-black/98 flex flex-col items-center justify-center backdrop-blur-sm select-none"
+      onClick={(e) => {
+        closeLightbox(e);
+      }}
     >
-      {/* Close button */}
       <button
-        className="absolute top-4 right-4 text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition-colors z-10"
-        onClick={onClose}
+        className="absolute top-4 right-4 text-white bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full p-2.5 transition-all z-20 hover:scale-110 active:scale-95"
+        onClick={(e) => {
+          closeLightbox(e);
+        }}
       >
         <X className="h-6 w-6" />
       </button>
 
-      {/* Counter */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/70 text-sm font-medium">
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-md px-4 py-1.5 rounded-full text-white/90 text-sm font-bold tracking-widest pointer-events-none">
         {current + 1} / {images.length}
       </div>
 
-      {/* Main image */}
-      <div className="relative flex items-center justify-center w-full h-full px-16" onClick={e => e.stopPropagation()}>
-        {images.length > 1 && (
+      <div
+        className={`relative flex items-center justify-center w-screen h-[100dvh] transition-all duration-300 ${isZoomed ? 'overflow-auto cursor-zoom-out' : 'cursor-zoom-in'}`}
+        onClick={(e) => {
+          if (!isZoomed) { return; }
+          e.stopPropagation();
+          setIsZoomed(false);
+        }}
+      >
+        {images.length > 1 && !isZoomed && (
           <button
-            className="absolute left-4 text-white bg-white/10 hover:bg-white/25 rounded-full p-3 transition-colors"
+            className="absolute left-6 text-white bg-white/10 hover:bg-white/25 rounded-full p-4 transition-all z-10 hover:scale-110 active:scale-95"
             onClick={prev}
           >
-            <ChevronLeft className="h-6 w-6" />
+            <ChevronLeft className="h-8 w-8" />
           </button>
         )}
+
         <img
           src={getImageUrl(images[current])}
-          alt={`Ảnh ${current + 1}`}
-          className="max-h-[85vh] max-w-full object-contain rounded-lg shadow-2xl"
+          alt={`Anh ${current + 1}`}
+          className={`transition-all duration-500 rounded-sm shadow-2xl ${
+            isZoomed
+              ? 'max-w-none max-h-none w-auto h-auto'
+              : 'h-[100dvh] w-screen object-contain'
+          }`}
+          onClick={(e) => {
+            if (isZoomed) {
+              e.stopPropagation();
+              setIsZoomed(false);
+            }
+          }}
         />
-        {images.length > 1 && (
+
+        {images.length > 1 && !isZoomed && (
           <button
-            className="absolute right-4 text-white bg-white/10 hover:bg-white/25 rounded-full p-3 transition-colors"
+            className="absolute right-6 text-white bg-white/10 hover:bg-white/25 rounded-full p-4 transition-all z-10 hover:scale-110 active:scale-95"
             onClick={next}
           >
-            <ChevronRight className="h-6 w-6" />
+            <ChevronRight className="h-8 w-8" />
           </button>
         )}
       </div>
 
-      {/* Thumbnail strip */}
-      {images.length > 1 && (
-        <div className="absolute bottom-4 flex gap-2 overflow-x-auto max-w-[90vw] px-4" onClick={e => e.stopPropagation()}>
+      {images.length > 1 && !isZoomed && (
+        <div className="absolute bottom-6 flex gap-3 overflow-x-auto max-w-[90vw] px-6 py-3 bg-white/5 backdrop-blur-md rounded-2xl" onClick={e => e.stopPropagation()}>
           {images.map((img, i) => (
             <button
               key={i}
-              onClick={() => setCurrent(i)}
-              className={`flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-all ${
-                i === current ? 'border-white scale-110' : 'border-white/30 opacity-60 hover:opacity-100'
+              onClick={() => { setCurrent(i); setIsZoomed(false); }}
+              className={`flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 transition-all duration-300 ${
+                i === current ? 'border-primary ring-4 ring-primary/20 scale-110' : 'border-white/20 opacity-40 hover:opacity-100 hover:border-white/50'
               }`}
             >
               <img src={getImageUrl(img)} alt={`thumb-${i}`} className="w-full h-full object-cover" />
@@ -92,11 +153,10 @@ function ImageLightbox({ images, startIndex, onClose }: { images: string[]; star
           ))}
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
-
-// Component collage ảnh — gom tối đa 4 ảnh, click để xem tất cả
 function ImageCollage({ images, title }: { images: string[]; title: string }) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const MAX_VISIBLE = 4;
@@ -108,7 +168,7 @@ function ImageCollage({ images, title }: { images: string[]; title: string }) {
     setLightboxIndex(idx);
   };
 
-  // Layout tùy theo số ảnh
+  // Layout tÃ¹y theo sá»‘ áº£nh
   const getGridClass = () => {
     switch (visible.length) {
       case 1: return 'grid-cols-1';
@@ -124,7 +184,7 @@ function ImageCollage({ images, title }: { images: string[]; title: string }) {
           const isLastVisible = idx === visible.length - 1 && remaining > 0;
           const isSingle = visible.length === 1;
           const aspectClass = isSingle ? '' : 'aspect-square';
-          // Ảnh đầu tiên khi có 3 ảnh thì chiếm full width hàng đầu
+          // áº¢nh Ä‘áº§u tiÃªn khi cÃ³ 3 áº£nh thÃ¬ chiáº¿m full width hÃ ng Ä‘áº§u
           const isWide = visible.length === 3 && idx === 0;
 
           return (
@@ -143,11 +203,11 @@ function ImageCollage({ images, title }: { images: string[]; title: string }) {
               />
               {/* Hover overlay */}
               <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-colors duration-300" />
-              {/* +X overlay trên ảnh cuối */}
+              {/* +X overlay trÃªn áº£nh cuá»‘i */}
               {isLastVisible && (
                 <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center">
                   <span className="text-white text-3xl font-black drop-shadow-lg">+{remaining}</span>
-                  <span className="text-white/80 text-xs mt-1">Xem tất cả</span>
+                  <span className="text-white/80 text-xs mt-1">Xem táº¥t cáº£</span>
                 </div>
               )}
             </div>
@@ -258,6 +318,7 @@ export function PostCard({
   const [userReaction, setUserReaction] = useState<string | null>(post.userVote || null);
   const [isFollowing, setIsFollowing] = useState(post.author.isFollowing || false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [inlineContentImage, setInlineContentImage] = useState<string | null>(null);
 
   useEffect(() => {
     setUpVotes(post.upvotes);
@@ -268,7 +329,7 @@ export function PostCard({
 
   const handleReportAction = () => {
     if (!currentUser?.id) {
-       toast.error('Vui lòng đăng nhập để báo cáo nội dung!');
+       toast.error('Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ bÃ¡o cÃ¡o ná»™i dung!');
        return;
     }
     setIsReportModalOpen(true);
@@ -276,7 +337,7 @@ export function PostCard({
 
   const handleSavePost = async () => {
     if (!currentUser?.id) {
-       toast.error('Vui lòng đăng nhập để lưu bài viết!');
+       toast.error('Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ lÆ°u bÃ i viáº¿t!');
        return;
     }
     try {
@@ -295,23 +356,23 @@ export function PostCard({
         toast.error(data.message);
       }
     } catch (err: any) {
-      console.error('Lỗi khi lưu bài:', err);
-      toast.error(`Lỗi khi lưu bài viết: ${err.message || 'Không rõ nguyên nhân'}`);
+      console.error('Lá»—i khi lÆ°u bÃ i:', err);
+      toast.error(`Lá»—i khi lÆ°u bÃ i viáº¿t: ${err.message || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n'}`);
     }
   };
 
   const handleVote = async (e: React.MouseEvent, type: 'up' | 'down') => {
     e.stopPropagation();
     if (!currentUser?.id) {
-      toast.error('Vui lòng đăng nhập để bình chọn!');
+      toast.error('Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ bÃ¬nh chá»n!');
       return;
     }
     if (post.status !== 'approved') {
-      toast.error('Bài viết này đã bị khóa!');
+      toast.error('BÃ i viáº¿t nÃ y Ä‘Ã£ bá»‹ khÃ³a!');
       return;
     }
 
-    const isRemoving = userReaction === type || (type === 'up' && userReaction === '👍');
+    const isRemoving = userReaction === type || (type === 'up' && userReaction === 'ðŸ‘');
     const action = type === 'up' 
       ? (isRemoving ? 'unlike' : 'up') 
       : (isRemoving ? 'undislike' : 'down');
@@ -331,7 +392,7 @@ export function PostCard({
       if (isRemoving) setDownVotes(Math.max(0, downVotes - 1));
       else {
         setDownVotes(downVotes + 1);
-        if (userReaction === 'up' || userReaction === '👍') setUpVotes(Math.max(0, upVotes - 1));
+        if (userReaction === 'up' || userReaction === 'ðŸ‘') setUpVotes(Math.max(0, upVotes - 1));
       }
     }
     
@@ -346,13 +407,13 @@ export function PostCard({
        
        const data = await res.json();
        if (!res.ok || data.status !== 'success') {
-          throw new Error(data.message || 'Lỗi không xác định từ server');
+          throw new Error(data.message || 'Lá»—i khÃ´ng xÃ¡c Ä‘á»‹nh tá»« server');
        }
 
        if (onReact) onReact(post.id, action, type);
     } catch (e: any) { 
-      console.error('Lỗi lưu vote:', e);
-      toast.error('Không thể lưu lượt bình chọn. Vui lòng thử lại!');
+      console.error('Lá»—i lÆ°u vote:', e);
+      toast.error('KhÃ´ng thá»ƒ lÆ°u lÆ°á»£t bÃ¬nh chá»n. Vui lÃ²ng thá»­ láº¡i!');
       // Revert state
       setUpVotes(previousUp);
       setDownVotes(previousDown);
@@ -362,23 +423,23 @@ export function PostCard({
 
   const handleShare = () => {
     navigator.clipboard.writeText(`${window.location.origin}/?view=post&id=${post.id}`);
-    toast.success('Đã sao chép liên kết vào clipboard');
+    toast.success('ÄÃ£ sao chÃ©p liÃªn káº¿t vÃ o clipboard');
   };
 
   const handleDeletePost = async () => {
-    // Trì hoãn một chút để Dropdown Menu đóng lại hoàn toàn
+    // TrÃ¬ hoÃ£n má»™t chÃºt Ä‘á»ƒ Dropdown Menu Ä‘Ã³ng láº¡i hoÃ n toÃ n
     setTimeout(async () => {
       if (!currentUser?.id) {
-        toast.error('Lỗi: Bạn cần đăng nhập để xóa bài viết này.');
+        toast.error('Lá»—i: Báº¡n cáº§n Ä‘Äƒng nháº­p Ä‘á»ƒ xÃ³a bÃ i viáº¿t nÃ y.');
         return;
       }
 
       if (!post.id) {
-         toast.error('Lỗi kỹ thuật: Không tìm thấy ID bài viết.');
+         toast.error('Lá»—i ká»¹ thuáº­t: KhÃ´ng tÃ¬m tháº¥y ID bÃ i viáº¿t.');
          return;
       }
 
-      if (!window.confirm('Bạn có chắc chắn muốn xóa bài viết này không? Quay lại sẽ không được.')) return;
+      if (!window.confirm('Báº¡n cÃ³ cháº¯c cháº¯n muá»‘n xÃ³a bÃ i viáº¿t nÃ y khÃ´ng? Quay láº¡i sáº½ khÃ´ng Ä‘Æ°á»£c.')) return;
 
       try {
         const deleteUrl = `${API_URL}/posts/${post.id}?user_id=${currentUser.id}`;
@@ -392,21 +453,45 @@ export function PostCard({
         
         const data = await res.json();
         if (data.status === 'success') {
-          toast.success('Đã xóa bài viết thành công!');
+          toast.success('ÄÃ£ xÃ³a bÃ i viáº¿t thÃ nh cÃ´ng!');
           if (onDeleteSuccess) {
             onDeleteSuccess(post.id);
           } else {
-             // Dự phòng nếu không có callback
+             // Dá»± phÃ²ng náº¿u khÃ´ng cÃ³ callback
              window.location.reload(); 
           }
         } else {
           toast.error(data.message);
         }
       } catch (err: any) {
-        console.error('Lỗi khi xóa bài:', err);
-        toast.error(`Lỗi mạng khi xóa bài viết: ${err.message}`);
+        console.error('Lá»—i khi xÃ³a bÃ i:', err);
+        toast.error(`Lá»—i máº¡ng khi xÃ³a bÃ i viáº¿t: ${err.message}`);
       }
     }, 100);
+  };
+
+  const handlePostContentClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) {
+      onPostClick && onPostClick(post);
+      return;
+    }
+
+    const clickedImage = target.closest('img');
+    if (clickedImage) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Use resolved browser URL first to avoid malformed paths from raw attributes.
+      const htmlImage = clickedImage as HTMLImageElement;
+      const imageSrc = htmlImage.currentSrc || htmlImage.src || htmlImage.getAttribute('src') || '';
+      if (imageSrc) {
+        setInlineContentImage(imageSrc);
+      }
+      return;
+    }
+
+    onPostClick && onPostClick(post);
   };
 
   return (
@@ -417,7 +502,7 @@ export function PostCard({
           {/* Post Header */}
           <div className="mb-3 flex items-start gap-3">
             <Avatar 
-              className="h-11 w-11 cursor-pointer border border-white/60 shadow-md ring-4 ring-white/40 transition-opacity hover:opacity-80"
+              className="h-11 w-11 cursor-pointer border-2 border-background shadow-md ring-2 ring-primary/20 dark:ring-primary/40 transition-opacity hover:opacity-80"
               onClick={(e) => { e.stopPropagation(); onUserClick && post.author.id && onUserClick(post.author.id); }}
             >
               <AvatarImage src={post.author.avatar} className="object-cover" />
@@ -431,7 +516,7 @@ export function PostCard({
                 >
                    {post.author.name || post.author.username}
                 </span>
-                <span className="text-muted-foreground text-[11px] font-medium">• {post.timestamp}</span>
+                <span className="text-muted-foreground text-[11px] font-medium">â€¢ {post.timestamp}</span>
               </div>
               <div className="mt-0.5 flex flex-wrap gap-1">
                 <Badge 
@@ -453,10 +538,10 @@ export function PostCard({
                        'bg-green-50 text-green-600 border-green-200'
                      }`}
                    >
-                     {post.status === 'pending' ? 'Chờ duyệt' : 
-                      post.status === 'rejected' ? 'Bị từ chối' : 
-                      post.status === 'hidden' ? 'Bị ẩn' : 
-                      'Đã đăng'}
+                     {post.status === 'pending' ? 'Chá» duyá»‡t' : 
+                      post.status === 'rejected' ? 'Bá»‹ tá»« chá»‘i' : 
+                      post.status === 'hidden' ? 'Bá»‹ áº©n' : 
+                      'ÄÃ£ Ä‘Äƒng'}
                    </Badge>
                 )}
               </div>
@@ -467,7 +552,7 @@ export function PostCard({
                <Button 
                 variant="ghost" 
                 size="sm" 
-                className={`ml-auto h-9 gap-1 rounded-full px-3 text-xs font-bold transition-all ${isFollowing ? 'text-slate-500 hover:bg-slate-100 hover:text-slate-600' : 'bg-primary/8 text-red-600 hover:bg-red-50 hover:text-red-700'}`}
+                className={`ml-auto h-9 gap-1 rounded-full px-3 text-xs font-bold transition-all ${isFollowing ? 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600' : 'bg-primary/8 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700'}`}
                 onClick={async (e) => {
                   e.stopPropagation();
                   const action = isFollowing ? 'unfollow' : 'follow';
@@ -476,27 +561,31 @@ export function PostCard({
                   // Optimistic update
                   setIsFollowing(!isFollowing);
 
-                  try {
+                   try {
+                    const token = localStorage.getItem('token');
                     const res = await fetch(`${API_URL}/auth/friends/${action}`, {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {})
+                      },
                       body: JSON.stringify({ followerId: currentUser.id, targetId: post.author.id })
                     });
                     if (res.ok) {
-                      toast.success(`${!prevIsFollowing ? 'Đã theo dõi' : 'Đã bỏ theo dõi'} ${post.author.name || post.author.username}`);
+                      toast.success(`${!prevIsFollowing ? 'ÄÃ£ theo dÃµi' : 'ÄÃ£ bá» theo dÃµi'} ${post.author.name || post.author.username}`);
                     } else {
                       const data = await res.json();
-                      toast.error(data.message || 'Lỗi khi thực hiện thao tác');
+                      toast.error(data.message || 'Lá»—i khi thá»±c hiá»‡n thao tÃ¡c');
                       setIsFollowing(prevIsFollowing);
                     }
                   } catch (err) {
-                    toast.error('Lỗi kết nối máy chủ');
+                    toast.error('Lá»—i káº¿t ná»‘i mÃ¡y chá»§');
                     setIsFollowing(prevIsFollowing);
                   }
                 }}
                >
                  {isFollowing ? <Check className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
-                 {isFollowing ? 'Đã theo dõi' : 'Theo dõi'}
+                 {isFollowing ? 'ÄÃ£ theo dÃµi' : 'Theo dÃµi'}
                </Button>
             )}
           </div>
@@ -504,7 +593,7 @@ export function PostCard({
           {/* Post Content */}
           <div
             className="cursor-pointer"
-            onClick={() => onPostClick && onPostClick(post)}
+            onClick={handlePostContentClick}
           >
             <h3 className="mb-2 text-[20px] font-black leading-snug tracking-tight text-foreground transition-colors group-hover:text-primary sm:text-[24px]">
               {post.title}
@@ -513,7 +602,7 @@ export function PostCard({
               className="tiptap-prose mb-4 text-[14px] leading-7 text-foreground/85"
               dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(post.content) }}
             />
-            {/* Multi-image Rendering — dùng ImageCollage */}
+            {/* Multi-image Rendering â€” dÃ¹ng ImageCollage */}
             {post.video && (
               <div className="mb-3" onClick={(e) => e.stopPropagation()}>
                 <video src={post.video} controls className="w-full rounded-xl bg-black max-h-[520px]" />
@@ -521,16 +610,12 @@ export function PostCard({
             )}
             {post.image_urls && post.image_urls.length > 0 ? (
               <ImageCollage images={post.image_urls} title={post.title} />
-            ) : post.image && (
-              <img
-                src={getImageUrl(post.image)}
-                alt={post.title}
-                className="mb-3 w-full h-auto rounded-lg bg-muted/50"
-              />
-            )}
+            ) : post.image ? (
+              <ImageCollage images={[post.image]} title={post.title} />
+            ) : null}
           </div>
 
-          {/* Biểu đồ số liệu Lượt Thích / Bình luận */}
+          {/* Biá»ƒu Ä‘á»“ sá»‘ liá»‡u LÆ°á»£t ThÃ­ch / BÃ¬nh luáº­n */}
           <div className="mb-3 flex items-center justify-between px-1 text-xs text-muted-foreground">
               <div className="flex gap-2 items-center">
                 {upVotes > 0 && (
@@ -547,7 +632,7 @@ export function PostCard({
              <div>
                 {(post.commentCount && post.commentCount > 0) || (post.comments && post.comments.length > 0) ? (
                    <span className="cursor-pointer hover:underline" onClick={() => onPostClick && onPostClick(post)}>
-                       {Math.max(post.commentCount || 0, post.comments?.length || 0)} Bình luận
+                       {Math.max(post.commentCount || 0, post.comments?.length || 0)} BÃ¬nh luáº­n
                    </span>
                 ) : null}
              </div>
@@ -559,17 +644,17 @@ export function PostCard({
           <div className="flex items-center justify-between pt-1">
             <div className="flex flex-wrap items-center gap-2">
               
-            <div className="flex items-center gap-1 rounded-full border border-border bg-white/70 p-0.5">
+            <div className="flex items-center gap-1 rounded-full border border-border/80 bg-muted/40 backdrop-blur-md p-0.5">
               <div className="flex items-center gap-1 group/up">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className={`rounded-full h-8 w-8 p-0 transition-colors ${userReaction === 'up' || userReaction === '👍' ? 'text-orange-600 bg-orange-50 hover:bg-orange-100' : 'text-muted-foreground hover:text-orange-600 hover:bg-orange-50'}`}
+                  className={`rounded-full h-8 w-8 p-0 transition-all ${userReaction === 'up' || userReaction === 'ðŸ‘' ? 'text-orange-600 bg-orange-500/15 hover:bg-orange-500/25' : 'text-muted-foreground hover:text-orange-600 hover:bg-orange-500/10'}`}
                   onClick={(e) => handleVote(e, 'up')}
                 >
-                  <ArrowBigUp className={`h-5 w-5 ${userReaction === 'up' || userReaction === '👍' ? 'fill-orange-600' : ''}`} />
+                  <ArrowBigUp className={`h-5 w-5 ${userReaction === 'up' || userReaction === 'ðŸ‘' ? 'fill-orange-600' : ''}`} />
                 </Button>
-                <span className={`text-sm font-bold min-w-[12px] ${userReaction === 'up' || userReaction === '👍' ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                <span className={`text-sm font-bold min-w-[12px] ${userReaction === 'up' || userReaction === 'ðŸ‘' ? 'text-orange-600' : 'text-muted-foreground'}`}>
                   {upVotes}
                 </span>
               </div>
@@ -580,7 +665,7 @@ export function PostCard({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className={`rounded-full h-8 w-8 p-0 transition-colors ${userReaction === 'down' ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                  className={`rounded-full h-8 w-8 p-0 transition-all ${userReaction === 'down' ? 'text-blue-600 bg-blue-500/15 hover:bg-blue-500/25' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-500/10'}`}
                   onClick={(e) => handleVote(e, 'down')}
                 >
                   <ArrowBigDown className={`h-5 w-5 ${userReaction === 'down' ? 'fill-blue-600' : ''}`} />
@@ -598,16 +683,16 @@ export function PostCard({
                 onClick={(e) => { e.stopPropagation(); onPostClick && onPostClick(post); }}
               >
                 <MessageCircle className="h-4 w-4" />
-                <span>Bình luận</span>
+                <span>BÃ¬nh luáº­n</span>
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="rounded-full px-4 font-medium text-muted-foreground transition-colors hover:bg-green-50 hover:text-green-600"
+                className="rounded-full px-4 font-medium text-muted-foreground transition-colors hover:bg-green-50 dark:hover:bg-green-900/10 hover:text-green-600"
                 onClick={(e) => { e.stopPropagation(); handleShare(); }}
               >
                 <Share2 className="h-4 w-4" />
-                <span>Chia sẻ</span>
+                <span>Chia sáº»</span>
               </Button>
             </div>
 
@@ -620,12 +705,12 @@ export function PostCard({
               <DropdownMenuContent align="end" className="glass-panel w-64 p-2">
                 <DropdownMenuItem onClick={handleSavePost} className="cursor-pointer gap-3 p-3 text-sm font-medium text-foreground focus:bg-muted focus:text-foreground">
                   <Bookmark className={`h-5 w-5 ${currentUser?.savedPosts?.includes(post.id) ? 'fill-primary text-primary' : 'text-foreground'}`} />
-                  <span>{currentUser?.savedPosts?.includes(post.id) ? 'Hủy đã lưu' : 'Lưu bài viết'}</span>
+                  <span>{currentUser?.savedPosts?.includes(post.id) ? 'Há»§y Ä‘Ã£ lÆ°u' : 'LÆ°u bÃ i viáº¿t'}</span>
                 </DropdownMenuItem>
 
                 <DropdownMenuItem onClick={handleReportAction} className="cursor-pointer gap-3 p-3 text-sm font-medium focus:bg-muted text-red-600 focus:text-red-700">
                   <Flag className="h-5 w-5 text-red-600" />
-                  <span>Báo cáo bài viết</span>
+                  <span>BÃ¡o cÃ¡o bÃ i viáº¿t</span>
                 </DropdownMenuItem>
 
                 {currentUser?.id === post.author.id && (
@@ -633,7 +718,7 @@ export function PostCard({
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleDeletePost} className="cursor-pointer gap-3 p-3 text-sm font-medium focus:bg-red-50 text-red-600 focus:text-red-700">
                       <Trash2 className="h-5 w-5" />
-                      <span>Xóa bài viết</span>
+                      <span>XÃ³a bÃ i viáº¿t</span>
                     </DropdownMenuItem>
                   </>
                 )}
@@ -660,6 +745,13 @@ export function PostCard({
         postId={post.id} 
         currentUser={currentUser} 
       />
+      {inlineContentImage && (
+        <ImageLightbox
+          images={[inlineContentImage]}
+          startIndex={0}
+          onClose={() => setInlineContentImage(null)}
+        />
+      )}
     </Card>
   );
 }

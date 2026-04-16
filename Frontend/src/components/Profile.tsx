@@ -1,5 +1,6 @@
 // Debug: 2026-03-26T13:13:14 (Forcing Vite Reload)
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Camera, Mail, Calendar, MapPin, Link as LinkIcon, Edit, X, Save, MessageCircle, User, AtSign, Globe, ShieldCheck, UserPlus, Check, UserMinus, UserCheck, Clock, Lock, Key, Eye, EyeOff, GraduationCap, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -104,11 +105,11 @@ const AppChangePasswordDialog = ({
   isChangingPassword
 }: PasswordModalProps) => {
   if (!isOpen) return null;
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <Card className="w-full max-w-md overflow-hidden shadow-2xl border-none bg-card animate-in zoom-in-95 duration-200">
         <div className="bg-gradient-to-r from-red-600 to-red-500 p-6 text-white text-center">
-          <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-md">
+          <div className="w-16 h-16 bg-white/10 dark:bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-md border border-white/20">
             <Lock className="h-8 w-8 text-white" />
           </div>
           <h3 className="text-xl font-bold">Thay đổi mật khẩu</h3>
@@ -195,7 +196,8 @@ const AppChangePasswordDialog = ({
           </div>
         </form>
       </Card>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -247,7 +249,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
   useEffect(() => {
     if (effectiveUserId) {
       const url = `${API_URL}/auth/profile/aggregated/${effectiveUserId}?currentUserId=${currentUserId || ''}`;
-      fetch(url)
+      fetch(url, { cache: 'no-store' })
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') {
@@ -298,7 +300,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
     // Tải lại dữ liệu chính xác từ server sau một khoảng trễ ngắn
     setTimeout(() => {
       if (effectiveUserId) {
-        fetch(`${API_URL}/auth/stats/${effectiveUserId}`)
+        fetch(`${API_URL}/auth/stats/${effectiveUserId}`, { cache: 'no-store' })
           .then(res => res.json())
           .then(data => {
             if (data.status === 'success') setUserStats(data.data);
@@ -331,11 +333,14 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
 
   const handleSaveProfile = async () => {
     try {
+      const token = localStorage.getItem('token');
       const res = await fetch(`${API_URL}/auth/profile`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({
-          accountId: currentUser.id,
           full_name: formData.name,
           bio: formData.bio,
           location: formData.location,
@@ -346,9 +351,38 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
       });
       const data = await res.json();
       if (data.status === 'success') {
+        const updatedName = data.data?.full_name || data.data?.name || formData.name;
+        const updatedUsername = data.data?.username || profileData?.username || currentUser.username;
+        const updatedAvatar = data.data?.avatar_url
+          ? getImageUrl(data.data.avatar_url)
+          : (profileData?.avatar || getImageUrl(currentUser.avatar));
         toast.success('Đã lưu thay đổi hồ sơ');
         setIsEditing(false);
+        setProfileData((prev: any) => ({
+          ...prev,
+          name: updatedName,
+          username: updatedUsername,
+          avatar: updatedAvatar,
+          bio: data.data?.bio ?? formData.bio,
+          location: data.data?.location ?? formData.location,
+          website: data.data?.website ?? formData.website,
+          mssv: data.data?.mssv ?? formData.mssv,
+          faculty: data.data?.faculty ?? formData.faculty
+        }));
+        setFormData(prev => ({ ...prev, name: updatedName }));
+        setInternalUserPosts(prev =>
+          prev.map(post => ({
+            ...post,
+            author: {
+              ...post.author,
+              name: updatedName,
+              username: updatedUsername,
+              avatar: updatedAvatar
+            }
+          }))
+        );
         if (onProfileUpdate) onProfileUpdate(data.data);
+        if (onPostsChanged) onPostsChanged();
       } else {
         toast.error(data.message);
       }
@@ -646,10 +680,14 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                 
                 if (uploadData.status === 'success') {
                   const imageUrl = uploadData.data.url;
+                  const token = localStorage.getItem('token');
                   const res = await fetch(`${API_URL}/auth/profile`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ accountId: currentUser.id, avatar_url: imageUrl })
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(token ? { Authorization: `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify({ avatar_url: imageUrl })
                   });
                   const data = await res.json();
                   toast.dismiss(loadingToast);
@@ -738,20 +776,20 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                 </Badge>
               )}
               {profileData.mssv && (
-                <Badge variant="secondary" className="gap-1 bg-red-50 text-red-600 font-semibold border-red-100/50">
+                <Badge variant="secondary" className="gap-1 bg-primary/10 text-primary font-semibold border-primary/20 dark:bg-red-500/10 dark:text-red-400">
                   <GraduationCap className="h-3 w-3" />
                   MSSV: {profileData.mssv}
                 </Badge>
               )}
               {profileData.faculty && (
-                <Badge variant="secondary" className="gap-1 bg-orange-50 text-orange-600 font-semibold border-orange-100/50">
+                <Badge variant="secondary" className="gap-1 bg-amber-500/10 text-amber-600 font-semibold border-amber-500/20 dark:text-amber-400">
                   <BookOpen className="h-3 w-3" />
                   {profileData.faculty}
                 </Badge>
               )}
             </div>
 
-            <div className="flex flex-wrap justify-center gap-2 md:justify-start">
+<div className="flex flex-wrap justify-center gap-2 md:justify-start">
               {isOwnProfile ? (
                 <Button
                   size="sm"
@@ -768,9 +806,13 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                       size="sm" 
                       className="rounded-full bg-red-600 text-white hover:bg-red-700"
                       onClick={async () => {
+                        const token = localStorage.getItem('token');
                         const res = await fetch(`${API_URL}/auth/friends/follow`, {
                           method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
+                          headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { Authorization: `Bearer ${token}` } : {})
+                          },
                           body: JSON.stringify({ followerId: currentUser.id || (currentUser as any)._id, targetId: effectiveUserId })
                         });
                         if (res.ok) {
@@ -790,11 +832,15 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                     <Button 
                       size="sm" 
                       variant="outline" 
-                      className="rounded-full border-red-200 text-red-600 hover:bg-red-50"
+                      className="rounded-full border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20"
                       onClick={async () => {
+                        const token = localStorage.getItem('token');
                         const res = await fetch(`${API_URL}/auth/friends/unfollow`, {
                           method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
+                          headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { Authorization: `Bearer ${token}` } : {})
+                          },
                           body: JSON.stringify({ followerId: currentUser.id || (currentUser as any)._id, targetId: effectiveUserId })
                         });
                         if (res.ok) {

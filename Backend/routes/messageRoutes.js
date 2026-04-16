@@ -23,6 +23,7 @@ router.post('/upload', (req, res, next) => {
 }, messageController.uploadAttachment);
 
 router.get('/conversations', messageController.getConversations);
+router.get('/download', messageController.downloadAttachment);
 router.post('/share', messageController.shareMessage);
 router.post('/', messageController.sendMessage);
 router.post('/start/:userId', messageController.startChat);
@@ -32,7 +33,13 @@ router.put('/:messageId/revoke', messageController.revokeMessage);
 router.put('/:conversationId/read', messageController.markAsRead);
 router.delete('/conversations/:conversationId', messageController.deleteConversation);
 router.get('/unread-count', messageController.getUnreadCount);
-router.get('/:conversationId', messageController.getMessages);
+router.get('/:conversationId', (req, res, next) => {
+    const conversationId = String(req.params?.conversationId || '').trim();
+    if (!/^[0-9a-fA-F]{24}$/.test(conversationId)) {
+        return res.status(404).json({ status: 'fail', message: 'Route not found' });
+    }
+    return messageController.getMessages(req, res, next);
+});
 
 console.log('[MESSAGES] Routes initialized and prioritized');
 module.exports = router;

@@ -1,4 +1,5 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { getImageUrl } from '@/lib/imageUtils';
 import { Search, Send, MoreVertical, ImagePlus, Video, FileText, X, Loader2, MoreHorizontal, Share2, RotateCcw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -88,9 +89,11 @@ const normalizeMessageEntityIds = (
   if (!message || typeof message !== 'object') return message;
   const normalizedSenderId = sanitizeId(getEntityId(message?.sender) || fallback.senderId);
   const normalizedRecipientId = sanitizeId(getEntityId(message?.recipient) || fallback.recipientId);
+  const normalizedConversationId = sanitizeId(getConversationId(message?.conversation));
 
   return {
     ...message,
+    ...(normalizedConversationId ? { conversation: normalizedConversationId } : {}),
     ...(normalizedSenderId ? { sender: normalizedSenderId } : {}),
     ...(normalizedRecipientId ? { recipient: normalizedRecipientId } : {}),
   };
@@ -126,10 +129,36 @@ const clearPendingChatTarget = () => {
 };
 
 const getEntityId = (value: any) => normalizeId(value);
-const getConversationId = (value: any) =>
-  normalizeId(value?._id || value?.id || value?.conversation?._id || value?.conversation || '');
-const getMessageId = (value: any) => normalizeId(value?._id || value?.id || '');
+const getConversationId = (value: any) => {
+  if (typeof value === 'string' || typeof value === 'number') {
+    return normalizeId(value);
+  }
+  return normalizeId(value?._id || value?.id || value?.conversation?._id || value?.conversation || '');
+};
+
+const getMessageId = (value: any) => {
+  if (typeof value === 'string' || typeof value === 'number') {
+    return normalizeId(value);
+  }
+  return normalizeId(value?._id || value?.id || '');
+};
 const REVOKED_MESSAGE_LABEL = 'Tin nhắn đã được thu hồi';
+const URL_PATTERN = /(https?:\/\/[^\s]+)/gi;
+
+const getSharedPostLinkLabel = (rawUrl: string): string => {
+  try {
+    const parsedUrl = new URL(rawUrl);
+    const sharedView = (parsedUrl.searchParams.get('view') || '').toLowerCase();
+    const sharedPostId = sanitizeId(parsedUrl.searchParams.get('id'));
+    if (sharedView === 'post' && sharedPostId) {
+      return 'Xem bài viết được chia sẻ';
+    }
+  } catch {
+    // Ignore invalid URLs and fallback to showing raw link text.
+  }
+
+  return '';
+};
 
 // Helper to get the other person in a 1-on-1 conversation
 const getOtherParticipant = (participants: any[], currentUserId: string = '') => {
@@ -227,6 +256,22 @@ interface MessageAttachment {
   size?: number;
 }
 
+const isPdfAttachment = (attachment: MessageAttachment | null | undefined): boolean => {
+  if (!attachment) return false;
+  const mimeType = String(attachment.mime_type || '').toLowerCase();
+  if (mimeType.includes('pdf')) return true;
+
+  const cleanUrl = String(attachment.url || '').split('?')[0].split('#')[0].toLowerCase();
+  return cleanUrl.endsWith('.pdf');
+};
+
+const getAttachmentDisplayName = (attachment: MessageAttachment): string => {
+  const rawName = String(attachment.name || '').trim();
+  if (rawName) return rawName;
+  if (isPdfAttachment(attachment)) return 'Tai_lieu.pdf';
+  return 'Tep_dinh_kem';
+};
+
 const inferAttachmentKind = (url: string = '', mimeType: string = '', declaredKind: string = ''): AttachmentKind => {
   const normalizedKind = String(declaredKind || '').toLowerCase();
   if (normalizedKind === 'image' || normalizedKind === 'video' || normalizedKind === 'file') {
@@ -283,6 +328,73 @@ const getMessageAttachmentSummary = (message: any): string => {
   if (hasVideo) return '[Video]';
   if (hasFile) return '[Tệp đính kèm]';
   return '[Hình ảnh]';
+};
+
+const decodeFileName = (input: string): string => {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+};
+
+const getFilenameFromContentDisposition = (headerValue: string | null): string => {
+  if (!headerValue) return '';
+
+  const utf8Match = headerValue.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    return decodeFileName(utf8Match[1]).replace(/^["']|["']$/g, '').trim();
+  }
+
+  const plainMatch = headerValue.match(/filename\s*=\s*("?)([^";]+)\1/i);
+  if (plainMatch?.[2]) {
+    return decodeFileName(plainMatch[2]).replace(/^["']|["']$/g, '').trim();
+  }
+
+  return '';
+};
+
+const getFileExtension = (filenameOrUrl: string): string => {
+  const value = String(filenameOrUrl || '').split('?')[0].split('#')[0].trim();
+  if (!value.includes('.')) return '';
+  return value.split('.').pop()?.toLowerCase() || '';
+};
+
+const extensionByMime: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'text/plain': 'txt',
+  'text/csv': 'csv',
+  'application/json': 'json',
+  'application/zip': 'zip',
+  'application/vnd.rar': 'rar',
+  'application/x-7z-compressed': '7z',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp'
+};
+
+const ensureDownloadFileName = (filename: string, mimeType: string, url: string, isPdf: boolean): string => {
+  const safeName = String(filename || '').trim() || (isPdf ? 'Tai_lieu.pdf' : 'Tep_dinh_kem');
+  if (getFileExtension(safeName)) return safeName;
+
+  const normalizedMime = String(mimeType || '').split(';')[0].trim().toLowerCase();
+  const extFromMime = extensionByMime[normalizedMime] || '';
+  const extFromUrl = getFileExtension(url);
+  const ext = extFromMime || extFromUrl || (isPdf ? 'pdf' : '');
+
+  return ext ? `${safeName}.${ext}` : safeName;
 };
 
 const isOutgoingMessage = (message: any, currentUserId: string = '') => {
@@ -372,6 +484,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
   const [userSearchResults, setUserSearchResults] = useState<any[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [isZoomedInOverlay, setIsZoomedInOverlay] = useState(false);
   const [sharingMessage, setSharingMessage] = useState<any | null>(null);
   const [shareSearchTerm, setShareSearchTerm] = useState('');
   const [hasMore, setHasMore] = useState(true);
@@ -394,15 +507,48 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     const idFromProps = sanitizeId(getEntityId(currentUser?.id || currentUser?._id));
     if (idFromProps) return idFromProps;
     try {
-      const savedUserStr = localStorage.getItem('currentUser');
+      const savedUserStr = sessionStorage.getItem('currentUser') || localStorage.getItem('currentUser');
       if (!savedUserStr) return '';
       const savedUser = JSON.parse(savedUserStr);
-      return sanitizeId(getEntityId(savedUser?.id || savedUser?._id));
+      const idFromSaved = sanitizeId(getEntityId(savedUser?.id || savedUser?._id));
+      if (idFromSaved) return idFromSaved;
     } catch {
-      return '';
+      // ignore localStorage parsing errors and fallback to token id
     }
+
+    return sanitizeId(getJwtAccountId(sessionStorage.getItem('token') || localStorage.getItem('token') || ''));
   })();
   const selectedConversationId = getConversationId(selectedConversation);
+
+  const renderMessageContent = (content: string, isMe: boolean) => {
+    const messageText = String(content || '');
+    const segments = messageText.split(URL_PATTERN).filter((segment) => segment.length > 0);
+
+    return (
+      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+        {segments.map((segment, index) => {
+          const isUrl = /^https?:\/\/[^\s]+$/i.test(segment);
+          if (!isUrl) {
+            return <React.Fragment key={`text-${index}`}>{segment}</React.Fragment>;
+          }
+
+          const sharedPostLabel = getSharedPostLinkLabel(segment);
+          return (
+            <a
+              key={`link-${index}-${segment}`}
+              href={segment}
+              rel="noopener noreferrer"
+              className={`underline underline-offset-2 break-all ${
+                isMe ? 'text-primary-foreground/90 hover:text-primary-foreground' : 'text-primary hover:text-primary/80'
+              }`}
+            >
+              {sharedPostLabel || segment}
+            </a>
+          );
+        })}
+      </p>
+    );
+  };
 
   const applyRevokedState = (targetMessageId: string, targetConversationId?: string) => {
     setMessages(prev => prev.map(message =>
@@ -466,7 +612,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
   // Helper to get auth headers with fresh token
   const getAuthHeaders = (options: { includeJsonContentType?: boolean; includeAuthorization?: boolean } = {}) => {
     const { includeJsonContentType = true, includeAuthorization = true } = options;
-    const freshToken = localStorage.getItem('token');
+    const freshToken = sessionStorage.getItem('token') || localStorage.getItem('token');
     const headers: any = {
       'Cache-Control': 'no-cache',
       'Pragma': 'no-cache'
@@ -476,7 +622,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     }
     const normalizedCurrentUserId = sanitizeId(currentUserId);
     const normalizedToken = typeof freshToken === 'string' ? freshToken.trim() : '';
-    const tokenAccountId = getJwtAccountId(normalizedToken);
+    const tokenAccountId = sanitizeId(getJwtAccountId(normalizedToken));
     const isTokenUsable = !!normalizedToken && normalizedToken !== 'null' && normalizedToken !== 'undefined';
     const isTokenMismatched =
       !!normalizedCurrentUserId &&
@@ -485,7 +631,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
     if (isTokenMismatched && !tokenMismatchWarnedRef.current) {
       tokenMismatchWarnedRef.current = true;
-      console.warn('[Messages] Token/user mismatch detected. Falling back to userId-based auth for message APIs.');
+      console.warn('[Messages] Token/user mismatch, skip Authorization header and fallback to userId param.');
     }
 
     if (includeAuthorization && isTokenUsable && !isTokenMismatched) {
@@ -504,6 +650,76 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     return `${url}${separator}${params.toString()}`;
   };
 
+  const buildAttachmentDownloadUrl = (attachment: MessageAttachment) => {
+    const params = new URLSearchParams();
+    params.set('url', attachment.url);
+    if (attachment.name) {
+      params.set('name', attachment.name);
+    }
+    return withAuthParam(`${API_URL}/messages/download?${params.toString()}`);
+  };
+
+  const triggerBlobDownload = (blob: Blob, filename: string) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+  };
+
+  const handleAttachmentDownload = async (attachment: MessageAttachment) => {
+    const fallbackUrl = getImageUrl(attachment.url);
+    const endpoint = buildAttachmentDownloadUrl(attachment);
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: getAuthHeaders({ includeJsonContentType: false })
+      });
+
+      if (!response.ok) {
+        let message = 'Khong the tai tep';
+        try {
+          const errorPayload = await response.json();
+          if (errorPayload?.message) message = String(errorPayload.message);
+        } catch {
+          // Ignore parse failures for non-JSON payloads.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      if (!blob || blob.size <= 0) {
+        throw new Error('File trong');
+      }
+
+      const contentDisposition = response.headers.get('content-disposition');
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+      const headerFileName = getFilenameFromContentDisposition(contentDisposition);
+      const requestedName = attachment.name || getAttachmentDisplayName(attachment);
+      const resolvedFileName = ensureDownloadFileName(
+        headerFileName || requestedName,
+        contentType,
+        attachment.url,
+        isPdfAttachment(attachment)
+      );
+
+      if (contentType.startsWith('text/html')) {
+        throw new Error('Nguon tep tra ve HTML thay vi file');
+      }
+
+      triggerBlobDownload(blob, resolvedFileName);
+    } catch (error) {
+      window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+      console.warn('[Messages] Download fallback to source URL:', error);
+      toast.error('Khong tai duoc qua he thong, da mo lien ket goc');
+    }
+  };
+
   // Load conversations
   const fetchConversations = async () => {
     try {
@@ -514,7 +730,8 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       }
 
       const res = await fetch(withAuthParam(`${API_URL}/messages/conversations`), {
-        headers: getAuthHeaders({ includeAuthorization: false })
+        cache: 'no-store',
+        headers: getAuthHeaders()
       });
       const data = await res.json();
       if (data.status === 'success') {
@@ -569,7 +786,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
             const startRes = await fetch(withAuthParam(`${API_URL}/messages/start/${pendingChatUserId}`), {
               method: 'POST',
-              headers: getAuthHeaders({ includeAuthorization: false })
+              headers: getAuthHeaders()
             });
             const startContentType = (startRes.headers.get('content-type') || '').toLowerCase();
             const startData = startContentType.includes('application/json') ? await startRes.json() : null;
@@ -625,7 +842,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       startingConversationUserRef.current = normalizedTargetUserId;
       const response = await fetch(withAuthParam(`${API_URL}/messages/start/${normalizedTargetUserId}`), {
         method: 'POST',
-        headers: getAuthHeaders({ includeAuthorization: false })
+        headers: getAuthHeaders()
       });
       const data = await response.json();
 
@@ -668,7 +885,8 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       if (before) url += `&before=${encodeURIComponent(before)}`;
 
       const res = await fetch(withAuthParam(url), {
-        headers: getAuthHeaders({ includeAuthorization: false })
+        cache: 'no-store',
+        headers: getAuthHeaders()
       });
       const data = await res.json();
 
@@ -707,7 +925,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     try {
       const res = await fetch(withAuthParam(`${API_URL}/messages/${normalizedConversationId}/read`), {
         method: 'PUT',
-        headers: getAuthHeaders({ includeAuthorization: false })
+        headers: getAuthHeaders()
       });
 
       if (res.ok) {
@@ -767,7 +985,8 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         setSearchingUsers(true);
         const response = await fetch(`${API_URL}/auth/search/users?q=${encodeURIComponent(keyword)}&currentUserId=${encodeURIComponent(currentUserId)}`, {
           signal: controller.signal,
-          headers: getAuthHeaders({ includeJsonContentType: false, includeAuthorization: false })
+          cache: 'no-store',
+          headers: getAuthHeaders({ includeJsonContentType: false })
         });
         const data = await response.json();
         if (data.status === 'success') {
@@ -1075,7 +1294,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
         const uploadRes = await fetch(withAuthParam(`${API_URL}/messages/upload`), {
           method: 'POST',
-          headers: getAuthHeaders({ includeJsonContentType: false, includeAuthorization: false }),
+          headers: getAuthHeaders({ includeJsonContentType: false }),
           body: formData,
         });
 
@@ -1103,7 +1322,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
       const response = await fetch(withAuthParam(`${API_URL}/messages`), {
         method: 'POST',
-        headers: getAuthHeaders({ includeAuthorization: false }),
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           recipientId,
           conversationId: targetConversationId,
@@ -1172,7 +1391,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     try {
       const res = await fetch(withAuthParam(`${API_URL}/messages/${normalizedMessageId}/revoke`), {
         method: 'PUT',
-        headers: getAuthHeaders({ includeAuthorization: false })
+        headers: getAuthHeaders()
       });
       const data = await res.json();
 
@@ -1196,7 +1415,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     try {
       const res = await fetch(withAuthParam(`${API_URL}/messages/share`), {
         method: 'POST',
-        headers: getAuthHeaders({ includeAuthorization: false }),
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           messageId: sharingMessage._id || sharingMessage.id,
           recipientId
@@ -1250,7 +1469,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
       const res = await fetch(endpoint, {
         method: 'DELETE',
-        headers: getAuthHeaders({ includeJsonContentType: false, includeAuthorization: false })
+        headers: getAuthHeaders({ includeJsonContentType: false })
       });
       const contentType = (res.headers.get('content-type') || '').toLowerCase();
       const data = contentType.includes('application/json') ? await res.json() : null;
@@ -1491,7 +1710,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
                   <DropdownMenuItem
                     onClick={handleDeleteConversation}
                     disabled={!!deletingConversationId}
-                    className="text-destructive focus:text-destructive cursor-pointer"
+                    className="text-destructive focus:text-destructive cursor-pointer gap-2 font-medium"
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
                     {deletingConversationId ? 'Dang xoa...' : 'Xoa cuoc tro chuyen'}
@@ -1504,7 +1723,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
             <div
               ref={chatContainerRef}
               onScroll={handleChatScroll}
-              className="flex flex-1 flex-col gap-3 overflow-y-auto bg-[radial-gradient(circle_at_10%_0%,rgba(201,31,40,0.11),transparent_38%),radial-gradient(circle_at_90%_0%,rgba(37,99,235,0.10),transparent_36%),linear-gradient(180deg,rgba(255,255,255,0.58),rgba(255,255,255,0.10))] p-4 scroll-smooth"
+              className="flex flex-1 flex-col gap-3 overflow-y-auto bg-[radial-gradient(circle_at_10%_0%,rgba(201,31,40,0.11),transparent_38%),radial-gradient(circle_at_90%_0%,rgba(37,99,235,0.10),transparent_36%),linear-gradient(180deg,rgba(255,255,255,0.58),rgba(255,255,255,0.10))] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.8),rgba(15,23,42,0.4))] p-4 scroll-smooth"
             >
               {loadingMore && (
                 <div className="flex justify-center py-2">
@@ -1595,24 +1814,25 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
                                       />
                                     )}
                                     {attachment.kind === 'file' && (
-                                      <a
-                                        href={getImageUrl(attachment.url)}
-                                        download={attachment.name || ''}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
+                                      <button
+                                        type="button"
+                                        onClick={() => { void handleAttachmentDownload(attachment); }}
                                         className={`flex max-w-[240px] items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
                                           isMe ? 'border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20' : 'border-border bg-background hover:bg-muted'
                                         }`}
                                       >
                                         <FileText className="h-4 w-4 shrink-0" />
-                                        <span className="truncate">{attachment.name || 'Tệp đính kèm'}</span>
-                                      </a>
+                                        <span className="truncate">
+                                          {getAttachmentDisplayName(attachment)}
+                                          {isPdfAttachment(attachment) ? ' (PDF)' : ''}
+                                        </span>
+                                      </button>
                                     )}
                                   </React.Fragment>
                                 ))}
                               </div>
                             )}
-                            {message.content && <p className="text-sm leading-relaxed">{message.content}</p>}
+                            {message.content && renderMessageContent(message.content, isMe)}
                           </>
                         )}
                         <span className={`text-[10px] block mt-1 opacity-60 ${isMe ? 'text-right' : 'text-left'}`}>
@@ -1664,7 +1884,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
                   id="msg-file-upload"
                   ref={fileInputRef}
                   className="hidden"
-                  accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.7z,.csv,.json"
+                  accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.7z,.csv,.json"
                   onChange={handleFileSelect}
                 />
                 <Button
@@ -1704,21 +1924,49 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       </div>
 
       {/* Overlays */}
-      {zoomedImage && (
+      {zoomedImage && createPortal(
         <div
-          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 animate-in fade-in"
-          onClick={() => setZoomedImage(null)}
+          className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-4 backdrop-blur-md animate-in fade-in select-none"
+          onClick={() => { setZoomedImage(null); setIsZoomedInOverlay(false); }}
         >
           <Button
-            className="absolute top-4 right-4 text-white hover:bg-white/20 rounded-full"
+            className="absolute top-6 right-6 text-white hover:bg-white/20 rounded-full z-20 h-11 w-11 backdrop-blur-lg"
             variant="ghost"
             size="icon"
-            onClick={(e) => { e.stopPropagation(); setZoomedImage(null); }}
+            onClick={(e) => { e.stopPropagation(); setZoomedImage(null); setIsZoomedInOverlay(false); }}
           >
             <X className="h-6 w-6" />
           </Button>
-          <img src={zoomedImage} alt="Zoomed" className="max-w-full max-h-full object-contain rounded-lg animate-in zoom-in-95" />
-        </div>
+          
+          <div 
+            className={`relative flex items-center justify-center w-full h-full transition-all duration-300 ${isZoomedInOverlay ? 'overflow-auto cursor-zoom-out' : 'cursor-zoom-in'}`}
+            onClick={(e) => {
+              // Exit when clicking elsewhere or on image when not zoomed
+              if (!isZoomedInOverlay) {
+                return;
+              }
+              e.stopPropagation(); 
+              setIsZoomedInOverlay(false); 
+            }}
+          >
+            <img 
+              src={zoomedImage} 
+              alt="Zoomed" 
+              className={`transition-all duration-500 rounded-lg shadow-2xl ${
+                isZoomedInOverlay 
+                  ? 'max-w-none max-h-none w-auto h-auto' 
+                  : 'max-w-full max-h-[96vh] object-contain'
+              } animate-in zoom-in-95`} 
+              onClick={(e) => {
+                if (isZoomedInOverlay) {
+                  e.stopPropagation();
+                  setIsZoomedInOverlay(false);
+                }
+              }}
+            />
+          </div>
+        </div>,
+        document.body
       )}
 
       <Dialog open={!!sharingMessage} onOpenChange={(open) => !open && setSharingMessage(null)}>

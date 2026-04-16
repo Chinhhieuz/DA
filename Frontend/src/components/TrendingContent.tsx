@@ -36,7 +36,7 @@ export function TrendingContent({ onPostClick, currentUser }: TrendingContentPro
   return (
     <div className="w-80 shrink-0">
       <div className="page-section-card overflow-hidden">
-        <div className="border-b border-border/70 bg-[radial-gradient(circle_at_top_left,rgba(201,31,40,0.12),transparent_42%),linear-gradient(145deg,rgba(255,255,255,0.88),rgba(255,248,242,0.92))] px-5 py-4">
+        <div className="border-b border-border/70 bg-[radial-gradient(circle_at_top_left,rgba(201,31,40,0.12),transparent_45%)] bg-accent/40 px-5 py-4 transition-colors">
           <div className="mb-1 flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-primary" />
             <h3 className="text-sm font-black uppercase tracking-[0.22em] text-foreground">Trending</h3>

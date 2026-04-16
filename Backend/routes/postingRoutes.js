@@ -2,6 +2,7 @@ const express = require('express');
 const postingController = require('../controllers/postingController');
 const { isAdmin } = require('../middlewares/adminMiddleware');
 const { postValidation } = require('../middlewares/validateMiddleware');
+const { cachePublicGet } = require('../middlewares/cacheMiddleware');
 const multer = require('multer');
 
 const router = express.Router();
@@ -39,9 +40,17 @@ router.post('/', (req, res, next) => {
     });
 }, postValidation, postingController.createPost);
 
-router.get('/', postingController.getAllPosts);
-router.get('/trending', postingController.getTrendingPosts);
-router.get('/search', postingController.searchPosts);
+router.get(
+    '/',
+    cachePublicGet({
+        sMaxAge: 45,
+        staleWhileRevalidate: 180,
+        shouldBypass: (req) => req.query.followingOnly === 'true'
+    }),
+    postingController.getAllPosts
+);
+router.get('/trending', cachePublicGet({ sMaxAge: 60, staleWhileRevalidate: 300 }), postingController.getTrendingPosts);
+router.get('/search', cachePublicGet({ sMaxAge: 30, staleWhileRevalidate: 120 }), postingController.searchPosts);
 router.get('/pending', isAdmin, postingController.getPendingPosts);
 router.get('/admin/community/:communityName', isAdmin, postingController.getCommunityPostsAdmin);
 router.put('/:id/approve', isAdmin, postingController.approvePost);
@@ -50,6 +59,6 @@ router.put('/:id/react', postingController.reactToPost);
 router.delete('/:id', postingController.deletePost);
 router.post('/:id/save', postingController.toggleSavePost);
 router.get('/saved/:userId', postingController.getSavedPosts);
-router.get('/:id', postingController.getPostById);
+router.get('/:id', cachePublicGet({ sMaxAge: 30, staleWhileRevalidate: 120 }), postingController.getPostById);
 
 module.exports = router;

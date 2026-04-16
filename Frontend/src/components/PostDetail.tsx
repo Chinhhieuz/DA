@@ -93,7 +93,7 @@ function CommentReaction({
         <Button
           variant="ghost"
           size="sm"
-          className={`h-6 w-6 p-0 rounded-full transition-colors ${userReaction === 'up' || userReaction === '👍' ? 'text-orange-600 bg-orange-50 hover:bg-orange-100' : 'text-muted-foreground hover:text-orange-600 hover:bg-orange-50'}`}
+          className={`h-6 w-6 p-0 rounded-full transition-colors ${userReaction === 'up' || userReaction === '👍' ? 'text-orange-600 bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30' : 'text-muted-foreground hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20'}`}
           onClick={() => handleVote('up')}
         >
           <ArrowBigUp className={`h-3.5 w-3.5 ${userReaction === 'up' || userReaction === '👍' ? 'fill-orange-600' : ''}`} />
@@ -109,7 +109,7 @@ function CommentReaction({
         <Button
           variant="ghost"
           size="sm"
-          className={`h-6 w-6 p-0 rounded-full transition-colors ${userReaction === 'down' ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' : 'text-muted-foreground hover:text-blue-600 hover:bg-blue-50'}`}
+          className={`h-6 w-6 p-0 rounded-full transition-colors ${userReaction === 'down' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30' : 'text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20'}`}
           onClick={() => handleVote('down')}
         >
           <ArrowBigDown className={`h-3.5 w-3.5 ${userReaction === 'down' ? 'fill-blue-600' : ''}`} />
@@ -153,13 +153,13 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
     const fetchComments = async () => {
       try {
         const url = `${API_URL}/comments/post/${post.id}${currentUser.id ? `?userId=${currentUser.id}` : ''}`;
-        const res = await fetch(url);
+        const res = await fetch(url, { cache: 'no-store' });
         const data = await res.json();
         if (data.status === 'success') {
           const formattedComments = data.data.map((c: any) => ({
             id: c._id,
             author: {
-              name: c.author?.display_name || c.author?.username || 'Unknown',
+              name: c.author?.full_name || c.author?.username || 'Unknown',
               username: c.author?.username || 'unknown',
               avatar: getImageUrl(c.author?.avatar_url),
               id: c.author?._id
@@ -173,7 +173,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
             threads: (c.threads || []).map((t: any) => ({
               id: t._id,
               author: {
-                name: t.author?.display_name || t.author?.username || 'Unknown',
+                name: t.author?.full_name || t.author?.username || 'Unknown',
                 username: t.author?.username || 'unknown',
                 avatar: getImageUrl(t.author?.avatar_url),
                 id: t.author?._id
@@ -337,7 +337,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
       <div className="flex-1 overflow-y-auto px-1 pb-4">
         {(post.status === 'hidden' || post.status === 'rejected' || post.status === 'pending') && (
           <Card className={`mb-4 border-2 p-4 flex items-center gap-3 ${
-            post.status === 'pending' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
+            post.status === 'pending' ? 'bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800' : 'bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-800'
           }`}>
             <div className={`p-2 rounded-full ${post.status === 'pending' ? 'bg-amber-100' : 'bg-red-100'}`}>
               {post.status === 'pending' ? <ShieldAlert className="h-5 w-5 text-amber-600" /> : <Lock className="h-5 w-5 text-red-600" />}

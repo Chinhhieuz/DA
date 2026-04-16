@@ -85,7 +85,17 @@ const accountSchema = new mongoose.Schema({
     }
 }, { 
     // Chỉ định rõ tên collection là "Account" để khớp với format trên MongoDB
-    collection: 'Account' 
+    collection: 'Account',
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
 });
+
+accountSchema.virtual('display_name').get(function () {
+    return this.full_name || this.username || '';
+});
+
+accountSchema.index({ username: 1 });
+accountSchema.index({ resetPasswordToken: 1, resetPasswordExpires: 1 });
+accountSchema.index({ created_at: -1 });
 
 module.exports = mongoose.model('Account', accountSchema);

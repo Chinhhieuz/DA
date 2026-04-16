@@ -1,89 +1,67 @@
 const jwt = require('jsonwebtoken');
-const Account = require('../models/Account');
 const mongoose = require('mongoose');
+const Account = require('../models/Account');
 
 const normalizeId = (value) => String(value || '').trim();
+const allowLegacyAuth = String(
+    process.env.ALLOW_LEGACY_AUTH || (process.env.NODE_ENV === 'development' ? 'true' : 'false')
+).toLowerCase() === 'true';
 
-/**
- * Middleware xác thực người dùng qua JWT Token.
- * Hỗ trợ Tương thích ngược (Legacy Support) cho phép dùng admin_id/userId nếu không có token.
- */
 const protect = async (req, res, next) => {
-    let token;
+    let token = '';
     const isMessagesRoute = String(req.originalUrl || '').startsWith('/api/messages');
 
-    // 1. Kiểm tra Token trong Header Authorization
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
         token = req.headers.authorization.split(' ')[1];
-    } 
-    // 2. Kiểm tra Token trong Cookies (nếu dùng cookie-parser)
-    else if (req.cookies && req.cookies.jwt) {
+    } else if (req.cookies && req.cookies.jwt) {
         token = req.cookies.jwt;
     }
 
-    // TRƯỜNG HỢP CÓ TOKEN: Xác thực JWT
     if (token) {
         try {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            
-            // Tìm user và gắn vào request
-            req.user = await Account.findById(decoded.accountId).select('-password_hash');
-            
-            if (!req.user) {
-                return res.status(401).json({ status: 'fail', message: 'Người dùng sở hữu token này không còn tồn tại!' });
+            const account = await Account.findById(decoded.accountId).select('-password_hash');
+            if (!account) {
+                return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
             }
 
-            // For message routes, prefer explicit userId when provided to avoid
-            // token/localStorage drift causing sender/recipient misclassification.
+            req.user = account;
+
+            // Backward compatibility for current messaging client while token/user drift exists.
             const explicitMessageUserId = normalizeId(req.body?.userId || req.query?.userId);
             if (isMessagesRoute && explicitMessageUserId && mongoose.Types.ObjectId.isValid(explicitMessageUserId)) {
                 if (String(req.user._id) !== explicitMessageUserId) {
                     const explicitUser = await Account.findById(explicitMessageUserId).select('-password_hash');
-                    if (explicitUser) {
-                        req.user = explicitUser;
-                    }
+                    if (explicitUser) req.user = explicitUser;
                 }
             }
 
             return next();
         } catch (error) {
-            console.error('JWT Error:', error.message);
-            // Thay vì trả về 401 luôn, ta sẽ để nó rơi xuống phần Legacy Support bên dưới
-            // return res.status(401).json({ status: 'fail', message: 'Token không hợp lệ hoặc đã hết hạn!' });
+            // Continue to legacy flow only when explicitly enabled.
         }
     }
 
-    // TRƯỜNG HỢP KHÔNG CÓ TOKEN: Hỗ trợ tương thích ngược (Legacy Support)
-    // Chấp nhận admin_id hoặc userId từ body/query/params (Cảnh báo: Cách này không bảo mật)
+    if (!allowLegacyAuth) {
+        return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+    }
+
     const legacyId =
         req.body?.admin_id ||
         req.query?.admin_id ||
         req.body?.userId ||
         req.query?.userId ||
         (isMessagesRoute ? null : req.params?.userId);
-    
-    if (legacyId) {
-        console.warn(`[AUTH] ⚠️ Legacy access attempt with ID: ${legacyId} at ${req.originalUrl}`);
-        
-        try {
-            if (mongoose.Types.ObjectId.isValid(legacyId)) {
-                const user = await Account.findById(legacyId).select('-password_hash');
-                if (user) {
-                    req.user = user;
-                    return next();
-                }
-            } else {
-                console.warn(`[AUTH] ❌ Legacy ID invalid format: ${legacyId}`);
-            }
-        } catch (err) {
-            console.error(`[AUTH] 🚨 Error looking up legacy user: ${err.message}`);
+
+    if (legacyId && mongoose.Types.ObjectId.isValid(legacyId)) {
+        const account = await Account.findById(legacyId).select('-password_hash');
+        if (account) {
+            req.user = account;
+            return next();
         }
     }
 
-    return res.status(401).json({ 
-        status: 'fail', 
-        message: 'Bạn chưa đăng nhập! Vui lòng gửi Token Authorization hoặc Admin ID hợp lệ để truy cập.' 
-    });
+    return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
 };
 
 module.exports = { protect };

@@ -53,13 +53,13 @@ const createCommentService = async (commentData) => {
 
 const getCommentsByPostService = async (postId, userId) => {
     const comments = await Comment.find({ post: postId })
-        .populate('author', 'username email role avatar_url display_name')
+        .populate('author', 'username email role avatar_url full_name')
         .sort({ upvotes: -1, created_at: -1 })
         .lean();
     
     for (let comment of comments) {
         const threads = await Thread.find({ comment: comment._id })
-            .populate('author', 'username email role avatar_url display_name')
+            .populate('author', 'username email role avatar_url full_name')
             .sort({ created_at: 1 })
             .lean();
             

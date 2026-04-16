@@ -163,7 +163,7 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setIsSearchOpen(true); }}
               onFocus={() => setIsSearchOpen(true)}
-              className="h-11 w-full rounded-full border-white/15 bg-white/14 pl-10 pr-4 text-white placeholder:text-white/60 backdrop-blur-md focus:border-white/40 focus:bg-white focus:text-foreground focus:placeholder:text-muted-foreground"
+              className="h-11 w-full rounded-full border-white/15 bg-white/14 pl-10 pr-4 text-white placeholder:text-white/60 backdrop-blur-md focus:border-white/40 focus:bg-white focus:text-[#0f172a] focus:placeholder:text-gray-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:placeholder:text-slate-400"
             />
           </div>
 
@@ -221,13 +221,8 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Socket Status Indicator */}
-          <div 
-            className={`mr-2 h-2.5 w-2.5 rounded-full transition-all duration-500 ${isConnected ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.75)]' : 'bg-rose-400 animate-pulse outline outline-2 outline-offset-2 outline-rose-300/20'}`}
-            title={isConnected ? 'Đã kết nối Socket' : 'Mất kết nối Socket'}
-          />
-          {isAuthenticated ? (
+          <div className="flex items-center gap-2 shrink-0">
+            {isAuthenticated ? (
             <>
               <Button
                 variant="ghost"
@@ -236,7 +231,7 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
               >
                 <MessageSquare className="h-5 w-5" />
                 {unreadMessagesCount > 0 && (
-                  <Badge className="absolute -right-1 -top-1 h-5 min-w-5 bg-red-500 text-white px-1 hover:bg-red-500">
+                  <Badge className="absolute -right-1 -top-1 h-5 min-w-5 bg-red-500 text-white px-1 hover:bg-red-600 border-none shadow-sm">
                     {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
                   </Badge>
                 )}
@@ -249,7 +244,7 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
               >
                 <Bell className="h-5 w-5" />
                 {notificationCount > 0 && (
-                  <Badge className="absolute -right-1 -top-1 h-5 min-w-5 bg-white text-primary px-1 hover:bg-white/90">
+                  <Badge className="absolute -right-1 -top-1 h-5 min-w-5 bg-white text-primary px-1 hover:bg-white/90 border-none shadow-sm dark:bg-red-500 dark:text-white">
                     {notificationCount}
                   </Badge>
                 )}
@@ -318,7 +313,7 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
             </>
           ) : (
             <Button
-              className="bg-white text-primary hover:bg-white/90 font-semibold"
+              className="bg-white text-primary hover:bg-white/90 font-semibold dark:bg-primary dark:text-white dark:hover:bg-primary/90"
               onClick={() => onViewChange('login')}
             >
               Đăng nhập
