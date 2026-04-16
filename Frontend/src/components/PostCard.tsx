@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ReportModal } from './ReportModal';
 
-// Component lightbox xem toÃ n bá»™ áº£nh
+// Component lightbox xem toàn bộ ảnh
 function ImageLightbox({ images, startIndex, onClose }: { images: string[]; startIndex: number; onClose: () => void }) {
   const [current, setCurrent] = useState(startIndex);
   const [isZoomed, setIsZoomed] = useState(false);
@@ -114,7 +114,7 @@ function ImageLightbox({ images, startIndex, onClose }: { images: string[]; star
 
         <img
           src={getImageUrl(images[current])}
-          alt={`Anh ${current + 1}`}
+          alt={`Ảnh ${current + 1}`}
           className={`transition-all duration-500 rounded-sm shadow-2xl ${
             isZoomed
               ? 'max-w-none max-h-none w-auto h-auto'
@@ -168,7 +168,7 @@ function ImageCollage({ images, title }: { images: string[]; title: string }) {
     setLightboxIndex(idx);
   };
 
-  // Layout tÃ¹y theo sá»‘ áº£nh
+  // Layout tùy theo số ảnh
   const getGridClass = () => {
     switch (visible.length) {
       case 1: return 'grid-cols-1';
@@ -184,7 +184,7 @@ function ImageCollage({ images, title }: { images: string[]; title: string }) {
           const isLastVisible = idx === visible.length - 1 && remaining > 0;
           const isSingle = visible.length === 1;
           const aspectClass = isSingle ? '' : 'aspect-square';
-          // áº¢nh Ä‘áº§u tiÃªn khi cÃ³ 3 áº£nh thÃ¬ chiáº¿m full width hÃ ng Ä‘áº§u
+          // Ảnh đầu tiên khi có 3 ảnh thì chiếm full width hàng đầu
           const isWide = visible.length === 3 && idx === 0;
 
           return (
@@ -203,11 +203,11 @@ function ImageCollage({ images, title }: { images: string[]; title: string }) {
               />
               {/* Hover overlay */}
               <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-colors duration-300" />
-              {/* +X overlay trÃªn áº£nh cuá»‘i */}
+              {/* +X overlay trên ảnh cuối */}
               {isLastVisible && (
                 <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center">
                   <span className="text-white text-3xl font-black drop-shadow-lg">+{remaining}</span>
-                  <span className="text-white/80 text-xs mt-1">Xem táº¥t cáº£</span>
+                  <span className="text-white/80 text-xs mt-1">Xem tất cả</span>
                 </div>
               )}
             </div>
@@ -329,7 +329,7 @@ export function PostCard({
 
   const handleReportAction = () => {
     if (!currentUser?.id) {
-       toast.error('Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ bÃ¡o cÃ¡o ná»™i dung!');
+       toast.error('Vui lòng đăng nhập để báo cáo nội dung!');
        return;
     }
     setIsReportModalOpen(true);
@@ -337,7 +337,7 @@ export function PostCard({
 
   const handleSavePost = async () => {
     if (!currentUser?.id) {
-       toast.error('Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ lÆ°u bÃ i viáº¿t!');
+       toast.error('Vui lòng đăng nhập để lưu bài viết!');
        return;
     }
     try {
@@ -356,23 +356,23 @@ export function PostCard({
         toast.error(data.message);
       }
     } catch (err: any) {
-      console.error('Lá»—i khi lÆ°u bÃ i:', err);
-      toast.error(`Lá»—i khi lÆ°u bÃ i viáº¿t: ${err.message || 'KhÃ´ng rÃµ nguyÃªn nhÃ¢n'}`);
+      console.error('Lỗi khi lưu bài:', err);
+      toast.error(`Lỗi khi lưu bài viết: ${err.message || 'Không rõ nguyên nhân'}`);
     }
   };
 
   const handleVote = async (e: React.MouseEvent, type: 'up' | 'down') => {
     e.stopPropagation();
     if (!currentUser?.id) {
-      toast.error('Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ bÃ¬nh chá»n!');
+      toast.error('Vui lòng đăng nhập để bình chọn!');
       return;
     }
     if (post.status !== 'approved') {
-      toast.error('BÃ i viáº¿t nÃ y Ä‘Ã£ bá»‹ khÃ³a!');
+      toast.error('Bài viết này đã bị khóa!');
       return;
     }
 
-    const isRemoving = userReaction === type || (type === 'up' && userReaction === 'ðŸ‘');
+    const isRemoving = userReaction === type || (type === 'up' && userReaction === '👍');
     const action = type === 'up' 
       ? (isRemoving ? 'unlike' : 'up') 
       : (isRemoving ? 'undislike' : 'down');
@@ -392,7 +392,7 @@ export function PostCard({
       if (isRemoving) setDownVotes(Math.max(0, downVotes - 1));
       else {
         setDownVotes(downVotes + 1);
-        if (userReaction === 'up' || userReaction === 'ðŸ‘') setUpVotes(Math.max(0, upVotes - 1));
+        if (userReaction === 'up' || userReaction === '👍') setUpVotes(Math.max(0, upVotes - 1));
       }
     }
     
@@ -407,13 +407,13 @@ export function PostCard({
        
        const data = await res.json();
        if (!res.ok || data.status !== 'success') {
-          throw new Error(data.message || 'Lá»—i khÃ´ng xÃ¡c Ä‘á»‹nh tá»« server');
+          throw new Error(data.message || 'Lỗi không xác định từ server');
        }
 
        if (onReact) onReact(post.id, action, type);
     } catch (e: any) { 
-      console.error('Lá»—i lÆ°u vote:', e);
-      toast.error('KhÃ´ng thá»ƒ lÆ°u lÆ°á»£t bÃ¬nh chá»n. Vui lÃ²ng thá»­ láº¡i!');
+      console.error('Lỗi lưu vote:', e);
+      toast.error('Không thể lưu lượt bình chọn. Vui lòng thử lại!');
       // Revert state
       setUpVotes(previousUp);
       setDownVotes(previousDown);
@@ -423,23 +423,23 @@ export function PostCard({
 
   const handleShare = () => {
     navigator.clipboard.writeText(`${window.location.origin}/?view=post&id=${post.id}`);
-    toast.success('ÄÃ£ sao chÃ©p liÃªn káº¿t vÃ o clipboard');
+    toast.success('Đã sao chép liên kết vào clipboard');
   };
 
   const handleDeletePost = async () => {
-    // TrÃ¬ hoÃ£n má»™t chÃºt Ä‘á»ƒ Dropdown Menu Ä‘Ã³ng láº¡i hoÃ n toÃ n
+    // Trì hoãn một chút để Dropdown Menu đóng lại hoàn toàn
     setTimeout(async () => {
       if (!currentUser?.id) {
-        toast.error('Lá»—i: Báº¡n cáº§n Ä‘Äƒng nháº­p Ä‘á»ƒ xÃ³a bÃ i viáº¿t nÃ y.');
+        toast.error('Lỗi: Bạn cần đăng nhập để xóa bài viết này.');
         return;
       }
 
       if (!post.id) {
-         toast.error('Lá»—i ká»¹ thuáº­t: KhÃ´ng tÃ¬m tháº¥y ID bÃ i viáº¿t.');
+         toast.error('Lỗi kỹ thuật: Không tìm thấy ID bài viết.');
          return;
       }
 
-      if (!window.confirm('Báº¡n cÃ³ cháº¯c cháº¯n muá»‘n xÃ³a bÃ i viáº¿t nÃ y khÃ´ng? Quay láº¡i sáº½ khÃ´ng Ä‘Æ°á»£c.')) return;
+      if (!window.confirm('Bạn có chắc chắn muốn xóa bài viết này không? Quay lại sẽ không được.')) return;
 
       try {
         const deleteUrl = `${API_URL}/posts/${post.id}?user_id=${currentUser.id}`;
@@ -453,19 +453,19 @@ export function PostCard({
         
         const data = await res.json();
         if (data.status === 'success') {
-          toast.success('ÄÃ£ xÃ³a bÃ i viáº¿t thÃ nh cÃ´ng!');
+          toast.success('Đã xóa bài viết thành công!');
           if (onDeleteSuccess) {
             onDeleteSuccess(post.id);
           } else {
-             // Dá»± phÃ²ng náº¿u khÃ´ng cÃ³ callback
+             // Dự phòng nếu không có callback
              window.location.reload(); 
           }
         } else {
           toast.error(data.message);
         }
       } catch (err: any) {
-        console.error('Lá»—i khi xÃ³a bÃ i:', err);
-        toast.error(`Lá»—i máº¡ng khi xÃ³a bÃ i viáº¿t: ${err.message}`);
+        console.error('Lỗi khi xóa bài:', err);
+        toast.error(`Lỗi mạng khi xóa bài viết: ${err.message}`);
       }
     }, 100);
   };
@@ -516,7 +516,7 @@ export function PostCard({
                 >
                    {post.author.name || post.author.username}
                 </span>
-                <span className="text-muted-foreground text-[11px] font-medium">â€¢ {post.timestamp}</span>
+                <span className="text-muted-foreground text-[11px] font-medium">• {post.timestamp}</span>
               </div>
               <div className="mt-0.5 flex flex-wrap gap-1">
                 <Badge 
@@ -538,10 +538,10 @@ export function PostCard({
                        'bg-green-50 text-green-600 border-green-200'
                      }`}
                    >
-                     {post.status === 'pending' ? 'Chá» duyá»‡t' : 
-                      post.status === 'rejected' ? 'Bá»‹ tá»« chá»‘i' : 
-                      post.status === 'hidden' ? 'Bá»‹ áº©n' : 
-                      'ÄÃ£ Ä‘Äƒng'}
+                     {post.status === 'pending' ? 'Chờ duyệt' : 
+                      post.status === 'rejected' ? 'Bị từ chối' : 
+                      post.status === 'hidden' ? 'Bị ẩn' : 
+                      'Đã đăng'}
                    </Badge>
                 )}
               </div>
@@ -572,20 +572,20 @@ export function PostCard({
                       body: JSON.stringify({ followerId: currentUser.id, targetId: post.author.id })
                     });
                     if (res.ok) {
-                      toast.success(`${!prevIsFollowing ? 'ÄÃ£ theo dÃµi' : 'ÄÃ£ bá» theo dÃµi'} ${post.author.name || post.author.username}`);
+                      toast.success(`${!prevIsFollowing ? 'Đã theo dõi' : 'Đã bỏ theo dõi'} ${post.author.name || post.author.username}`);
                     } else {
                       const data = await res.json();
-                      toast.error(data.message || 'Lá»—i khi thá»±c hiá»‡n thao tÃ¡c');
+                      toast.error(data.message || 'Lỗi khi thực hiện thao tác');
                       setIsFollowing(prevIsFollowing);
                     }
                   } catch (err) {
-                    toast.error('Lá»—i káº¿t ná»‘i mÃ¡y chá»§');
+                    toast.error('Lỗi kết nối máy chủ');
                     setIsFollowing(prevIsFollowing);
                   }
                 }}
                >
                  {isFollowing ? <Check className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
-                 {isFollowing ? 'ÄÃ£ theo dÃµi' : 'Theo dÃµi'}
+                 {isFollowing ? 'Đã theo dõi' : 'Theo dõi'}
                </Button>
             )}
           </div>
@@ -602,7 +602,7 @@ export function PostCard({
               className="tiptap-prose mb-4 text-[14px] leading-7 text-foreground/85"
               dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(post.content) }}
             />
-            {/* Multi-image Rendering â€” dÃ¹ng ImageCollage */}
+            {/* Multi-image Rendering - dùng ImageCollage */}
             {post.video && (
               <div className="mb-3" onClick={(e) => e.stopPropagation()}>
                 <video src={post.video} controls className="w-full rounded-xl bg-black max-h-[520px]" />
@@ -615,7 +615,7 @@ export function PostCard({
             ) : null}
           </div>
 
-          {/* Biá»ƒu Ä‘á»“ sá»‘ liá»‡u LÆ°á»£t ThÃ­ch / BÃ¬nh luáº­n */}
+          {/* Biểu đồ số liệu Lượt Thích / Bình luận */}
           <div className="mb-3 flex items-center justify-between px-1 text-xs text-muted-foreground">
               <div className="flex gap-2 items-center">
                 {upVotes > 0 && (
@@ -632,7 +632,7 @@ export function PostCard({
              <div>
                 {(post.commentCount && post.commentCount > 0) || (post.comments && post.comments.length > 0) ? (
                    <span className="cursor-pointer hover:underline" onClick={() => onPostClick && onPostClick(post)}>
-                       {Math.max(post.commentCount || 0, post.comments?.length || 0)} BÃ¬nh luáº­n
+                       {Math.max(post.commentCount || 0, post.comments?.length || 0)} Bình luận
                    </span>
                 ) : null}
              </div>
@@ -649,12 +649,12 @@ export function PostCard({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className={`rounded-full h-8 w-8 p-0 transition-all ${userReaction === 'up' || userReaction === 'ðŸ‘' ? 'text-orange-600 bg-orange-500/15 hover:bg-orange-500/25' : 'text-muted-foreground hover:text-orange-600 hover:bg-orange-500/10'}`}
+                  className={`rounded-full h-8 w-8 p-0 transition-all ${userReaction === 'up' || userReaction === '👍' ? 'text-orange-600 bg-orange-500/15 hover:bg-orange-500/25' : 'text-muted-foreground hover:text-orange-600 hover:bg-orange-500/10'}`}
                   onClick={(e) => handleVote(e, 'up')}
                 >
-                  <ArrowBigUp className={`h-5 w-5 ${userReaction === 'up' || userReaction === 'ðŸ‘' ? 'fill-orange-600' : ''}`} />
+                  <ArrowBigUp className={`h-5 w-5 ${userReaction === 'up' || userReaction === '👍' ? 'fill-orange-600' : ''}`} />
                 </Button>
-                <span className={`text-sm font-bold min-w-[12px] ${userReaction === 'up' || userReaction === 'ðŸ‘' ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                <span className={`text-sm font-bold min-w-[12px] ${userReaction === 'up' || userReaction === '👍' ? 'text-orange-600' : 'text-muted-foreground'}`}>
                   {upVotes}
                 </span>
               </div>
@@ -683,7 +683,7 @@ export function PostCard({
                 onClick={(e) => { e.stopPropagation(); onPostClick && onPostClick(post); }}
               >
                 <MessageCircle className="h-4 w-4" />
-                <span>BÃ¬nh luáº­n</span>
+                <span>Bình luận</span>
               </Button>
               <Button
                 variant="ghost"
@@ -692,7 +692,7 @@ export function PostCard({
                 onClick={(e) => { e.stopPropagation(); handleShare(); }}
               >
                 <Share2 className="h-4 w-4" />
-                <span>Chia sáº»</span>
+                <span>Chia sẻ</span>
               </Button>
             </div>
 
@@ -705,12 +705,12 @@ export function PostCard({
               <DropdownMenuContent align="end" className="glass-panel w-64 p-2">
                 <DropdownMenuItem onClick={handleSavePost} className="cursor-pointer gap-3 p-3 text-sm font-medium text-foreground focus:bg-muted focus:text-foreground">
                   <Bookmark className={`h-5 w-5 ${currentUser?.savedPosts?.includes(post.id) ? 'fill-primary text-primary' : 'text-foreground'}`} />
-                  <span>{currentUser?.savedPosts?.includes(post.id) ? 'Há»§y Ä‘Ã£ lÆ°u' : 'LÆ°u bÃ i viáº¿t'}</span>
+                  <span>{currentUser?.savedPosts?.includes(post.id) ? 'Hủy đã lưu' : 'Lưu bài viết'}</span>
                 </DropdownMenuItem>
 
                 <DropdownMenuItem onClick={handleReportAction} className="cursor-pointer gap-3 p-3 text-sm font-medium focus:bg-muted text-red-600 focus:text-red-700">
                   <Flag className="h-5 w-5 text-red-600" />
-                  <span>BÃ¡o cÃ¡o bÃ i viáº¿t</span>
+                  <span>Báo cáo bài viết</span>
                 </DropdownMenuItem>
 
                 {currentUser?.id === post.author.id && (
@@ -718,7 +718,7 @@ export function PostCard({
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleDeletePost} className="cursor-pointer gap-3 p-3 text-sm font-medium focus:bg-red-50 text-red-600 focus:text-red-700">
                       <Trash2 className="h-5 w-5" />
-                      <span>XÃ³a bÃ i viáº¿t</span>
+                      <span>Xóa bài viết</span>
                     </DropdownMenuItem>
                   </>
                 )}
