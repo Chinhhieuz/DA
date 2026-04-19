@@ -155,9 +155,11 @@ interface AppContentProps {
   posts: Post[];
   setPosts: React.Dispatch<React.SetStateAction<Post[]>>;
   handleLogout: () => void;
-  fetchPosts: (userId?: string, comm?: string | null, filter?: string) => Promise<void>;
+  fetchPosts: (userId?: string, comm?: string | null, filter?: string, pageNum?: number, append?: boolean) => Promise<void>;
   fetchUnreadMessagesCount: (userId: string) => Promise<void>;
   fetchUnreadCount: (userId: string) => Promise<void>;
+  isLoadingMore?: boolean;
+  hasMore?: boolean;
 }
 
 function AppContent({
@@ -178,7 +180,9 @@ function AppContent({
   handleLogout,
   fetchPosts,
   fetchUnreadMessagesCount,
-  fetchUnreadCount
+  fetchUnreadCount,
+  isLoadingMore,
+  hasMore
 }: AppContentProps) {
   const { socket, isConnected } = useSocket();
   const location = useLocation();
@@ -574,6 +578,8 @@ function AppContent({
                   onDeleteSuccess={handlePostDeleted}
                 />
               ))}
+              {isLoadingMore && <div className="text-center text-sm text-muted-foreground py-4">Đang tải thêm...</div>}
+              {!hasMore && posts.length > 0 && <div className="text-center text-sm text-muted-foreground py-4">Đã hết bài viết</div>}
             </div>
           </div>
         );
@@ -782,6 +788,9 @@ export default function App() {
   const [activeCommunity, setActiveCommunity] = useState<string | null>(null);
   const [feedFilter, setFeedFilter] = useState<'all' | 'following'>('all');
   const [posts, setPosts] = useState<Post[]>(initialPosts);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const postsAbortRef = useRef<AbortController | null>(null);
   const unreadNotificationsAbortRef = useRef<AbortController | null>(null);
   const unreadMessagesAbortRef = useRef<AbortController | null>(null);
@@ -844,27 +853,47 @@ export default function App() {
     }
   }, []);
 
-  const fetchPosts = useCallback(async (userId: string = currentUser?.id || '', community: string | null = activeCommunity, filter: string = feedFilter) => {
+  const fetchPosts = useCallback(async (userId: string = currentUser?.id || '', community: string | null = activeCommunity, filter: string = feedFilter, pageNum: number = 1, append: boolean = false) => {
     const normalizedUserId = String(userId || '').trim();
 
     const params = new URLSearchParams();
     if (normalizedUserId) params.set('userId', normalizedUserId);
     if (community) params.set('community', community);
     if (filter === 'following' && normalizedUserId) params.set('followingOnly', 'true');
+    params.set('page', String(pageNum));
+    params.set('limit', '1');
 
-    postsAbortRef.current?.abort();
-    const controller = new AbortController();
-    postsAbortRef.current = controller;
+    if (!append) {
+      postsAbortRef.current?.abort();
+      const controller = new AbortController();
+      postsAbortRef.current = controller;
+    }
 
     try {
+      if (append) setIsLoadingMore(true);
       const queryString = params.toString();
       const url = queryString ? `${API_URL}/posts?${queryString}` : `${API_URL}/posts`;
-      const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+      const res = await fetch(url, { signal: append ? undefined : postsAbortRef.current?.signal, cache: 'no-store' });
       const data = await res.json();
-      if (data.status === 'success') setPosts(data.data);
+      if (data.status === 'success') {
+        const fetchedPosts = data.data || [];
+        setPosts(prev => {
+          if (!append) return fetchedPosts;
+          const existingIds = new Set(prev.map(p => p.id));
+          const newPosts = fetchedPosts.filter((p: any) => !existingIds.has(p.id));
+          return [...prev, ...newPosts];
+        });
+        if (fetchedPosts.length < 1) {
+          setHasMore(false);
+        } else {
+          setHasMore(true);
+        }
+      }
     } catch (err) {
       if (isAbortError(err)) return;
       console.error('Failed to fetch posts:', err);
+    } finally {
+      if (append) setIsLoadingMore(false);
     }
   }, [activeCommunity, feedFilter, currentUser.id]);
 
@@ -876,8 +905,30 @@ export default function App() {
   }, [isAuthenticated, currentUser.id, currentUser._id, fetchUnreadCount, fetchUnreadMessagesCount]);
 
   useEffect(() => {
-    fetchPosts(currentUser?.id || '');
+    setPage(1);
+    fetchPosts(currentUser?.id || '', activeCommunity, feedFilter, 1, false);
   }, [activeCommunity, feedFilter, fetchPosts, currentUser?.id]);
+
+  useEffect(() => {
+    if (page > 1) {
+      fetchPosts(currentUser?.id || '', activeCommunity, feedFilter, page, true);
+    }
+  }, [page, activeCommunity, feedFilter, fetchPosts, currentUser?.id]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const isHome = window.location.pathname === '/' || window.location.pathname === '/home';
+      if (!isHome) return;
+
+      if (window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - 500) {
+        if (hasMore && !isLoadingMore) {
+          setPage(prev => prev + 1);
+        }
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [hasMore, isLoadingMore]);
 
   useEffect(() => {
     return () => {
@@ -916,6 +967,8 @@ export default function App() {
         fetchPosts={fetchPosts}
         fetchUnreadMessagesCount={fetchUnreadMessagesCount}
         fetchUnreadCount={fetchUnreadCount}
+        isLoadingMore={isLoadingMore}
+        hasMore={hasMore}
       />
     </SocketProvider>
   );

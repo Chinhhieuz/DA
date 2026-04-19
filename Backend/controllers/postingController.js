@@ -52,7 +52,9 @@ const getAllPosts = async (req, res) => {
         const posts = await postingService.getAllPostsService({ 
             userId: req.query.userId, 
             community: req.query.community,
-            followingOnly: req.query.followingOnly
+            followingOnly: req.query.followingOnly,
+            page: parseInt(req.query.page) || 1,
+            limit: parseInt(req.query.limit) || 1
         });
         return res.status(200).json({ status: 'success', data: posts });
     } catch (error) {
