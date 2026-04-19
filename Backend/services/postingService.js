@@ -153,7 +153,7 @@ const createPostService = async (postDataInput, mediaFiles = {}) => {
     return newPost;
 };
 
-const getAllPostsService = async ({ userId, community, followingOnly, page = 1, limit = 1 }) => {
+const getAllPostsService = async ({ userId, community, followingOnly, page = 1, limit = 1, skip }) => {
     let query = { status: 'approved' };
     if (community) {
         query.community = { $regex: new RegExp(`^${community}$`, 'i') };
@@ -170,13 +170,13 @@ const getAllPostsService = async ({ userId, community, followingOnly, page = 1, 
         query.author = { $in: followingList };
     }
 
-    const skip = (page - 1) * limit;
+    const querySkip = skip !== undefined ? skip : (page - 1) * limit;
 
     console.log(`[POST SERVICE] Step 1: Querying posts (Community: ${community || 'all'}, FollowingOnly: ${followingOnly || 'false'})`);
     const posts = await Post.find(query)
         .populate('author', 'username email role avatar_url full_name')
         .sort({ created_at: -1 })
-        .skip(skip)
+        .skip(querySkip)
         .limit(limit)
         .lean();
     console.log(`[POST SERVICE] Step 2: Found ${posts.length} posts.`);

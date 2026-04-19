@@ -860,8 +860,11 @@ export default function App() {
     if (normalizedUserId) params.set('userId', normalizedUserId);
     if (community) params.set('community', community);
     if (filter === 'following' && normalizedUserId) params.set('followingOnly', 'true');
-    params.set('page', String(pageNum));
-    params.set('limit', '1');
+    const limit = pageNum === 1 ? 2 : 1;
+    const skip = pageNum === 1 ? 0 : pageNum;
+    
+    params.set('skip', String(skip));
+    params.set('limit', String(limit));
 
     if (!append) {
       postsAbortRef.current?.abort();
@@ -883,7 +886,7 @@ export default function App() {
           const newPosts = fetchedPosts.filter((p: any) => !existingIds.has(p.id));
           return [...prev, ...newPosts];
         });
-        if (fetchedPosts.length < 1) {
+        if (fetchedPosts.length < limit) {
           setHasMore(false);
         } else {
           setHasMore(true);
@@ -920,7 +923,7 @@ export default function App() {
       const isHome = window.location.pathname === '/' || window.location.pathname === '/home';
       if (!isHome) return;
 
-      if (window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - 500) {
+      if (window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - 1500) {
         if (hasMore && !isLoadingMore) {
           setPage(prev => prev + 1);
         }

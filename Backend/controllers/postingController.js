@@ -54,7 +54,8 @@ const getAllPosts = async (req, res) => {
             community: req.query.community,
             followingOnly: req.query.followingOnly,
             page: parseInt(req.query.page) || 1,
-            limit: parseInt(req.query.limit) || 1
+            limit: parseInt(req.query.limit) || 1,
+            skip: req.query.skip !== undefined ? parseInt(req.query.skip) : undefined
         });
         return res.status(200).json({ status: 'success', data: posts });
     } catch (error) {

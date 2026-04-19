@@ -47,3 +47,17 @@ export function getImageUrl(url?: string | null, fallback?: string): string {
   const cleanUrl = raw.startsWith('/') ? raw : `/${raw}`;
   return `${BASE_URL}${cleanUrl}`;
 }
+
+export function getOptimizedImageUrl(url?: string | null, fallback?: string, width: number = 800): string {
+  const originalUrl = getImageUrl(url, fallback);
+  
+  if (originalUrl.includes('res.cloudinary.com') && originalUrl.includes('/upload/')) {
+    if (originalUrl.includes('/upload/f_auto') || originalUrl.includes('/upload/q_auto')) {
+      return originalUrl;
+    }
+    return originalUrl.replace('/upload/', `/upload/c_limit,w_${width},q_auto,f_auto/`);
+  }
+  
+  return originalUrl;
+}
+
