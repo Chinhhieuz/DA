@@ -73,6 +73,8 @@ export function ReportModal({ isOpen, onOpenChange, postId, currentUser }: Repor
 
     setIsSubmitting(true);
     try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
       // 1. Upload images if any
       const uploadedUrls: string[] = [];
       for (const file of images) {
@@ -80,8 +82,9 @@ export function ReportModal({ isOpen, onOpenChange, postId, currentUser }: Repor
         formData.append('image', file);
         
         console.log('[ReportModal] Đang upload bằng chứng:', file.name);
-        const uploadRes = await fetch(`${API_URL}/upload?user_id=${currentUser.id}`, {
+        const uploadRes = await fetch(`${API_URL}/upload`, {
           method: 'POST',
+          headers: authHeaders,
           body: formData,
         });
         const uploadData = await uploadRes.json();
@@ -99,10 +102,9 @@ export function ReportModal({ isOpen, onOpenChange, postId, currentUser }: Repor
       // 2. Create Report
       const res = await fetch(`${API_URL}/reports/create`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           post_id: postId,
-          reporter_id: currentUser.id,
           reason,
           description,
           evidence_images: uploadedUrls

@@ -21,7 +21,12 @@ const getAllCommunities = async (req, res) => {
 
 const createCommunity = async (req, res) => {
     try {
-        const community = await communityService.createCommunityService(req.body);
+        const payload = req.body || {};
+        // Neu client khong truyen creator_id thi lay tu token admin hien tai.
+        if (!payload.creator_id && req.user?._id) {
+            payload.creator_id = String(req.user._id);
+        }
+        const community = await communityService.createCommunityService(payload);
         return res.status(201).json({ status: 'success', data: community });
     } catch (error) {
         return handleServiceError(error, res);

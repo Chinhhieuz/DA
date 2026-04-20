@@ -25,10 +25,12 @@ import { SavedPosts } from '@/components/SavedPosts'
 import { getImageUrl } from '@/lib/imageUtils'
 import { API_URL } from '@/lib/api'
 import { SocketProvider, useSocket } from "@/contexts/SocketContext";
+import { useTheme } from '@/components/theme-provider';
 
 import '../index.css'
 
 const initialPosts: Post[] = [];
+const HOME_FEED_LIMIT = 2;
 
 const isAbortError = (error: unknown) => {
   return error instanceof DOMException && error.name === 'AbortError';
@@ -73,6 +75,26 @@ const sanitizeEntityId = (value: any): string => {
 
   return normalized;
 };
+
+const normalizePreferenceBoolean = (value: any, fallback: boolean): boolean => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const lowered = value.trim().toLowerCase();
+    if (lowered === 'true') return true;
+    if (lowered === 'false') return false;
+  }
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  return fallback;
+};
+
+const normalizeUserPreferences = (preferences: any) => ({
+  darkMode: normalizePreferenceBoolean(preferences?.darkMode, false),
+  pushNotifications: normalizePreferenceBoolean(preferences?.pushNotifications, true),
+  commentNotifications: normalizePreferenceBoolean(preferences?.commentNotifications, true)
+});
 
 export interface User {
   id?: string;
@@ -154,8 +176,11 @@ interface AppContentProps {
   setFeedFilter: React.Dispatch<React.SetStateAction<'all' | 'following'>>;
   posts: Post[];
   setPosts: React.Dispatch<React.SetStateAction<Post[]>>;
+  hasMorePosts: boolean;
+  isFetchingPosts: boolean;
   handleLogout: () => void;
   fetchPosts: (userId?: string, comm?: string | null, filter?: string) => Promise<void>;
+  fetchMorePosts: () => Promise<void>;
   fetchUnreadMessagesCount: (userId: string) => Promise<void>;
   fetchUnreadCount: (userId: string) => Promise<void>;
 }
@@ -175,8 +200,11 @@ function AppContent({
   setFeedFilter,
   posts,
   setPosts,
+  hasMorePosts,
+  isFetchingPosts,
   handleLogout,
   fetchPosts,
+  fetchMorePosts,
   fetchUnreadMessagesCount,
   fetchUnreadCount
 }: AppContentProps) {
@@ -194,6 +222,7 @@ function AppContent({
     return normalizedSavedViewedUserId || null;
   });
   const [initialPostId, setInitialPostId] = useState<string | null>(null);
+  const loadMoreTriggerRef = useRef<HTMLDivElement | null>(null);
   
   // Use a ref for userId to ensure listeners always have current ID without re-attaching
   const userIdRef = useRef<string>('');
@@ -230,9 +259,12 @@ function AppContent({
     if (!normalizedPostId) return false;
 
     try {
-      const normalizedCurrentUserId = sanitizeEntityId(currentUser.id || currentUser._id);
-      const query = normalizedCurrentUserId ? `?userId=${encodeURIComponent(normalizedCurrentUserId)}` : '';
-      const res = await fetch(`${API_URL}/posts/${encodeURIComponent(normalizedPostId)}${query}`, { cache: 'no-store' });
+      // Truyen token neu co de backend tra ve du lieu post da ca nhan hoa.
+      const token = readAuthStorageItem('token');
+      const res = await fetch(`${API_URL}/posts/${encodeURIComponent(normalizedPostId)}`, {
+        cache: 'no-store',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
       if (!res.ok) return false;
 
       const data = await res.json();
@@ -360,6 +392,40 @@ function AppContent({
     }
   }, [socket, isConnected, fetchUnreadMessagesCount]);
 
+  useEffect(() => {
+    if (currentView !== 'home') return;
+
+    const trigger = loadMoreTriggerRef.current;
+    if (!trigger) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        if (!hasMorePosts || isFetchingPosts) return;
+        fetchMorePosts();
+      },
+      { root: null, rootMargin: '500px 0px', threshold: 0 }
+    );
+
+    observer.observe(trigger);
+    return () => observer.disconnect();
+  }, [currentView, hasMorePosts, isFetchingPosts, fetchMorePosts, posts.length]);
+
+  useEffect(() => {
+    if (currentView !== 'profile') return;
+
+    const scrollToTop = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
+
+    // Delay 1 tick de dam bao route/profile da render xong roi moi reset scroll.
+    const timer = window.setTimeout(scrollToTop, 0);
+    return () => window.clearTimeout(timer);
+  }, [currentView, viewedUserId]);
+
   const handleUserClick = (userId: string) => {
     const normalizedUserId = sanitizeEntityId(userId);
     if (!normalizedUserId) {
@@ -369,10 +435,12 @@ function AppContent({
 
     const normalizedCurrentUserId = sanitizeEntityId(currentUser.id || currentUser._id);
     if (normalizedUserId === normalizedCurrentUserId) {
+      // Click vao chinh minh -> mo profile cua minh (/profile)
       setViewedUserIdState(null);
       navigate('/profile');
       localStorage.removeItem('viewedUserId');
     } else {
+      // Click vao nguoi khac -> luu viewedUserId va dieu huong /profile/:id
       setViewedUserIdState(normalizedUserId);
       navigate(`/profile/${encodeURIComponent(normalizedUserId)}`);
       localStorage.setItem('viewedUserId', normalizedUserId);
@@ -574,6 +642,13 @@ function AppContent({
                   onDeleteSuccess={handlePostDeleted}
                 />
               ))}
+              <div ref={loadMoreTriggerRef} className="h-1 w-full" />
+              {isFetchingPosts && (
+                <p className="py-2 text-center text-sm text-muted-foreground">Dang tai them bai viet...</p>
+              )}
+              {!hasMorePosts && posts.length > 0 && (
+                <p className="py-2 text-center text-xs uppercase tracking-wide text-muted-foreground">Ban da xem het bai viet</p>
+              )}
             </div>
           </div>
         );
@@ -616,8 +691,11 @@ function AppContent({
 
               if (selectedPost?.id) {
                 const currentSelectedPostId = selectedPost.id;
-                const query = nextUserId ? `?userId=${encodeURIComponent(String(nextUserId))}` : '';
-                fetch(`${API_URL}/posts/${currentSelectedPostId}${query}`, { cache: 'no-store' })
+                const token = readAuthStorageItem('token');
+                fetch(`${API_URL}/posts/${currentSelectedPostId}`, {
+                  cache: 'no-store',
+                  headers: token ? { Authorization: `Bearer ${token}` } : {}
+                })
                   .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Fetch post failed'))))
                   .then((payload) => {
                     if (payload?.status === 'success' && payload?.data) {
@@ -636,7 +714,7 @@ function AppContent({
       case 'create': return <CreatePost onPostCreated={handlePostCreated} currentUser={currentUser} />;
       case 'messages': return <Messages currentUser={currentUser} onUserClick={handleUserClick} onMessagesRead={() => fetchUnreadMessagesCount(currentUser.id || currentUser._id || '')} />;
       case 'notifications': return <Notifications currentUser={currentUser} onMarkAllAsRead={() => setUnreadNotifications(0)} onNotificationClick={handleNotificationClick} />;
-      case 'settings': return <Settings currentUser={currentUser} onUpdatePreferences={(prefs) => { const u = {...currentUser, preferences: prefs}; setCurrentUser(u); writeAuthStorageItem('currentUser', JSON.stringify(u)); }} onLogout={handleLogout} />;
+      case 'settings': return <Settings currentUser={currentUser} onUpdatePreferences={(prefs) => { const u = {...currentUser, preferences: normalizeUserPreferences(prefs)}; setCurrentUser(u); writeAuthStorageItem('currentUser', JSON.stringify(u)); }} onLogout={handleLogout} />;
       case 'admin': return <AdminDashboard currentUser={currentUser} />;
       case 'saved': return <SavedPosts currentUser={currentUser} onPostClick={handlePostClick} onUserClick={handleUserClick} onSaveToggle={handleSaveToggle} onCommunityClick={handleCommunityClick} onBackHome={() => handleViewChange('home')} />;
       default: return null;
@@ -657,7 +735,7 @@ function AppContent({
               username: u.username,
               avatar: getImageUrl(u.avatar_url) || defaultUser.avatar,
               role: (u.role || 'user').toLowerCase() as any,
-              preferences: u.preferences || defaultUser.preferences,
+              preferences: normalizeUserPreferences(u.preferences || defaultUser.preferences),
               savedPosts: u.savedPosts || []
             };
             setCurrentUser(newUser);
@@ -749,13 +827,14 @@ function AppContent({
           </div>
         </DialogContent>
       </Dialog>
-      <Toaster position="top-center" />
+      <Toaster position="top-center" expand={true} richColors />
     </div>
   );
 }
 
 // --- Main App Export ---
 export default function App() {
+  const { setTheme } = useTheme();
   const [currentUser, setCurrentUser] = useState<User>(() => {
     const saved = readAuthStorageItem('currentUser');
     if (!saved) return defaultUser;
@@ -769,7 +848,8 @@ export default function App() {
         name: parsed?.name || parsed?.full_name || parsed?.display_name || parsed?.username || defaultUser.name,
         username: parsed?.username || defaultUser.username,
         avatar: parsed?.avatar || (parsed?.avatar_url ? getImageUrl(parsed.avatar_url) : defaultUser.avatar),
-        role: ((parsed?.role || defaultUser.role) as string).toLowerCase() as User['role']
+        role: ((parsed?.role || defaultUser.role) as string).toLowerCase() as User['role'],
+        preferences: normalizeUserPreferences(parsed?.preferences || defaultUser.preferences)
       };
       return normalizedUser;
     } catch {
@@ -782,11 +862,26 @@ export default function App() {
   const [activeCommunity, setActiveCommunity] = useState<string | null>(null);
   const [feedFilter, setFeedFilter] = useState<'all' | 'following'>('all');
   const [posts, setPosts] = useState<Post[]>(initialPosts);
+  const [feedPage, setFeedPage] = useState(1);
+  const [hasMorePosts, setHasMorePosts] = useState(true);
+  const [isFetchingPosts, setIsFetchingPosts] = useState(false);
+  const [supportsPagedMeta, setSupportsPagedMeta] = useState<boolean | null>(null);
   const postsAbortRef = useRef<AbortController | null>(null);
+  const postsRequestSeqRef = useRef(0);
+  const postsSnapshotRef = useRef<Post[]>(initialPosts);
   const unreadNotificationsAbortRef = useRef<AbortController | null>(null);
   const unreadMessagesAbortRef = useRef<AbortController | null>(null);
   const lastUnreadNotificationsFetchAtRef = useRef(0);
   const lastUnreadMessagesFetchAtRef = useRef(0);
+  const normalizedCurrentUserDarkMode = normalizePreferenceBoolean(currentUser?.preferences?.darkMode, false);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setTheme('light');
+      return;
+    }
+    setTheme(normalizedCurrentUserDarkMode ? 'dark' : 'light');
+  }, [isAuthenticated, normalizedCurrentUserDarkMode, setTheme]);
 
   const fetchUnreadCount = useCallback(async (userId: string) => {
     const normalizedUserId = String(userId || '').trim();
@@ -802,7 +897,7 @@ export default function App() {
 
     try {
       const token = readAuthStorageItem('token');
-      const res = await fetch(`${API_URL}/notifications/unread-count?accountId=${encodeURIComponent(normalizedUserId)}`, {
+      const res = await fetch(`${API_URL}/notifications/unread-count`, {
         signal: controller.signal,
         cache: 'no-store',
         headers: token ? { Authorization: `Bearer ${token}` } : {}
@@ -831,7 +926,7 @@ export default function App() {
 
     try {
       const token = readAuthStorageItem('token');
-      const res = await fetch(`${API_URL}/messages/unread-count?userId=${encodeURIComponent(normalizedUserId)}`, {
+      const res = await fetch(`${API_URL}/messages/unread-count`, {
         signal: controller.signal,
         cache: 'no-store',
         headers: token ? { Authorization: `Bearer ${token}` } : {}
@@ -844,29 +939,124 @@ export default function App() {
     }
   }, []);
 
-  const fetchPosts = useCallback(async (userId: string = currentUser?.id || '', community: string | null = activeCommunity, filter: string = feedFilter) => {
-    const normalizedUserId = String(userId || '').trim();
+  useEffect(() => {
+    postsSnapshotRef.current = posts;
+  }, [posts]);
+
+  const fetchPostsPage = useCallback(async ({
+    userId = currentUser?.id || currentUser?._id || '',
+    community = activeCommunity,
+    filter = feedFilter,
+    page = 1,
+    append = false
+  }: {
+    userId?: string;
+    community?: string | null;
+    filter?: string;
+    page?: number;
+    append?: boolean;
+  }) => {
+    // userId khong can dua tren query nua; backend se uu tien token tu Authorization.
+    const requestedPage = Math.max(1, Number.parseInt(String(page), 10) || 1);
+    const requestSeq = postsRequestSeqRef.current + 1;
+    postsRequestSeqRef.current = requestSeq;
+    const legacyAccumulationMode = append && supportsPagedMeta === false;
+    const requestLimit = legacyAccumulationMode ? requestedPage * HOME_FEED_LIMIT : HOME_FEED_LIMIT;
 
     const params = new URLSearchParams();
-    if (normalizedUserId) params.set('userId', normalizedUserId);
     if (community) params.set('community', community);
-    if (filter === 'following' && normalizedUserId) params.set('followingOnly', 'true');
+    // Filter following now only needs a flag; user context comes from token.
+    if (filter === 'following') params.set('followingOnly', 'true');
+    params.set('limit', String(requestLimit));
+    params.set('page', String(requestedPage));
 
     postsAbortRef.current?.abort();
     const controller = new AbortController();
     postsAbortRef.current = controller;
+    setIsFetchingPosts(true);
 
     try {
       const queryString = params.toString();
       const url = queryString ? `${API_URL}/posts?${queryString}` : `${API_URL}/posts`;
-      const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+      // Gui token de backend co the ca nhan hoa feed (vote/follow state).
+      const token = readAuthStorageItem('token');
+      const res = await fetch(url, {
+        signal: controller.signal,
+        cache: 'no-store',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
       const data = await res.json();
-      if (data.status === 'success') setPosts(data.data);
+      if (data.status !== 'success') return;
+      if (requestSeq !== postsRequestSeqRef.current) return;
+
+      const incomingPosts: Post[] = Array.isArray(data?.data) ? data.data : [];
+      const metaPage = Number.parseInt(String(data?.meta?.page), 10);
+      const hasMetaPage = Number.isFinite(metaPage) && metaPage > 0;
+      const hasMetaHasMore = typeof data?.meta?.hasMore === 'boolean';
+      const hasPagingMeta = hasMetaPage && hasMetaHasMore;
+
+      if (hasPagingMeta) {
+        setSupportsPagedMeta(true);
+      } else if (requestedPage === 1 && supportsPagedMeta !== false) {
+        setSupportsPagedMeta(false);
+      }
+
+      const currentPosts = postsSnapshotRef.current;
+      let mergedPosts: Post[] = incomingPosts;
+      let freshPostsCount = incomingPosts.length;
+
+      if (append) {
+        const existingIds = new Set(currentPosts.map(post => post.id));
+        const freshPosts = incomingPosts.filter(post => !existingIds.has(post.id));
+        freshPostsCount = freshPosts.length;
+        mergedPosts = [...currentPosts, ...freshPosts];
+      }
+
+      postsSnapshotRef.current = mergedPosts;
+      setPosts(mergedPosts);
+
+      const currentPage = hasPagingMeta ? metaPage : requestedPage;
+      setFeedPage(currentPage);
+
+      let morePosts = hasPagingMeta
+        ? Boolean(data.meta.hasMore)
+        : incomingPosts.length >= requestLimit;
+
+      if (append && freshPostsCount === 0) {
+        morePosts = false;
+      }
+
+      setHasMorePosts(morePosts);
     } catch (err) {
       if (isAbortError(err)) return;
       console.error('Failed to fetch posts:', err);
+    } finally {
+      if (requestSeq !== postsRequestSeqRef.current) return;
+      setIsFetchingPosts(false);
     }
-  }, [activeCommunity, feedFilter, currentUser.id]);
+  }, [activeCommunity, feedFilter, currentUser.id, currentUser._id, supportsPagedMeta]);
+
+  const fetchPosts = useCallback(async (userId: string = currentUser?.id || currentUser?._id || '', community: string | null = activeCommunity, filter: string = feedFilter) => {
+    await fetchPostsPage({
+      userId,
+      community,
+      filter,
+      page: 1,
+      append: false
+    });
+  }, [activeCommunity, currentUser?.id, currentUser?._id, feedFilter, fetchPostsPage]);
+
+  const fetchMorePosts = useCallback(async () => {
+    if (isFetchingPosts || !hasMorePosts) return;
+
+    await fetchPostsPage({
+      userId: currentUser?.id || currentUser?._id || '',
+      community: activeCommunity,
+      filter: feedFilter,
+      page: feedPage + 1,
+      append: true
+    });
+  }, [activeCommunity, currentUser?.id, currentUser?._id, feedFilter, feedPage, fetchPostsPage, hasMorePosts, isFetchingPosts]);
 
   useEffect(() => {
     if (isAuthenticated && (currentUser.id || currentUser._id)) {
@@ -876,8 +1066,8 @@ export default function App() {
   }, [isAuthenticated, currentUser.id, currentUser._id, fetchUnreadCount, fetchUnreadMessagesCount]);
 
   useEffect(() => {
-    fetchPosts(currentUser?.id || '');
-  }, [activeCommunity, feedFilter, fetchPosts, currentUser?.id]);
+    fetchPosts(currentUser?.id || currentUser?._id || '');
+  }, [activeCommunity, feedFilter, fetchPosts, currentUser?.id, currentUser?._id]);
 
   useEffect(() => {
     return () => {
@@ -912,8 +1102,11 @@ export default function App() {
         setFeedFilter={setFeedFilter}
         posts={posts}
         setPosts={setPosts}
+        hasMorePosts={hasMorePosts}
+        isFetchingPosts={isFetchingPosts}
         handleLogout={handleLogout}
         fetchPosts={fetchPosts}
+        fetchMorePosts={fetchMorePosts}
         fetchUnreadMessagesCount={fetchUnreadMessagesCount}
         fetchUnreadCount={fetchUnreadCount}
       />

@@ -418,8 +418,10 @@ const messageController = {
     // API: start direct chat
     startChat: async (req, res, next) => {
         try {
-            const senderIdFromQuery = normalizeId(req.query?.userId || req.body?.userId);
-            const senderId = senderIdFromQuery || normalizeId(req.user?.id || req.user?._id);
+            const senderId = normalizeId(req.user?.id || req.user?._id);
+            if (!senderId) {
+                return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+            }
             const { userId: recipientId } = req.params;
             const conversation = await messageService.startConversation(senderId, recipientId);
 

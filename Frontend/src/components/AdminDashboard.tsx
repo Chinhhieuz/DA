@@ -80,7 +80,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
   const adminUserId = currentUser?.id || currentUser?._id || '';
 
   const getAuthHeaders = (includeJson = false) => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
     const headers: Record<string, string> = {};
     if (includeJson) headers['Content-Type'] = 'application/json';
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -90,7 +90,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
   const fetchStats = async () => {
     if (!adminUserId) return;
     try {
-      const res = await fetch(`${API_URL}/admin/dashboard?admin_id=${adminUserId}`, {
+      const res = await fetch(`${API_URL}/admin/dashboard`, {
         headers: getAuthHeaders()
       });
       const data = await res.json();
@@ -108,8 +108,8 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
   const handleSearchUsers = async (query = '') => {
     if (!adminUserId) return;
     try {
-      const q = query ? `&search=${encodeURIComponent(query)}` : '';
-      const res = await fetch(`${API_URL}/admin/users?admin_id=${adminUserId}${q}`, {
+      const q = query ? `?search=${encodeURIComponent(query)}` : '';
+      const res = await fetch(`${API_URL}/admin/users${q}`, {
         headers: getAuthHeaders()
       });
       const data = await res.json();
@@ -127,35 +127,35 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
 
   useEffect(() => {
     if (activeTab === 'reports' && adminUserId) {
-      fetch(`${API_URL}/reports/pending?admin_id=${adminUserId}`, { headers: getAuthHeaders() })
+      fetch(`${API_URL}/reports/pending`, { headers: getAuthHeaders() })
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') setReports(data.data);
         })
         .catch(e => console.error('Lỗi tải danh sách báo cáo!'));
     } else if (activeTab === 'posts' && adminUserId) {
-      fetch(`${API_URL}/posts/pending?admin_id=${adminUserId}`, { headers: getAuthHeaders() })
+      fetch(`${API_URL}/posts/pending`, { headers: getAuthHeaders() })
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') setPendingPosts(data.data);
         })
         .catch(e => console.error('Lỗi tải danh sách bài viết chờ duyệt!'));
     } else if (activeTab === 'feedback' && adminUserId) {
-      fetch(`${API_URL}/feedback?admin_id=${adminUserId}`, { headers: getAuthHeaders() })
+      fetch(`${API_URL}/feedback`, { headers: getAuthHeaders() })
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') setFeedbacks(data.data);
         })
         .catch(e => console.error('Lỗi tải danh sách góp ý!'));
     } else if (activeTab === 'locked' && adminUserId) {
-      fetch(`${API_URL}/admin/locked?admin_id=${adminUserId}`, { headers: getAuthHeaders() })
+      fetch(`${API_URL}/admin/locked`, { headers: getAuthHeaders() })
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') setLockedUsers(data.data);
         })
         .catch(e => console.error('Lỗi tải danh sách tài khoản bị khóa!'));
     } else if (activeTab === 'hidden' && adminUserId) {
-      fetch(`${API_URL}/admin/hidden-posts?admin_id=${adminUserId}`, { headers: getAuthHeaders() })
+      fetch(`${API_URL}/admin/hidden-posts`, { headers: getAuthHeaders() })
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') setHiddenPosts(data.data);
@@ -178,7 +178,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       const res = await fetch(`${API_URL}/reports/handle`, {
         method: 'POST',
         headers: getAuthHeaders(true),
-        body: JSON.stringify({ admin_id: adminUserId, report_id: reportId, action })
+        body: JSON.stringify({ report_id: reportId, action })
       });
       const data = await res.json();
       if (data.status === 'success') {
@@ -196,7 +196,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       const res = await fetch(`${API_URL}/posts/${postId}/${action}`, {
         method: 'PUT',
         headers: getAuthHeaders(true),
-        body: JSON.stringify({ admin_id: adminUserId })
+        body: JSON.stringify({})
       });
       const data = await res.json();
       if (data.status === 'success') {
@@ -214,7 +214,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       const res = await fetch(`${API_URL}/feedback/${feedbackId}/read`, {
         method: 'PUT',
         headers: getAuthHeaders(true),
-        body: JSON.stringify({ admin_id: adminUserId })
+        body: JSON.stringify({})
       });
       const data = await res.json();
       if (data.status === 'success') {
@@ -232,7 +232,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       const res = await fetch(`${API_URL}/admin/unlock`, {
         method: 'POST',
         headers: getAuthHeaders(true),
-        body: JSON.stringify({ admin_id: adminUserId, user_id: userId })
+        body: JSON.stringify({ user_id: userId })
       });
       const data = await res.json();
       if (data.status === 'success') {
@@ -250,7 +250,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       const res = await fetch(`${API_URL}/admin/posts/${postId}/restore`, {
         method: 'POST',
         headers: getAuthHeaders(true),
-        body: JSON.stringify({ admin_id: adminUserId })
+        body: JSON.stringify({})
       });
       const data = await res.json();
       if (data.status === 'success') {
@@ -274,7 +274,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       const res = await fetch(`${API_URL}/communities`, {
         method: 'POST',
         headers: getAuthHeaders(true),
-        body: JSON.stringify({ ...comFormData, admin_id: adminUserId, creator_id: adminUserId })
+        body: JSON.stringify({ ...comFormData, creator_id: adminUserId })
       });
       const data = await res.json();
       if (data.status === 'success') {
@@ -296,7 +296,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       const res = await fetch(`${API_URL}/communities/${editingTopic._id}`, {
         method: 'PUT',
         headers: getAuthHeaders(true),
-        body: JSON.stringify({ ...editTopicFormData, admin_id: adminUserId })
+        body: JSON.stringify({ ...editTopicFormData })
       });
       const data = await res.json();
       if (data.status === 'success') {
@@ -323,7 +323,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
   const handleDeleteCommunity = async (communityId: string) => {
     if (!window.confirm('Bạn có chắc chắn muốn xóa cộng đồng này?')) return;
     try {
-      const res = await fetch(`${API_URL}/communities/${communityId}?admin_id=${adminUserId}`, {
+      const res = await fetch(`${API_URL}/communities/${communityId}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
       });
@@ -348,8 +348,8 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
     setActiveCommName(communityName); // 2. Ghi nhận tên chủ đề đang xem
     setIsViewCommPostsOpen(true);    // 3. Mở Dialog hiển thị
     try {
-      // 4. Gọi API từ Backend truyền kèm admin_id để xác thực quyền
-      const res = await fetch(`${API_URL}/posts/admin/community/${encodeURIComponent(communityName)}?admin_id=${adminUserId}`, {
+      // 4. Gọi API từ Backend, quyền được xác thực bằng Bearer token
+      const res = await fetch(`${API_URL}/posts/admin/community/${encodeURIComponent(communityName)}`, {
         headers: getAuthHeaders()
       });
       const data = await res.json();
@@ -397,7 +397,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       const response = await fetch(`${API_URL}/admin/users/${editingUser._id}`, {
         method: 'PUT',
         headers: getAuthHeaders(true),
-        body: JSON.stringify({ ...editFormData, admin_id: adminUserId }),
+        body: JSON.stringify({ ...editFormData }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Lỗi cập nhật tài khoản');
@@ -417,8 +417,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
     try {
       const response = await fetch(`${API_URL}/admin/users/${userId}`, {
         method: 'DELETE',
-        headers: getAuthHeaders(true),
-        body: JSON.stringify({ admin_id: adminUserId }),
+        headers: getAuthHeaders(),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Lỗi xóa tài khoản');

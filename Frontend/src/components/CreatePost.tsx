@@ -238,8 +238,12 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
         formData.append('video', selectedVideoFile);
       }
 
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const res = await fetch(`${API_URL}/posts`, {
         method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: formData,
       });
       const data = await res.json();

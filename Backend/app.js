@@ -2,13 +2,14 @@
 process.on('uncaughtException', (err) => console.log('[CRIT] UNCAUGHT EXCEPTION:', err));
 process.on('unhandledRejection', (err) => console.log('[CRIT] UNHANDLED REJECTION:', err));
 
-require('dotenv').config();
+const path = require('path');
+// Always load env from Backend/.env regardless of process cwd.
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const compression = require('compression');
-const path = require('path');
 const { connectToDatabase } = require('./config/db');
 const { isAllowedOrigin } = require('./utils/originAllowlist');
 const { scanShield, apiGuard, generalLimiter, authLimiter } = require('./middlewares/securityMiddleware');

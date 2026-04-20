@@ -29,7 +29,10 @@ export function SavedPosts({
     if (!currentUser?.id) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/posts/saved/${currentUser.id}`);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const res = await fetch(`${API_URL}/posts/saved/${currentUser.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
       const data = await res.json();
       if (data.status === 'success') {
         setPosts(data.data);

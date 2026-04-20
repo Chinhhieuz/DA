@@ -10,6 +10,8 @@ const notificationService = require('./notificationService');
 const { formatPostData } = require('../utils/postFormatter');
 const mongoose = require('mongoose');
 const cloudinary = require('cloudinary').v2;
+const DEFAULT_HOME_FEED_LIMIT = 2;
+const MAX_HOME_FEED_LIMIT = 10;
 
 // Cấu hình Cloudinary (Dùng chung cho cả route upload cũ và mới)
 cloudinary.config({
@@ -43,6 +45,95 @@ const getPostCommentAndThreadCount = async (postId) => {
     const commentIds = await Comment.distinct('_id', { post: postId });
     const threadCount = await Thread.countDocuments({ comment: { $in: commentIds } });
     return baseCommentCount + threadCount;
+};
+
+const parseHomeFeedLimit = (limit) => {
+    const parsed = Number.parseInt(String(limit), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return DEFAULT_HOME_FEED_LIMIT;
+    }
+    return Math.min(parsed, MAX_HOME_FEED_LIMIT);
+};
+
+const parseHomeFeedPage = (page) => {
+    const parsed = Number.parseInt(String(page), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return 1;
+    }
+    return parsed;
+};
+
+const getPostBatchEngagementData = async (posts) => {
+    const postIds = posts
+        .map((post) => post?._id)
+        .filter(Boolean);
+
+    const commentAndThreadCountByPostId = new Map();
+    const recentCommentsByPostId = new Map();
+
+    if (!postIds.length) {
+        return { commentAndThreadCountByPostId, recentCommentsByPostId };
+    }
+
+    const [commentCountRows, threadCountRows, latestCommentRows] = await Promise.all([
+        Comment.aggregate([
+            { $match: { post: { $in: postIds } } },
+            { $group: { _id: '$post', count: { $sum: 1 } } }
+        ]),
+        Thread.aggregate([
+            {
+                $lookup: {
+                    from: 'Comments',
+                    localField: 'comment',
+                    foreignField: '_id',
+                    as: 'commentDoc'
+                }
+            },
+            { $unwind: '$commentDoc' },
+            { $match: { 'commentDoc.post': { $in: postIds } } },
+            { $group: { _id: '$commentDoc.post', count: { $sum: 1 } } }
+        ]),
+        Comment.aggregate([
+            { $match: { post: { $in: postIds } } },
+            { $sort: { created_at: -1, _id: -1 } },
+            { $group: { _id: '$post', latestCommentId: { $first: '$_id' } } }
+        ])
+    ]);
+
+    commentCountRows.forEach((row) => {
+        commentAndThreadCountByPostId.set(String(row._id), row.count || 0);
+    });
+
+    threadCountRows.forEach((row) => {
+        const postId = String(row._id);
+        const previousCount = commentAndThreadCountByPostId.get(postId) || 0;
+        commentAndThreadCountByPostId.set(postId, previousCount + (row.count || 0));
+    });
+
+    const latestCommentIds = [];
+    const commentIdToPostId = new Map();
+
+    latestCommentRows.forEach((row) => {
+        if (!row?.latestCommentId) return;
+        latestCommentIds.push(row.latestCommentId);
+        commentIdToPostId.set(String(row.latestCommentId), String(row._id));
+    });
+
+    if (!latestCommentIds.length) {
+        return { commentAndThreadCountByPostId, recentCommentsByPostId };
+    }
+
+    const latestComments = await Comment.find({ _id: { $in: latestCommentIds } })
+        .populate('author', 'username full_name')
+        .lean();
+
+    latestComments.forEach((comment) => {
+        const postId = commentIdToPostId.get(String(comment._id));
+        if (!postId) return;
+        recentCommentsByPostId.set(postId, [comment]);
+    });
+
+    return { commentAndThreadCountByPostId, recentCommentsByPostId };
 };
 
 const createPostService = async (postDataInput, mediaFiles = {}) => {
@@ -105,10 +196,18 @@ const createPostService = async (postDataInput, mediaFiles = {}) => {
                 : Promise.resolve(video_url || '');
 
             const [uploadedUrls, uploadedVideoUrl] = await Promise.all([uploadImagesPromise, uploadVideoPromise]);
+            const aiImageInputs = imageFiles.length > 0
+                ? imageFiles.map((file, index) => ({
+                    buffer: file.buffer,
+                    mimeType: file.mimetype,
+                    url: uploadedUrls[index] || ''
+                }))
+                : uploadedUrls;
+
             const aiDecision = await aiModerationService.checkContent(
                 title,
                 content,
-                uploadedUrls,
+                aiImageInputs,
                 uploadedVideoUrl ? [uploadedVideoUrl] : []
             );
 
@@ -153,8 +252,11 @@ const createPostService = async (postDataInput, mediaFiles = {}) => {
     return newPost;
 };
 
-const getAllPostsService = async ({ userId, community, followingOnly }) => {
+const getAllPostsService = async ({ userId, community, followingOnly, limit, page }) => {
     let query = { status: 'approved' };
+    const feedLimit = parseHomeFeedLimit(limit);
+    const feedPage = parseHomeFeedPage(page);
+    const skipCount = (feedPage - 1) * feedLimit;
     if (community) {
         query.community = { $regex: new RegExp(`^${community}$`, 'i') };
     }
@@ -170,21 +272,24 @@ const getAllPostsService = async ({ userId, community, followingOnly }) => {
         query.author = { $in: followingList };
     }
 
-    console.log(`[POST SERVICE] Step 1: Querying posts (Community: ${community || 'all'}, FollowingOnly: ${followingOnly || 'false'})`);
-    const posts = await Post.find(query)
+    console.log(`[POST SERVICE] Step 1: Querying posts (Community: ${community || 'all'}, FollowingOnly: ${followingOnly || 'false'}, Page: ${feedPage}, Limit: ${feedLimit})`);
+    const queriedPosts = await Post.find(query)
         .populate('author', 'username email role avatar_url full_name')
-        .sort({ created_at: -1 })
+        .sort({ created_at: -1, _id: -1 })
+        .skip(skipCount)
+        .limit(feedLimit + 1)
         .lean();
-    console.log(`[POST SERVICE] Step 2: Found ${posts.length} posts.`);
+    const hasMore = queriedPosts.length > feedLimit;
+    const posts = hasMore ? queriedPosts.slice(0, feedLimit) : queriedPosts;
+    console.log(`[POST SERVICE] Step 2: Found ${posts.length} posts. HasMore=${hasMore}`);
 
-    const postsWithDetails = await Promise.all(posts.map(async (post) => {
-        const commentCount = await getPostCommentAndThreadCount(post._id);
-        const recentComments = await Comment.find({ post: post._id })
-            .sort({ created_at: -1 })
-            .limit(1)
-            .populate('author', 'username full_name')
-            .lean();
-            
+    const { commentAndThreadCountByPostId, recentCommentsByPostId } = await getPostBatchEngagementData(posts);
+
+    const postsWithDetails = posts.map((post) => {
+        const postId = String(post._id);
+        const commentCount = commentAndThreadCountByPostId.get(postId) || 0;
+        const recentComments = recentCommentsByPostId.get(postId) || [];
+
         let userVote = null;
         if (userId && post.reactions) {
             const reaction = post.reactions.find(r => r.user_id && r.user_id.toString() === userId);
@@ -195,9 +300,14 @@ const getAllPostsService = async ({ userId, community, followingOnly }) => {
         const isFollowing = (userId && authorId) ? followingList.includes(authorId) : false;
 
         return formatPostData(post, commentCount, recentComments, userVote, isFollowing);
-    }));
+    });
     
-    return postsWithDetails;
+    return {
+        posts: postsWithDetails,
+        page: feedPage,
+        limit: feedLimit,
+        hasMore
+    };
 };
 
 const searchPostsService = async ({ keyword, userId }) => {
@@ -223,15 +333,14 @@ const searchPostsService = async ({ keyword, userId }) => {
         if (user) followingList = (user.following || []).map(id => id.toString());
     }
 
+    const { commentAndThreadCountByPostId, recentCommentsByPostId } = await getPostBatchEngagementData(posts);
+
     // Map thêm commentCount và userVote tương tự getAllPostsService
-    return await Promise.all(posts.map(async (post) => {
-        const commentCount = await getPostCommentAndThreadCount(post._id);
-        const recentComments = await Comment.find({ post: post._id })
-            .sort({ created_at: -1 })
-            .limit(1)
-            .populate('author', 'username full_name')
-            .lean();
-            
+    return posts.map((post) => {
+        const postId = String(post._id);
+        const commentCount = commentAndThreadCountByPostId.get(postId) || 0;
+        const recentComments = recentCommentsByPostId.get(postId) || [];
+
         let userVote = null;
         if (userId && post.reactions) {
             const reaction = post.reactions.find(r => r.user_id && r.user_id.toString() === userId);
@@ -242,7 +351,7 @@ const searchPostsService = async ({ keyword, userId }) => {
         const isFollowing = (userId && authorId) ? followingList.includes(authorId) : false;
 
         return formatPostData(post, commentCount, recentComments, userVote, isFollowing);
-    }));
+    });
 };
 
 const getTrendingPostsService = async (userId) => {
@@ -258,14 +367,13 @@ const getTrendingPostsService = async (userId) => {
         if (user) followingList = (user.following || []).map(id => id.toString());
     }
 
-    const trendingPosts = await Promise.all(posts.map(async (post) => {
-        const commentCount = await getPostCommentAndThreadCount(post._id);
-        const recentComments = await Comment.find({ post: post._id })
-            .sort({ created_at: -1 })
-            .limit(1)
-            .populate('author', 'username full_name')
-            .lean();
-            
+    const { commentAndThreadCountByPostId, recentCommentsByPostId } = await getPostBatchEngagementData(posts);
+
+    const trendingPosts = posts.map((post) => {
+        const postId = String(post._id);
+        const commentCount = commentAndThreadCountByPostId.get(postId) || 0;
+        const recentComments = recentCommentsByPostId.get(postId) || [];
+
         let userVote = null;
         if (userId && post.reactions) {
             const reaction = post.reactions.find(r => r.user_id && r.user_id.toString() === userId);
@@ -276,7 +384,7 @@ const getTrendingPostsService = async (userId) => {
         const isFollowing = (userId && authorId) ? followingList.includes(authorId) : false;
 
         return formatPostData(post, commentCount, recentComments, userVote, isFollowing);
-    }));
+    });
 
     return trendingPosts;
 };
@@ -442,14 +550,13 @@ const getSavedPostsService = async (userId) => {
         if (acc) followingList = (acc.following || []).map(id => id.toString());
     }
 
-    const postsWithDetails = await Promise.all(validPosts.map(async (post) => {
-        const commentCount = await getPostCommentAndThreadCount(post._id);
-        const recentComments = await Comment.find({ post: post._id })
-            .sort({ created_at: -1 })
-            .limit(1)
-            .populate('author', 'username full_name')
-            .lean();
-        
+    const { commentAndThreadCountByPostId, recentCommentsByPostId } = await getPostBatchEngagementData(validPosts);
+
+    const postsWithDetails = validPosts.map((post) => {
+        const postId = String(post._id);
+        const commentCount = commentAndThreadCountByPostId.get(postId) || 0;
+        const recentComments = recentCommentsByPostId.get(postId) || [];
+
         let userVote = null;
         const postObj = typeof post.toObject === 'function' ? post.toObject() : post;
         if (userId && postObj.reactions) {
@@ -461,7 +568,7 @@ const getSavedPostsService = async (userId) => {
         const isFollowing = (userId && authorId) ? followingList.includes(authorId) : false;
             
         return formatPostData(postObj, commentCount, recentComments, userVote, isFollowing);
-    }));
+    });
 
     return postsWithDetails;
 };
@@ -528,4 +635,3 @@ module.exports = {
     getCommunityPostsAdminService,
     getPostByIdService
 };
-
