@@ -1,4 +1,5 @@
 const communityService = require('../services/communityService');
+const { getFromCache, setInCache } = require('../utils/memoryCache');
 
 const handleServiceError = (error, res) => {
     if (error.message.startsWith('NOT_FOUND:')) {
@@ -12,7 +13,14 @@ const handleServiceError = (error, res) => {
 
 const getAllCommunities = async (req, res) => {
     try {
-        const communities = await communityService.getAllCommunitiesService();
+        const cacheKey = 'all_communities';
+        let communities = getFromCache(cacheKey);
+        
+        if (!communities) {
+            communities = await communityService.getAllCommunitiesService();
+            setInCache(cacheKey, communities, 300); // 5 minutes TTL
+        }
+
         return res.status(200).json({ status: 'success', data: communities });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });

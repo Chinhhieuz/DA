@@ -1,4 +1,4 @@
-﻿import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { API_BASE_URL } from '@/lib/api';
 
@@ -71,6 +71,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
       console.log('[Socket] connected:', newSocket.id);
       setIsConnected(true);
       registerIfPossible();
+      newSocket.emit('presence:sync');
     });
 
     newSocket.on('disconnect', () => {
@@ -89,6 +90,18 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
       setOnlineUserIds(Array.isArray(userIds) ? userIds.map(String) : []);
     });
 
+    newSocket.on('presence:user_joined', (uId: string) => {
+      setOnlineUserIds(prev => {
+        const strId = String(uId);
+        if (!prev.includes(strId)) return [...prev, strId];
+        return prev;
+      });
+    });
+
+    newSocket.on('presence:user_left', (uId: string) => {
+      setOnlineUserIds(prev => prev.filter(id => id !== String(uId)));
+    });
+
     return () => {
       try {
         if (lastRegisteredUserIdRef.current) {
@@ -98,6 +111,8 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
         // no-op
       }
       newSocket.off('presence:update');
+      newSocket.off('presence:user_joined');
+      newSocket.off('presence:user_left');
       newSocket.disconnect();
     };
   }, []);

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { getFromCache, setInCache } = require('../utils/memoryCache');
 const Post = require('../models/Post');
 const Comment = require('../models/Comment');
 const Thread = require('../models/Thread');
@@ -376,7 +377,14 @@ const searchUsers = async (req, res) => {
         const currentUserId = req.user?._id
             ? String(req.user._id)
             : String(req.query?.currentUserId || '').trim();
-        const users = await authService.searchUsersService(q, currentUserId);
+        const cacheKey = `searchUsers_${q}_${currentUserId}`;
+        let users = getFromCache(cacheKey);
+
+        if (!users) {
+            users = await authService.searchUsersService(q, currentUserId);
+            setInCache(cacheKey, users, 120); // 2 minutes TTL
+        }
+
         return res.status(200).json({ status: 'success', data: users });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
@@ -391,6 +399,12 @@ const getAggregatedProfile = async (req, res) => {
         const currentUserId = req.user?._id
             ? String(req.user._id)
             : String(req.query?.currentUserId || '').trim();
+
+        const cacheKey = `aggregatedProfile_${userId}_${currentUserId}`;
+        let profileData = getFromCache(cacheKey);
+        if (profileData) {
+            return res.status(200).json({ status: 'success', data: profileData });
+        }
 
         // 1. Profile Data
         // getProfileByIdService ho tro tim theo ObjectId hoac username.
@@ -499,18 +513,22 @@ const getAggregatedProfile = async (req, res) => {
             }
         }
 
+        profileData = {
+            profile,
+            comments,
+            stats: { posts: postCount, totalLikes },
+            followers,
+            following,
+            friendRequests,
+            savedPosts,
+            userPosts
+        };
+
+        setInCache(cacheKey, profileData, 60); // 1 minute TTL
+
         return res.status(200).json({
             status: 'success',
-            data: {
-                profile,
-                comments,
-                stats: { posts: postCount, totalLikes },
-                followers,
-                following,
-                friendRequests,
-                savedPosts,
-                userPosts
-            }
+            data: profileData
         });
     } catch (error) {
         console.error('[AUTH CONTROLLER] Ys L-i getAggregatedProfile:', error);

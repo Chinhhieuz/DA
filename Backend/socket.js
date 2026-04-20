@@ -21,9 +21,9 @@ module.exports = {
     io.on('connection', (socket) => {
       console.log('[SOCKET] client connected:', socket.id);
 
-      const emitPresence = () => {
-        io.emit('presence:update', Array.from(connectedUsers.keys()));
-      };
+      socket.on('presence:sync', () => {
+        socket.emit('presence:update', Array.from(connectedUsers.keys()));
+      });
 
       const detachSocketFromUser = (socketInstance, userId) => {
         if (!userId) return;
@@ -34,8 +34,12 @@ module.exports = {
         socketIds.delete(socketInstance.id);
         socketInstance.leave(uid);
 
-        if (socketIds.size === 0) connectedUsers.delete(uid);
-        else connectedUsers.set(uid, socketIds);
+        if (socketIds.size === 0) {
+          connectedUsers.delete(uid);
+          io.emit('presence:user_left', uid);
+        } else {
+          connectedUsers.set(uid, socketIds);
+        }
       };
 
       socket.on('register', (userId) => {
@@ -55,10 +59,13 @@ module.exports = {
         socket.data.userId = nextUserId;
 
         const socketIds = connectedUsers.get(nextUserId) || new Set();
+        const isFirstConnection = socketIds.size === 0;
         socketIds.add(socket.id);
         connectedUsers.set(nextUserId, socketIds);
 
-        emitPresence();
+        if (isFirstConnection) {
+          io.emit('presence:user_joined', nextUserId);
+        }
         console.log(
           `[SOCKET] user ${nextUserId} joined room ${nextUserId} (socket: ${socket.id})`,
         );
@@ -70,7 +77,6 @@ module.exports = {
 
         detachSocketFromUser(socket, userId);
         socket.data.userId = null;
-        emitPresence();
         console.log(`[SOCKET] user ${String(userId)} unregistered from socket ${socket.id}`);
       });
 
@@ -96,7 +102,6 @@ module.exports = {
           detachSocketFromUser(socket, userId);
           console.log(`[SOCKET] user ${String(userId)} disconnected`);
         }
-        emitPresence();
       });
     });
 

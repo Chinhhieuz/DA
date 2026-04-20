@@ -1,5 +1,6 @@
 const Community = require('../models/Community');
 const Post = require('../models/Post');
+const { clearCache } = require('../utils/memoryCache');
 
 const getAllCommunitiesService = async () => {
     const communities = await Community.find().sort({ created_at: -1 });
@@ -31,6 +32,7 @@ const createCommunityService = async ({ name, description, icon, creator_id }) =
 
     const community = new Community({ name, description, icon, creator: creator_id });
     await community.save();
+    clearCache('all_communities');
     return community;
 };
 
@@ -41,12 +43,14 @@ const updateCommunityService = async (id, { name, description, icon }) => {
         { new: true }
     );
     if (!community) throw new Error('NOT_FOUND:Không tìm thấy chủ đề!');
+    clearCache('all_communities');
     return community;
 };
 
 const deleteCommunityService = async (id) => {
     const community = await Community.findByIdAndDelete(id);
     if (!community) throw new Error('NOT_FOUND:Không tìm thấy chủ đề!');
+    clearCache('all_communities');
     return true;
 };
 
