@@ -118,10 +118,10 @@ export interface User {
 
 const defaultUser: User = {
   id: '',
-  name: 'Admin User',
+  name: 'Guest User',
   avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
-  username: 'admin',
-  role: 'admin',
+  username: 'guest',
+  role: 'user',
   preferences: { darkMode: false, pushNotifications: true, commentNotifications: true },
   savedPosts: []
 };
@@ -158,6 +158,58 @@ const removeAuthStorageItem = (key: 'token' | 'currentUser') => {
   } catch {
     // ignore storage remove failures
   }
+};
+
+const parseJwtPayload = (token: string): Record<string, any> | null => {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+
+  try {
+    const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const decoded = atob(padded);
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+};
+
+const isTokenUsable = (token: string | null | undefined): boolean => {
+  const normalizedToken = String(token || '').trim();
+  if (!normalizedToken) return false;
+
+  const payload = parseJwtPayload(normalizedToken);
+  if (!payload) return false;
+
+  const exp = Number(payload.exp);
+  if (Number.isFinite(exp) && exp > 0) {
+    return Date.now() < exp * 1000;
+  }
+
+  return true;
+};
+
+const readAuthToken = (): string => {
+  return String(readAuthStorageItem('token') || '').trim();
+};
+
+const buildUserFromToken = (token: string): User | null => {
+  const payload = parseJwtPayload(token);
+  if (!payload) return null;
+
+  const accountId = sanitizeEntityId(payload.accountId || payload.id || payload._id || payload.sub);
+  if (!accountId) return null;
+
+  const normalizedRole = String(payload.role || 'user').toLowerCase();
+  const role: User['role'] = normalizedRole === 'admin' || normalizedRole === 'moderator' ? normalizedRole : 'user';
+
+  return {
+    ...defaultUser,
+    id: accountId,
+    _id: accountId,
+    role
+  };
 };
 
 // --- AppContent Component (Needs to be inside SocketProvider) ---
@@ -235,6 +287,19 @@ function AppContent({
   const rawUrlUserId = currentView === 'profile' && pathParts[1] ? decodeURIComponent(pathParts[1]) : null;
   const urlUserId = sanitizeEntityId(rawUrlUserId);
   const viewedUserId = urlUserId || viewedUserIdState;
+
+  useEffect(() => {
+    if (currentView !== 'admin') return;
+
+    if (!isAuthenticated) {
+      navigate('/login', { replace: true });
+      return;
+    }
+
+    if (currentUser.role !== 'admin') {
+      navigate('/', { replace: true });
+    }
+  }, [currentView, isAuthenticated, currentUser.role, navigate]);
 
   const clearSharedPostQueryFromUrl = useCallback(() => {
     const params = new URLSearchParams(location.search);
@@ -715,7 +780,7 @@ function AppContent({
       case 'messages': return <Messages currentUser={currentUser} onUserClick={handleUserClick} onMessagesRead={() => fetchUnreadMessagesCount(currentUser.id || currentUser._id || '')} />;
       case 'notifications': return <Notifications currentUser={currentUser} onMarkAllAsRead={() => setUnreadNotifications(0)} onNotificationClick={handleNotificationClick} />;
       case 'settings': return <Settings currentUser={currentUser} onUpdatePreferences={(prefs) => { const u = {...currentUser, preferences: normalizeUserPreferences(prefs)}; setCurrentUser(u); writeAuthStorageItem('currentUser', JSON.stringify(u)); }} onLogout={handleLogout} />;
-      case 'admin': return <AdminDashboard currentUser={currentUser} />;
+      case 'admin': return isAuthenticated && currentUser.role === 'admin' ? <AdminDashboard currentUser={currentUser} /> : null;
       case 'saved': return <SavedPosts currentUser={currentUser} onPostClick={handlePostClick} onUserClick={handleUserClick} onSaveToggle={handleSaveToggle} onCommunityClick={handleCommunityClick} onBackHome={() => handleViewChange('home')} />;
       default: return null;
     }
@@ -725,27 +790,35 @@ function AppContent({
     return (
       <Login 
         onLogin={(userData: any) => { 
-          setIsAuthenticated(true); 
-          if (userData?.user) {
-            const u = userData.user;
-            const newUser: User = {
-              ...currentUser,
-              id: u._id || u.id,
-              name: u.full_name || u.username,
-              username: u.username,
-              avatar: getImageUrl(u.avatar_url) || defaultUser.avatar,
-              role: (u.role || 'user').toLowerCase() as any,
-              preferences: normalizeUserPreferences(u.preferences || defaultUser.preferences),
-              savedPosts: u.savedPosts || []
-            };
-            setCurrentUser(newUser);
-            const token = userData.token || u.token;
-            writeAuthStorageItem('currentUser', JSON.stringify(newUser));
-            writeAuthStorageItem('token', token);
-            navigate(u.role?.toLowerCase() === 'admin' ? '/admin' : '/');
-            fetchUnreadCount(u._id || u.id);
-            fetchUnreadMessagesCount(u._id || u.id);
+          const u = userData?.user;
+          const token = String(userData?.token || u?.token || readAuthToken()).trim();
+          if (!u || !isTokenUsable(token)) {
+            setIsAuthenticated(false);
+            setCurrentUser(defaultUser);
+            removeAuthStorageItem('currentUser');
+            removeAuthStorageItem('token');
+            toast.error('Phien dang nhap khong hop le, vui long dang nhap lai');
+            return;
           }
+
+          setIsAuthenticated(true);
+          const newUser: User = {
+            ...currentUser,
+            id: u._id || u.id,
+            _id: u._id || u.id,
+            name: u.full_name || u.username,
+            username: u.username,
+            avatar: getImageUrl(u.avatar_url) || defaultUser.avatar,
+            role: (u.role || 'user').toLowerCase() as any,
+            preferences: normalizeUserPreferences(u.preferences || defaultUser.preferences),
+            savedPosts: u.savedPosts || []
+          };
+          setCurrentUser(newUser);
+          writeAuthStorageItem('currentUser', JSON.stringify(newUser));
+          writeAuthStorageItem('token', token);
+          navigate(u.role?.toLowerCase() === 'admin' ? '/admin' : '/');
+          fetchUnreadCount(u._id || u.id);
+          fetchUnreadMessagesCount(u._id || u.id);
         }} 
         onBackToHome={() => navigate('/')}
       />
@@ -836,8 +909,11 @@ function AppContent({
 export default function App() {
   const { setTheme } = useTheme();
   const [currentUser, setCurrentUser] = useState<User>(() => {
+    const token = readAuthToken();
+    if (!isTokenUsable(token)) return defaultUser;
+
     const saved = readAuthStorageItem('currentUser');
-    if (!saved) return defaultUser;
+    if (!saved) return buildUserFromToken(token) || defaultUser;
     try {
       const parsed = JSON.parse(saved);
       const normalizedUser: User = {
@@ -853,10 +929,10 @@ export default function App() {
       };
       return normalizedUser;
     } catch {
-      return defaultUser;
+      return buildUserFromToken(token) || defaultUser;
     }
   });
-  const [isAuthenticated, setIsAuthenticated] = useState(() => !!readAuthStorageItem('token'));
+  const [isAuthenticated, setIsAuthenticated] = useState(() => isTokenUsable(readAuthToken()));
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [activeCommunity, setActiveCommunity] = useState<string | null>(null);
@@ -875,6 +951,16 @@ export default function App() {
   const lastUnreadMessagesFetchAtRef = useRef(0);
   const normalizedCurrentUserDarkMode = normalizePreferenceBoolean(currentUser?.preferences?.darkMode, false);
 
+  const clearAuthSession = useCallback((notify = false) => {
+    setIsAuthenticated(false);
+    setCurrentUser(defaultUser);
+    setUnreadNotifications(0);
+    setUnreadMessagesCount(0);
+    removeAuthStorageItem('currentUser');
+    removeAuthStorageItem('token');
+    if (notify) toast.success('Da dang xuat');
+  }, []);
+
   useEffect(() => {
     if (!isAuthenticated) {
       setTheme('light');
@@ -882,6 +968,45 @@ export default function App() {
     }
     setTheme(normalizedCurrentUserDarkMode ? 'dark' : 'light');
   }, [isAuthenticated, normalizedCurrentUserDarkMode, setTheme]);
+
+  useEffect(() => {
+    const syncAuthFromToken = () => {
+      const token = readAuthToken();
+      const tokenIsValid = isTokenUsable(token);
+
+      if (!tokenIsValid) {
+        const hasUserState = Boolean(sanitizeEntityId(currentUser?.id || currentUser?._id));
+        if (isAuthenticated || hasUserState) {
+          clearAuthSession(false);
+        }
+        return;
+      }
+
+      if (!isAuthenticated) {
+        setIsAuthenticated(true);
+      }
+    };
+
+    syncAuthFromToken();
+
+    const handleStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === 'token' || event.key === 'currentUser') {
+        syncAuthFromToken();
+      }
+    };
+
+    const handleFocus = () => {
+      syncAuthFromToken();
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [clearAuthSession, currentUser?.id, currentUser?._id, isAuthenticated]);
 
   const fetchUnreadCount = useCallback(async (userId: string) => {
     const normalizedUserId = String(userId || '').trim();
@@ -1078,11 +1203,7 @@ export default function App() {
   }, []);
 
   const handleLogout = () => {
-    setIsAuthenticated(false);
-    setCurrentUser(defaultUser);
-    removeAuthStorageItem('currentUser');
-    removeAuthStorageItem('token');
-    toast.success('Đã đăng xuất');
+    clearAuthSession(true);
   };
 
   return (
@@ -1113,6 +1234,7 @@ export default function App() {
     </SocketProvider>
   );
 }
+
 
 
 

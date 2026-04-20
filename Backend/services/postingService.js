@@ -240,7 +240,9 @@ const createPostService = async (postDataInput, mediaFiles = {}) => {
                     });
                     console.log(`📡 [AI_RESULT] Gửi tới Room: ${rIdStr}`);
                 }
-            } catch (sErr) {}
+            } catch (sErr) {
+                console.error('[POST ASYNC SERVICE] Lỗi Socket:', sErr.message);
+            }
 
         } catch (error) {
             console.error('[POST ASYNC SERVICE] 🚨 Lỗi xử lý ngầm:', error.message);
