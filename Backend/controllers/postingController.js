@@ -1,4 +1,5 @@
 const postingService = require('../services/postingService');
+const { getFromCache, setInCache } = require('../utils/memoryCache');
 
 const handleServiceError = (error, res) => {
     const message = String(error?.message || 'Unknown error');
@@ -87,7 +88,14 @@ const getTrendingPosts = async (req, res) => {
     try {
         // Trending van public, nhung neu co token se duoc ca nhan hoa thong tin follow/vote.
         const requestUserId = resolveRequestUserId(req);
-        const trendingPosts = await postingService.getTrendingPostsService(requestUserId);
+        const cacheKey = `trendingPosts_${requestUserId || 'anonymous'}`;
+        let trendingPosts = getFromCache(cacheKey);
+
+        if (!trendingPosts) {
+            trendingPosts = await postingService.getTrendingPostsService(requestUserId);
+            setInCache(cacheKey, trendingPosts, 300); // 5 minutes Cache
+        }
+        
         return res.status(200).json({ status: 'success', data: trendingPosts });
     } catch (error) {
         return handleServiceError(error, res);
