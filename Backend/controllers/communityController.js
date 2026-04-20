@@ -18,7 +18,7 @@ const getAllCommunities = async (req, res) => {
         
         if (!communities) {
             communities = await communityService.getAllCommunitiesService();
-            setInCache(cacheKey, communities, 300); // 5 minutes TTL
+            setInCache(cacheKey, JSON.parse(JSON.stringify(communities)), 300); // 5 minutes TTL
         }
 
         return res.status(200).json({ status: 'success', data: communities });
