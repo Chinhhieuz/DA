@@ -10,6 +10,20 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { useTheme } from '@/components/theme-provider';
 
+const normalizeBoolean = (value: any, fallback: boolean) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const lowered = value.trim().toLowerCase();
+    if (lowered === 'true') return true;
+    if (lowered === 'false') return false;
+  }
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  return fallback;
+};
+
 export function Settings({ currentUser, onUpdatePreferences, onLogout }: { currentUser?: any, onUpdatePreferences?: (prefs: any) => void, onLogout?: () => void }) {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showPass, setShowPass] = useState(false);
@@ -18,9 +32,9 @@ export function Settings({ currentUser, onUpdatePreferences, onLogout }: { curre
   const [passData, setPassData] = useState({ old: '', new: '', confirm: '' });
   const { setTheme } = useTheme();
 
-  const [pushNotif, setPushNotif] = useState(currentUser?.preferences?.pushNotifications ?? true);
-  const [commentNotif, setCommentNotif] = useState(currentUser?.preferences?.commentNotifications ?? true);
-  const [darkMode, setDarkMode] = useState(currentUser?.preferences?.darkMode ?? false);
+  const [pushNotif, setPushNotif] = useState(normalizeBoolean(currentUser?.preferences?.pushNotifications, true));
+  const [commentNotif, setCommentNotif] = useState(normalizeBoolean(currentUser?.preferences?.commentNotifications, true));
+  const [darkMode, setDarkMode] = useState(normalizeBoolean(currentUser?.preferences?.darkMode, false));
   const accountId = currentUser?.id || currentUser?._id;
   const authHeaders = {
     'Content-Type': 'application/json',
@@ -29,25 +43,25 @@ export function Settings({ currentUser, onUpdatePreferences, onLogout }: { curre
 
   useEffect(() => {
     if (currentUser?.preferences) {
-      setPushNotif(currentUser.preferences.pushNotifications ?? true);
-      setCommentNotif(currentUser.preferences.commentNotifications ?? true);
-      setDarkMode(currentUser.preferences.darkMode ?? false);
+      setPushNotif(normalizeBoolean(currentUser.preferences.pushNotifications, true));
+      setCommentNotif(normalizeBoolean(currentUser.preferences.commentNotifications, true));
+      setDarkMode(normalizeBoolean(currentUser.preferences.darkMode, false));
     }
   }, [currentUser?.preferences]);
 
-  useEffect(() => {
-    setTheme(darkMode ? 'dark' : 'light');
-  }, [darkMode, setTheme]);
-
   const handlePreferencesChange = async (key: string, value: boolean) => {
     const previousPrefs = { pushNotifications: pushNotif, commentNotifications: commentNotif, darkMode };
-    const newPrefs = { ...previousPrefs, [key]: value };
+    const nextValue = normalizeBoolean(value, false);
+    const newPrefs = { ...previousPrefs, [key]: nextValue };
 
     setPushNotif(newPrefs.pushNotifications);
     setCommentNotif(newPrefs.commentNotifications);
     setDarkMode(newPrefs.darkMode);
+    if (key === 'darkMode') {
+      setTheme(nextValue ? 'dark' : 'light');
+    }
 
-    if (key === 'pushNotifications' && value && 'Notification' in window && Notification.permission !== 'granted') {
+    if (key === 'pushNotifications' && nextValue && 'Notification' in window && Notification.permission !== 'granted') {
       try {
         Notification.requestPermission().then(perm => {
           if (perm !== 'granted') {
@@ -66,6 +80,9 @@ export function Settings({ currentUser, onUpdatePreferences, onLogout }: { curre
       setPushNotif(previousPrefs.pushNotifications);
       setCommentNotif(previousPrefs.commentNotifications);
       setDarkMode(previousPrefs.darkMode);
+      if (key === 'darkMode') {
+        setTheme(previousPrefs.darkMode ? 'dark' : 'light');
+      }
       return;
     }
 
@@ -86,6 +103,9 @@ export function Settings({ currentUser, onUpdatePreferences, onLogout }: { curre
       setPushNotif(previousPrefs.pushNotifications);
       setCommentNotif(previousPrefs.commentNotifications);
       setDarkMode(previousPrefs.darkMode);
+      if (key === 'darkMode') {
+        setTheme(previousPrefs.darkMode ? 'dark' : 'light');
+      }
       toast.error(e.message || 'Lỗi khi lưu cài đặt');
     } finally {
       setIsSavingPreferences(false);

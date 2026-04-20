@@ -1,23 +1,38 @@
-const Account = require('../models/Account'); 
+const Account = require('../models/Account');
+const mongoose = require('mongoose');
+
+const toBooleanOrDefault = (value, fallback) => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+        const lowered = value.trim().toLowerCase();
+        if (lowered === 'true') return true;
+        if (lowered === 'false') return false;
+    }
+    if (typeof value === 'number') {
+        if (value === 1) return true;
+        if (value === 0) return false;
+    }
+    return fallback;
+};
 
 /**
- * Cập nhật thông tin profile
+ * Cap nhat thong tin profile
  */
 const updateProfileService = async (accountId, updateData) => {
     const allowedFields = ['full_name', 'avatar_url', 'bio', 'location', 'website', 'mssv', 'faculty'];
     const allowedUpdates = {};
-    
-    allowedFields.forEach(field => {
+
+    allowedFields.forEach((field) => {
         if (updateData[field] !== undefined) allowedUpdates[field] = updateData[field];
     });
 
     const updatedAccount = await Account.findByIdAndUpdate(
         accountId,
         { $set: allowedUpdates },
-        { new: true } 
+        { new: true }
     );
 
-    if (!updatedAccount) throw new Error('Tài khoản không tồn tại!');
+    if (!updatedAccount) throw new Error('Tai khoan khong ton tai!');
 
     return {
         id: updatedAccount._id,
@@ -37,50 +52,68 @@ const updateProfileService = async (accountId, updateData) => {
 };
 
 /**
- * Cập nhật cài đặt người dùng (Giao diện, Thông báo)
+ * Cap nhat cai dat nguoi dung (Giao dien, thong bao)
  */
 const updateSettingsService = async (accountId, preferences) => {
+    const safePreferences = {
+        darkMode: toBooleanOrDefault(preferences?.darkMode, false),
+        pushNotifications: toBooleanOrDefault(preferences?.pushNotifications, true),
+        commentNotifications: toBooleanOrDefault(preferences?.commentNotifications, true)
+    };
+
     const updatedAccount = await Account.findByIdAndUpdate(
         accountId,
-        { $set: { preferences } },
+        { $set: { preferences: safePreferences } },
         { new: true }
     );
-    if (!updatedAccount) throw new Error('Tài khoản không tồn tại!');
+
+    if (!updatedAccount) throw new Error('Tai khoan khong ton tai!');
     return updatedAccount.preferences;
 };
 
 /**
- * Lấy thông tin Profile chi tiết theo ID (Bao gồm trạng thái Follow/Friend)
+ * Lay thong tin Profile chi tiet theo ID (bao gom trang thai Follow/Friend)
  */
 const getProfileByIdService = async (userId, currentUserId) => {
-    const account = await Account.findById(userId).select('-password_hash');
-    if (!account) throw new Error('Người dùng không tồn tại!');
-    
+    const normalizedInput = String(userId || '').trim();
+    if (!normalizedInput) throw new Error('Nguoi dung khong ton tai!');
+
+    // Ho tro ca 2 kieu truy cap profile:
+    // 1) /profile/<objectId>
+    // 2) /profile/<username>
+    const accountQuery = mongoose.Types.ObjectId.isValid(normalizedInput)
+        ? Account.findById(normalizedInput)
+        : Account.findOne({ username: normalizedInput });
+
+    const account = await accountQuery.select('-password_hash');
+    if (!account) throw new Error('Nguoi dung khong ton tai!');
+
+    const targetUserId = account._id.toString();
+
     let friendStatus = 'none';
     let isFollowing = false;
 
-    if (currentUserId && currentUserId.toString() !== userId.toString()) {
+    // Neu dang xem profile nguoi khac thi tra ve trang thai ket noi/follow tu current user.
+    if (currentUserId && currentUserId.toString() !== targetUserId) {
         const currentUser = await Account.findById(currentUserId);
         if (currentUser) {
-            // Logic cho Friend
-            if (currentUser.friends.some(id => id.toString() === userId.toString())) {
+            if (currentUser.friends.some((id) => id.toString() === targetUserId)) {
                 friendStatus = 'friends';
-            } else if (currentUser.friendRequests.sent.some(id => id.toString() === userId.toString())) {
+            } else if (currentUser.friendRequests.sent.some((id) => id.toString() === targetUserId)) {
                 friendStatus = 'sent';
-            } else if (currentUser.friendRequests.received.some(id => id.toString() === userId.toString())) {
+            } else if (currentUser.friendRequests.received.some((id) => id.toString() === targetUserId)) {
                 friendStatus = 'received';
             }
 
-            // Logic cho Follow
-            if (currentUser.following.some(id => id.toString() === userId.toString())) {
+            if (currentUser.following.some((id) => id.toString() === targetUserId)) {
                 isFollowing = true;
             }
         }
     }
 
-    return { 
-        ...account.toObject(), 
-        friendStatus, 
+    return {
+        ...account.toObject(),
+        friendStatus,
         isFollowing,
         followersCount: account.followers ? account.followers.length : 0,
         followingCount: account.following ? account.following.length : 0
@@ -88,11 +121,11 @@ const getProfileByIdService = async (userId, currentUserId) => {
 };
 
 /**
- * Tìm kiếm người dùng theo tên hoặc username
+ * Tim kiem nguoi dung theo ten hoac username
  */
 const searchUsersService = async (query, currentUserId = null) => {
     if (!query) return [];
-    
+
     const users = await Account.find({
         $or: [
             { username: { $regex: query, $options: 'i' } },
@@ -103,8 +136,8 @@ const searchUsersService = async (query, currentUserId = null) => {
     if (currentUserId) {
         const currentUser = await Account.findById(currentUserId).select('following');
         if (currentUser) {
-            const followingList = (currentUser.following || []).map(id => id.toString());
-            return users.map(user => ({
+            const followingList = (currentUser.following || []).map((id) => id.toString());
+            return users.map((user) => ({
                 ...user,
                 isFollowing: followingList.includes(user._id.toString())
             }));

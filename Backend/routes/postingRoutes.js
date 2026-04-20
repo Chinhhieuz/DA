@@ -1,6 +1,7 @@
 const express = require('express');
 const postingController = require('../controllers/postingController');
 const { isAdmin } = require('../middlewares/adminMiddleware');
+const { protect, optionalProtect } = require('../middlewares/authMiddleware');
 const { postValidation } = require('../middlewares/validateMiddleware');
 const { cachePublicGet } = require('../middlewares/cacheMiddleware');
 const multer = require('multer');
@@ -30,7 +31,7 @@ const postUploadFields = upload.fields([
     { name: 'video', maxCount: 1 }
 ]);
 
-router.post('/', (req, res, next) => {
+router.post('/', protect, (req, res, next) => {
     postUploadFields(req, res, (err) => {
         if (!err) return next();
         if (err.code === 'LIMIT_FILE_SIZE') {
@@ -42,6 +43,8 @@ router.post('/', (req, res, next) => {
 
 router.get(
     '/',
+    // optionalProtect cho phep route public nhung van doc duoc req.user neu co token.
+    optionalProtect,
     cachePublicGet({
         sMaxAge: 45,
         staleWhileRevalidate: 180,
@@ -49,16 +52,17 @@ router.get(
     }),
     postingController.getAllPosts
 );
-router.get('/trending', cachePublicGet({ sMaxAge: 60, staleWhileRevalidate: 300 }), postingController.getTrendingPosts);
-router.get('/search', cachePublicGet({ sMaxAge: 30, staleWhileRevalidate: 120 }), postingController.searchPosts);
-router.get('/pending', isAdmin, postingController.getPendingPosts);
-router.get('/admin/community/:communityName', isAdmin, postingController.getCommunityPostsAdmin);
-router.put('/:id/approve', isAdmin, postingController.approvePost);
-router.put('/:id/reject', isAdmin, postingController.rejectPost);
-router.put('/:id/react', postingController.reactToPost);
-router.delete('/:id', postingController.deletePost);
-router.post('/:id/save', postingController.toggleSavePost);
-router.get('/saved/:userId', postingController.getSavedPosts);
-router.get('/:id', cachePublicGet({ sMaxAge: 30, staleWhileRevalidate: 120 }), postingController.getPostById);
+// Cac route GET nay van public; token (neu co) chi dung de ca nhan hoa ket qua.
+router.get('/trending', optionalProtect, cachePublicGet({ sMaxAge: 60, staleWhileRevalidate: 300 }), postingController.getTrendingPosts);
+router.get('/search', optionalProtect, cachePublicGet({ sMaxAge: 30, staleWhileRevalidate: 120 }), postingController.searchPosts);
+router.get('/pending', protect, isAdmin, postingController.getPendingPosts);
+router.get('/admin/community/:communityName', protect, isAdmin, postingController.getCommunityPostsAdmin);
+router.put('/:id/approve', protect, isAdmin, postingController.approvePost);
+router.put('/:id/reject', protect, isAdmin, postingController.rejectPost);
+router.put('/:id/react', protect, postingController.reactToPost);
+router.delete('/:id', protect, postingController.deletePost);
+router.post('/:id/save', protect, postingController.toggleSavePost);
+router.get('/saved/:userId', protect, postingController.getSavedPosts);
+router.get('/:id', optionalProtect, cachePublicGet({ sMaxAge: 30, staleWhileRevalidate: 120 }), postingController.getPostById);
 
 module.exports = router;

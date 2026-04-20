@@ -45,23 +45,14 @@ const register = async (req, res) => {
 
 const updateProfile = async (req, res) => {
     try {
-        const { accountId, ...updateData } = req.body;
+        const updateData = req.body || {};
+        // Moi cap nhat profile deu phai dua tren token hien tai.
         const authUserId = req.user?._id ? String(req.user._id) : '';
-        const targetAccountId = authUserId || accountId;
-
-        if (!targetAccountId) {
-            return res.status(400).json({ status: 'fail', message: 'Missing accountId' });
+        if (!authUserId) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
         }
 
-        // If client sends stale accountId, trust authenticated user id from token.
-        if (authUserId && accountId && String(accountId) !== authUserId) {
-            console.warn('[AUTH] Ignoring mismatched accountId in updateProfile', {
-                tokenUserId: authUserId,
-                bodyAccountId: String(accountId)
-            });
-        }
-
-        const updatedProfile = await authService.updateProfileService(targetAccountId, updateData);
+        const updatedProfile = await authService.updateProfileService(authUserId, updateData);
         return res.status(200).json({ status: 'success', data: updatedProfile });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
@@ -71,7 +62,10 @@ const updateProfile = async (req, res) => {
 const getProfile = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { currentUserId } = req.query;
+        // Uu tien currentUserId tu token de xac dinh friend/follow status chinh xac.
+        const currentUserId = req.user?._id
+            ? String(req.user._id)
+            : String(req.query?.currentUserId || '').trim();
         const profile = await authService.getProfileByIdService(userId, currentUserId);
         return res.status(200).json({ status: 'success', data: profile });
     } catch (error) {
@@ -108,9 +102,16 @@ const resetPassword = async (req, res) => {
 
 const changePassword = async (req, res) => {
     try {
-        const { accountId, oldPassword, newPassword } = req.body;
-        if (!accountId || !oldPassword || !newPassword) return res.status(400).json({ status: 'fail', message: 'Thieu du lieu doi mat khau' });
-        const result = await authService.changePasswordAuth(accountId, oldPassword, newPassword);
+        const { oldPassword, newPassword } = req.body;
+        const authUserId = req.user?._id ? String(req.user._id) : '';
+        if (!authUserId) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+        }
+        if (!oldPassword || !newPassword) {
+            return res.status(400).json({ status: 'fail', message: 'Thieu du lieu doi mat khau' });
+        }
+
+        const result = await authService.changePasswordAuth(authUserId, oldPassword, newPassword);
         return res.status(200).json({ status: 'success', message: result.message });
     } catch (error) {
         return res.status(400).json({ status: 'error', message: error.message });
@@ -119,9 +120,16 @@ const changePassword = async (req, res) => {
 
 const updateSettings = async (req, res) => {
     try {
-        const { accountId, preferences } = req.body;
-        if (!accountId || !preferences) return res.status(400).json({ status: 'fail', message: 'Thieu du lieu' });
-        const prefs = await authService.updateSettingsService(accountId, preferences);
+        const { preferences } = req.body;
+        const authUserId = req.user?._id ? String(req.user._id) : '';
+        if (!authUserId) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+        }
+        if (!preferences) {
+            return res.status(400).json({ status: 'fail', message: 'Thieu du lieu' });
+        }
+
+        const prefs = await authService.updateSettingsService(authUserId, preferences);
         return res.status(200).json({ status: 'success', data: prefs });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
@@ -147,7 +155,12 @@ const getUserStats = async (req, res) => {
 
 const sendFriendRequest = async (req, res) => {
     try {
-        const { senderId, targetId } = req.body;
+        // senderId luon lay tu token, client chi can gui targetId.
+        const senderId = req.user?._id ? String(req.user._id) : '';
+        const { targetId } = req.body;
+        if (!senderId || !targetId) {
+            return res.status(400).json({ status: 'fail', message: 'Thieu du lieu loi moi ket ban' });
+        }
         const result = await authService.sendFriendRequestService(senderId, targetId);
 
         // Gửi Socket Notification
@@ -173,7 +186,12 @@ const sendFriendRequest = async (req, res) => {
 
 const acceptFriendRequest = async (req, res) => {
     try {
-        const { userId, senderId } = req.body;
+        // userId nguoi xu ly loi moi duoc xac dinh boi token.
+        const userId = req.user?._id ? String(req.user._id) : '';
+        const { senderId } = req.body;
+        if (!userId || !senderId) {
+            return res.status(400).json({ status: 'fail', message: 'Thieu du lieu chap nhan loi moi' });
+        }
         const result = await authService.acceptFriendRequestService(userId, senderId);
 
         // Gửi Socket Notification cho người gửi lời mời
@@ -203,7 +221,12 @@ const acceptFriendRequest = async (req, res) => {
 
 const cancelFriendRequest = async (req, res) => {
     try {
-        const { senderId, targetId } = req.body;
+        // senderId lay tu token de dam bao dung chu the huy loi moi.
+        const senderId = req.user?._id ? String(req.user._id) : '';
+        const { targetId } = req.body;
+        if (!senderId || !targetId) {
+            return res.status(400).json({ status: 'fail', message: 'Thieu du lieu huy loi moi' });
+        }
         const result = await authService.cancelFriendRequestService(senderId, targetId);
 
         // Gửi Socket Notification Hủy
@@ -225,7 +248,12 @@ const cancelFriendRequest = async (req, res) => {
 
 const rejectFriendRequest = async (req, res) => {
     try {
-        const { userId, senderId } = req.body;
+        // userId lay tu token, senderId la nguoi da gui loi moi.
+        const userId = req.user?._id ? String(req.user._id) : '';
+        const { senderId } = req.body;
+        if (!userId || !senderId) {
+            return res.status(400).json({ status: 'fail', message: 'Thieu du lieu tu choi loi moi' });
+        }
         const result = await authService.rejectFriendRequestService(userId, senderId);
 
         // Xóa thông báo friend_request
@@ -241,7 +269,12 @@ const rejectFriendRequest = async (req, res) => {
 
 const removeFriend = async (req, res) => {
     try {
-        const { userId, targetId } = req.body;
+        // userId lay tu token de khong can truyen userId trong body.
+        const userId = req.user?._id ? String(req.user._id) : '';
+        const { targetId } = req.body;
+        if (!userId || !targetId) {
+            return res.status(400).json({ status: 'fail', message: 'Thieu du lieu huy ket ban' });
+        }
         const result = await authService.removeFriendService(userId, targetId);
         return res.status(200).json({ status: 'success', message: result.message });
     } catch (error) {
@@ -251,7 +284,12 @@ const removeFriend = async (req, res) => {
 
 const followUser = async (req, res) => {
     try {
-        const { followerId, targetId } = req.body;
+        // followerId lay tu token, chi can targetId tu client.
+        const followerId = req.user?._id ? String(req.user._id) : '';
+        const { targetId } = req.body;
+        if (!followerId || !targetId) {
+            return res.status(400).json({ status: 'fail', message: 'Thieu du lieu follow' });
+        }
         const result = await authService.followUserService(followerId, targetId);
 
         // Gửi Socket Notification cho người ược follow
@@ -278,7 +316,12 @@ const followUser = async (req, res) => {
 
 const unfollowUser = async (req, res) => {
     try {
-        const { followerId, targetId } = req.body;
+        // followerId lay tu token, chi can targetId tu client.
+        const followerId = req.user?._id ? String(req.user._id) : '';
+        const { targetId } = req.body;
+        if (!followerId || !targetId) {
+            return res.status(400).json({ status: 'fail', message: 'Thieu du lieu unfollow' });
+        }
         const result = await authService.unfollowUserService(followerId, targetId);
         return res.status(200).json({ status: 'success', message: result.message });
     } catch (error) {
@@ -328,7 +371,11 @@ const getFriendRequests = async (req, res) => {
 
 const searchUsers = async (req, res) => {
     try {
-        const { q, currentUserId } = req.query;
+        const { q } = req.query;
+        // currentUserId duoc lay tu token de tra ve isFollowing dung theo nguoi dang nhap.
+        const currentUserId = req.user?._id
+            ? String(req.user._id)
+            : String(req.query?.currentUserId || '').trim();
         const users = await authService.searchUsersService(q, currentUserId);
         return res.status(200).json({ status: 'success', data: users });
     } catch (error) {
@@ -340,21 +387,31 @@ const searchUsers = async (req, res) => {
 const getAggregatedProfile = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { currentUserId } = req.query;
-        const isOwnProfile = userId === currentUserId;
+        // Neu request da dang nhap thi lay currentUserId tu token.
+        const currentUserId = req.user?._id
+            ? String(req.user._id)
+            : String(req.query?.currentUserId || '').trim();
 
         // 1. Profile Data
+        // getProfileByIdService ho tro tim theo ObjectId hoac username.
         const profile = await authService.getProfileByIdService(userId, currentUserId);
+        // Sau khi resolve xong profile, dung _id that de query cac collection khac cho nhat quan.
+        const resolvedUserId = String(profile?._id || userId || '').trim();
+        const normalizedCurrentUserId = String(currentUserId || '').trim();
+        const isOwnProfile = !!resolvedUserId && resolvedUserId === normalizedCurrentUserId;
+        if (!resolvedUserId) {
+            return res.status(404).json({ status: 'fail', message: 'Nguoi dung khong ton tai' });
+        }
 
         // 2. Comments
-        const comments = await Comment.find({ author: userId })
+        const comments = await Comment.find({ author: resolvedUserId })
             .populate('post', 'title community')
             .sort({ created_at: -1 })
             .lean();
 
         // 3. THỐNG KS NGƯoI DTNG (POSTS, LIKES)
-        let authorQuery = userId;
-        try { if (mongoose.Types.ObjectId.isValid(userId)) authorQuery = new mongoose.Types.ObjectId(userId); } catch (e) { }
+        let authorQuery = resolvedUserId;
+        try { if (mongoose.Types.ObjectId.isValid(resolvedUserId)) authorQuery = new mongoose.Types.ObjectId(resolvedUserId); } catch (e) { }
 
         // B?I THỰC TẾ: Ch? ếm các bài viết ã ược phê duy?t (status: approved)
         // Dù là xem profile của chính mình hay người khác, con s thng kê ch? tính bài công khai
@@ -365,8 +422,8 @@ const getAggregatedProfile = async (req, res) => {
         const totalLikes = account?.total_upvotes || 0;
 
         // 4. Followers & Following
-        const followers = await authService.getFollowersService(userId);
-        const following = await authService.getFollowingService(userId);
+        const followers = await authService.getFollowersService(resolvedUserId);
+        const following = await authService.getFollowingService(resolvedUserId);
 
         // 5. Friend Requests & Saved Posts (only for own profile)
         let friendRequests = [];
@@ -375,7 +432,7 @@ const getAggregatedProfile = async (req, res) => {
 
         // 6. DANH SÁCH B?I VIẾT CỦA NGƯoI DTNG
         // CH^ LẤY CÁC B?I Đf ĐƯỢC PHS DUY?T (status: approved) f hifn th< trong profile
-        const postFilter = { author: userId, status: 'approved' };
+        const postFilter = { author: resolvedUserId, status: 'approved' };
 
         const rawUserPosts = await Post.find(postFilter)
             .populate('author', 'username email role avatar_url full_name')
@@ -408,9 +465,10 @@ const getAggregatedProfile = async (req, res) => {
         }));
 
         if (isOwnProfile) {
-            friendRequests = await authService.getFriendRequestsService(userId);
+            // Chi tra ve friend requests va saved posts khi dang xem profile cua chinh minh.
+            friendRequests = await authService.getFriendRequestsService(resolvedUserId);
             
-            const user = await Account.findById(userId).populate({
+            const user = await Account.findById(resolvedUserId).populate({
                 path: 'savedPosts',
                 populate: { path: 'author', select: 'username full_name avatar_url' }
             });
@@ -430,7 +488,7 @@ const getAggregatedProfile = async (req, res) => {
                     let userVote = null;
                     const postObj = post.toObject ? post.toObject() : post;
                     if (postObj.reactions) {
-                        const reaction = postObj.reactions.find(r => r.user_id && r.user_id.toString() === userId);
+                        const reaction = postObj.reactions.find(r => r.user_id && r.user_id.toString() === resolvedUserId);
                         if (reaction) userVote = reaction.type;
                     }
                     const authorId = postObj.author ? (postObj.author._id || postObj.author).toString() : null;

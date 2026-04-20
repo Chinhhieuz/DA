@@ -1,67 +1,61 @@
 const jwt = require('jsonwebtoken');
-const mongoose = require('mongoose');
 const Account = require('../models/Account');
 
-const normalizeId = (value) => String(value || '').trim();
-const allowLegacyAuth = String(
-    process.env.ALLOW_LEGACY_AUTH || (process.env.NODE_ENV === 'development' ? 'true' : 'false')
-).toLowerCase() === 'true';
-
-const protect = async (req, res, next) => {
-    let token = '';
-    const isMessagesRoute = String(req.originalUrl || '').startsWith('/api/messages');
-
+// Read token from standard places used by this project.
+const extractTokenFromRequest = (req) => {
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-        token = req.headers.authorization.split(' ')[1];
-    } else if (req.cookies && req.cookies.jwt) {
-        token = req.cookies.jwt;
+        return req.headers.authorization.split(' ')[1];
     }
-
-    if (token) {
-        try {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            const account = await Account.findById(decoded.accountId).select('-password_hash');
-            if (!account) {
-                return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
-            }
-
-            req.user = account;
-
-            // Backward compatibility for current messaging client while token/user drift exists.
-            const explicitMessageUserId = normalizeId(req.body?.userId || req.query?.userId);
-            if (isMessagesRoute && explicitMessageUserId && mongoose.Types.ObjectId.isValid(explicitMessageUserId)) {
-                if (String(req.user._id) !== explicitMessageUserId) {
-                    const explicitUser = await Account.findById(explicitMessageUserId).select('-password_hash');
-                    if (explicitUser) req.user = explicitUser;
-                }
-            }
-
-            return next();
-        } catch (error) {
-            // Continue to legacy flow only when explicitly enabled.
-        }
+    if (req.cookies && req.cookies.jwt) {
+        return req.cookies.jwt;
     }
+    return '';
+};
 
-    if (!allowLegacyAuth) {
+// Decode token and hydrate full account object for downstream handlers.
+const resolveAccountFromToken = async (token) => {
+    if (!token) return null;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const accountId = String(decoded?.accountId || decoded?.id || '').trim();
+    if (!accountId) return null;
+
+    const account = await Account.findById(accountId).select('-password_hash');
+    return account || null;
+};
+
+// Strict auth: request must have a valid token.
+const protect = async (req, res, next) => {
+    const token = extractTokenFromRequest(req);
+    if (!token) {
         return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
     }
 
-    const legacyId =
-        req.body?.admin_id ||
-        req.query?.admin_id ||
-        req.body?.userId ||
-        req.query?.userId ||
-        (isMessagesRoute ? null : req.params?.userId);
-
-    if (legacyId && mongoose.Types.ObjectId.isValid(legacyId)) {
-        const account = await Account.findById(legacyId).select('-password_hash');
-        if (account) {
-            req.user = account;
-            return next();
+    try {
+        const account = await resolveAccountFromToken(token);
+        if (!account) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
         }
-    }
 
-    return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+        req.user = account;
+        return next();
+    } catch (error) {
+        return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+    }
 };
 
-module.exports = { protect };
+// Optional auth: if token exists and is valid, attach req.user; otherwise continue as guest.
+const optionalProtect = async (req, res, next) => {
+    const token = extractTokenFromRequest(req);
+    if (!token) return next();
+
+    try {
+        const account = await resolveAccountFromToken(token);
+        if (account) req.user = account;
+    } catch (error) {
+        // Ignore invalid token in optional mode and continue as public request.
+    }
+
+    return next();
+};
+
+module.exports = { protect, optionalProtect };

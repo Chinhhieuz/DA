@@ -68,10 +68,14 @@ function CommentReaction({
     setUserReaction(isRemoving ? null : type);
 
     try {
+      const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+      const voteHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) voteHeaders.Authorization = `Bearer ${token}`;
+
       const res = await fetch(`${API_URL}/${targetType}/${targetId}/react`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, user_id: currentUserId, type })
+        headers: voteHeaders,
+        body: JSON.stringify({ action, type })
       });
       const data = await res.json();
       if (!res.ok || data.status !== 'success') {
@@ -152,8 +156,12 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
   useEffect(() => {
     const fetchComments = async () => {
       try {
-        const url = `${API_URL}/comments/post/${post.id}${currentUser.id ? `?userId=${currentUser.id}` : ''}`;
-        const res = await fetch(url, { cache: 'no-store' });
+        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+        const url = `${API_URL}/comments/post/${post.id}`;
+        const res = await fetch(url, {
+          cache: 'no-store',
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
         const data = await res.json();
         if (data.status === 'success') {
           const formattedComments = data.data.map((c: any) => ({
@@ -202,12 +210,15 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
     }
 
     try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const res = await fetch(`${API_URL}/comments/create`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({
           post_id: post.id,
-          author_id: currentUser.id,
           content: newComment,
           image_url: commentImage
         })
@@ -244,12 +255,15 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
     }
 
     try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const res = await fetch(`${API_URL}/threads/create`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({
           comment_id: commentId,
-          author_id: currentUser.id,
           content: replyContent,
           image_url: replyImage
         })
@@ -289,10 +303,14 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
   const handleDeleteComment = async (commentId: string) => {
     if (!window.confirm('Bạn có chắc chắn muốn xóa bình luận này không?')) return;
     try {
-      const res = await fetch(`${API_URL}/comments/${commentId}?user_id=${currentUser.id}`, {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const res = await fetch(`${API_URL}/comments/${commentId}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: currentUser.id })
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({})
       });
       const data = await res.json();
       if (data.status === 'success') {
@@ -309,10 +327,14 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
   const handleDeleteThread = async (commentId: string, threadId: string) => {
     if (!window.confirm('Bạn có chắc chắn muốn xóa phản hồi này không?')) return;
     try {
-      const res = await fetch(`${API_URL}/threads/${threadId}?user_id=${currentUser.id}`, {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const res = await fetch(`${API_URL}/threads/${threadId}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: currentUser.id })
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({})
       });
       const data = await res.json();
       if (data.status === 'success') {
@@ -576,10 +598,13 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
                           if (!file) return;
                           const formData = new FormData();
                           formData.append('image', file);
-                          if (currentUser.id) formData.append('user_id', currentUser.id);
                           try {
-                            const uploadUrl = currentUser.id ? `${API_URL}/upload?user_id=${encodeURIComponent(currentUser.id)}` : `${API_URL}/upload`;
-                            const res = await fetch(uploadUrl, { method: 'POST', body: formData });
+                            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+                            const res = await fetch(`${API_URL}/upload`, {
+                              method: 'POST',
+                              headers: token ? { Authorization: `Bearer ${token}` } : {},
+                              body: formData
+                            });
                             const data = await res.json();
                             if (data.status === 'success') {
                               setCommentImage(data.data.url);

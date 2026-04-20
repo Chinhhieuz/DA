@@ -1,7 +1,7 @@
 const express = require('express');
 const authController = require('../controllers/authController');
 const { loginValidation, registerValidation } = require('../middlewares/validateMiddleware');
-const { protect } = require('../middlewares/authMiddleware');
+const { protect, optionalProtect } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
 
@@ -14,9 +14,10 @@ router.post('/register', registerValidation, authController.register);
 // Định tuyến cập nhật thông tin cá nhân (ảnh, bio, tên...)
 router.put('/profile', protect, authController.updateProfile);
 // Lấy tất cả thông tin profile gộp lại
-router.get('/profile/aggregated/:userId', authController.getAggregatedProfile);
+// optionalProtect: route public nhung backend van doc req.user neu co token.
+router.get('/profile/aggregated/:userId', optionalProtect, authController.getAggregatedProfile);
 // Lấy thông tin cá nhân của một user bất kỳ
-router.get('/profile/:userId', authController.getProfile);
+router.get('/profile/:userId', optionalProtect, authController.getProfile);
 
 // Định tuyến quên mật khẩu
 router.post('/forgot-password', authController.forgotPassword);
@@ -57,6 +58,7 @@ router.get('/friends/requests/:userId', authController.getFriendRequests);
 router.post('/friends/cancel', protect, authController.cancelFriendRequest);
 
 // Tìm kiếm người dùng theo tên/username
-router.get('/search/users', authController.searchUsers);
+// optionalProtect de tra ve isFollowing dung theo token hien tai (neu co).
+router.get('/search/users', optionalProtect, authController.searchUsers);
 
 module.exports = router;

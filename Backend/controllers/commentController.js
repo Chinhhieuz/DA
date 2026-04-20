@@ -1,26 +1,30 @@
 const commentService = require('../services/commentService');
 
 const handleServiceError = (error, res) => {
-    if (error.message.startsWith('NOT_FOUND:')) {
-        return res.status(404).json({ status: 'fail', message: error.message.split(':')[1] });
+    const message = String(error?.message || 'Unknown error');
+
+    if (message.startsWith('NOT_FOUND:')) {
+        return res.status(404).json({ status: 'fail', message: message.split(':')[1] });
     }
-    if (error.message.startsWith('FORBIDDEN:')) {
-        return res.status(403).json({ status: 'fail', message: error.message.split(':')[1] });
+    if (message.startsWith('FORBIDDEN:')) {
+        return res.status(403).json({ status: 'fail', message: message.split(':')[1] });
     }
-    if (error.message === 'Vui lòng cung cấp đủ post_id, author_id và nội dung bình luận!') {
-        return res.status(400).json({ status: 'fail', message: error.message });
-    }
-    
-    console.error('[COMMENT CONTROLLER] 🚨 Lỗi hệ thống:', error);
-    return res.status(500).json({ status: 'error', message: 'Lỗi máy chủ: ' + error.message });
+
+    console.error('[COMMENT CONTROLLER] Error:', message);
+    return res.status(500).json({ status: 'error', message: 'Server error: ' + message });
 };
 
 const createComment = async (req, res) => {
     try {
-        const newComment = await commentService.createCommentService(req.body);
+        const payload = req.body || {};
+        // Gan tac gia tu token, khong lay author_id tu body de tranh gia mao.
+        const authUserId = req.user?._id ? String(req.user._id) : '';
+        if (authUserId) payload.author_id = authUserId;
+
+        const newComment = await commentService.createCommentService(payload);
         return res.status(201).json({
             status: 'success',
-            message: 'Đăng bình luận thành công!',
+            message: 'Dang binh luan thanh cong!',
             data: newComment
         });
     } catch (error) {
@@ -31,12 +35,13 @@ const createComment = async (req, res) => {
 const getCommentsByPost = async (req, res) => {
     try {
         const { postId } = req.params;
-        const { userId } = req.query; 
+        // Neu co token: dung req.user de tinh userVote.
+        // Neu khong co token: fallback query userId (tuong thich nguoc).
+        const userId = req.user?._id
+            ? String(req.user._id)
+            : String(req.query?.userId || '').trim();
         const comments = await commentService.getCommentsByPostService(postId, userId);
-        return res.status(200).json({
-            status: 'success',
-            data: comments
-        });
+        return res.status(200).json({ status: 'success', data: comments });
     } catch (error) {
         return handleServiceError(error, res);
     }
@@ -54,10 +59,11 @@ const getCommentsByUser = async (req, res) => {
 const reactToComment = async (req, res) => {
     try {
         const { id } = req.params;
-        const { action, user_id, type } = req.body;
-        
+        const { action, type } = req.body;
+        const user_id = req.user?._id ? String(req.user._id) : '';
+
         if (!user_id) {
-            return res.status(400).json({ status: 'fail', message: 'Cần đăng nhập để thao tác' });
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
         }
 
         const comment = await commentService.reactToCommentService({ id, user_id, action, type });
@@ -70,16 +76,16 @@ const reactToComment = async (req, res) => {
 const deleteComment = async (req, res) => {
     try {
         const { id } = req.params;
-        const user_id = req.body.user_id || req.query.user_id;
+        const user_id = req.user?._id ? String(req.user._id) : '';
 
         if (!user_id) {
-            return res.status(400).json({ status: 'fail', message: 'Cần đăng nhập để xóa bình luận' });
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
         }
 
         await commentService.deleteCommentService({ id, user_id });
         return res.status(200).json({
             status: 'success',
-            message: 'Đã xóa bình luận và các phản hồi liên quan'
+            message: 'Da xoa binh luan va cac phan hoi lien quan'
         });
     } catch (error) {
         return handleServiceError(error, res);

@@ -1,26 +1,29 @@
 const threadService = require('../services/threadService');
 
 const handleServiceError = (error, res) => {
-    if (error.message.startsWith('NOT_FOUND:')) {
-        return res.status(404).json({ status: 'fail', message: error.message.split(':')[1] });
+    const message = String(error?.message || 'Unknown error');
+
+    if (message.startsWith('NOT_FOUND:')) {
+        return res.status(404).json({ status: 'fail', message: message.split(':')[1] });
     }
-    if (error.message.startsWith('FORBIDDEN:')) {
-        return res.status(403).json({ status: 'fail', message: error.message.split(':')[1] });
+    if (message.startsWith('FORBIDDEN:')) {
+        return res.status(403).json({ status: 'fail', message: message.split(':')[1] });
     }
-    if (error.message === 'Vui lòng cung cấp đủ comment_id, author_id và nội dung phản hồi!') {
-        return res.status(400).json({ status: 'fail', message: error.message });
-    }
-    
-    console.error('[THREAD CONTROLLER] 🚨 Lỗi hệ thống:', error.message);
-    return res.status(500).json({ status: 'error', message: 'Lỗi máy chủ: ' + error.message });
+
+    console.error('[THREAD CONTROLLER] Error:', message);
+    return res.status(500).json({ status: 'error', message: 'Server error: ' + message });
 };
 
 const createThread = async (req, res) => {
     try {
-        const newThread = await threadService.createThreadService(req.body);
+        const payload = req.body || {};
+        const authUserId = req.user?._id ? String(req.user._id) : '';
+        if (authUserId) payload.author_id = authUserId;
+
+        const newThread = await threadService.createThreadService(payload);
         return res.status(201).json({
             status: 'success',
-            message: 'Tác giả đã trả lời bình luận thành công!',
+            message: 'Tra loi binh luan thanh cong!',
             data: newThread
         });
     } catch (error) {
@@ -31,17 +34,14 @@ const createThread = async (req, res) => {
 const deleteThread = async (req, res) => {
     try {
         const { id } = req.params;
-        const user_id = req.body.user_id || req.query.user_id;
+        const user_id = req.user?._id ? String(req.user._id) : '';
 
         if (!user_id) {
-            return res.status(400).json({ status: 'fail', message: 'Cần đăng nhập để xóa phản hồi' });
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
         }
 
         await threadService.deleteThreadService({ id, user_id });
-        return res.status(200).json({
-            status: 'success',
-            message: 'Đã xóa phản hồi thành công'
-        });
+        return res.status(200).json({ status: 'success', message: 'Da xoa phan hoi thanh cong' });
     } catch (error) {
         return handleServiceError(error, res);
     }
@@ -50,10 +50,11 @@ const deleteThread = async (req, res) => {
 const reactToThread = async (req, res) => {
     try {
         const { id } = req.params;
-        const { action, user_id, type } = req.body;
-        
+        const { action, type } = req.body;
+        const user_id = req.user?._id ? String(req.user._id) : '';
+
         if (!user_id) {
-            return res.status(400).json({ status: 'fail', message: 'Cần đăng nhập để thao tác' });
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
         }
 
         const thread = await threadService.reactToThreadService({ id, user_id, action, type });

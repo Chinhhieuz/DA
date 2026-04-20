@@ -502,7 +502,6 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
   const messagesRef = useRef<any[]>([]);
   const markReadInFlightRef = useRef<Set<string>>(new Set());
   const startingConversationUserRef = useRef<string>('');
-  const tokenMismatchWarnedRef = useRef(false);
   const currentUserId = (() => {
     const idFromProps = sanitizeId(getEntityId(currentUser?.id || currentUser?._id));
     if (idFromProps) return idFromProps;
@@ -620,21 +619,10 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     if (includeJsonContentType) {
       headers['Content-Type'] = 'application/json';
     }
-    const normalizedCurrentUserId = sanitizeId(currentUserId);
     const normalizedToken = typeof freshToken === 'string' ? freshToken.trim() : '';
-    const tokenAccountId = sanitizeId(getJwtAccountId(normalizedToken));
     const isTokenUsable = !!normalizedToken && normalizedToken !== 'null' && normalizedToken !== 'undefined';
-    const isTokenMismatched =
-      !!normalizedCurrentUserId &&
-      !!tokenAccountId &&
-      tokenAccountId !== normalizedCurrentUserId;
 
-    if (isTokenMismatched && !tokenMismatchWarnedRef.current) {
-      tokenMismatchWarnedRef.current = true;
-      console.warn('[Messages] Token/user mismatch, skip Authorization header and fallback to userId param.');
-    }
-
-    if (includeAuthorization && isTokenUsable && !isTokenMismatched) {
+    if (includeAuthorization && isTokenUsable) {
       headers['Authorization'] = `Bearer ${normalizedToken}`;
     }
     return headers;
@@ -643,9 +631,6 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
   const withAuthParam = (url: string) => {
     const params = new URLSearchParams();
     params.set('_t', String(Date.now()));
-    if (currentUserId) {
-      params.set('userId', currentUserId);
-    }
     const separator = url.includes('?') ? '&' : '?';
     return `${url}${separator}${params.toString()}`;
   };
@@ -983,7 +968,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     const timer = window.setTimeout(async () => {
       try {
         setSearchingUsers(true);
-        const response = await fetch(`${API_URL}/auth/search/users?q=${encodeURIComponent(keyword)}&currentUserId=${encodeURIComponent(currentUserId)}`, {
+        const response = await fetch(`${API_URL}/auth/search/users?q=${encodeURIComponent(keyword)}`, {
           signal: controller.signal,
           cache: 'no-store',
           headers: getAuthHeaders({ includeJsonContentType: false })
@@ -1463,7 +1448,6 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       removeConversationFromState(targetConversationId, partnerId);
       const params = new URLSearchParams();
       if (partnerId) params.set('partnerId', partnerId);
-      if (currentUserId) params.set('userId', currentUserId);
       const query = params.toString();
       const endpoint = `${API_URL}/messages/conversations/${encodeURIComponent(targetConversationId)}${query ? `?${query}` : ''}`;
 

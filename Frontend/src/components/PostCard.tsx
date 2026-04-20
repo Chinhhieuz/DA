@@ -342,10 +342,14 @@ export function PostCard({
        return;
     }
     try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const res = await fetch(`${API_URL}/posts/${post.id}/save`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: currentUser.id })
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({})
       });
       const data = await res.json();
       if (data.status === 'success') {
@@ -400,10 +404,15 @@ export function PostCard({
     setUserReaction(isRemoving ? null : type);
 
     try {
+       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
        const res = await fetch(`${API_URL}/posts/${post.id}/react`, {
          method: 'PUT',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ action, user_id: currentUser.id, type })
+         headers: {
+           'Content-Type': 'application/json',
+           ...(token ? { Authorization: `Bearer ${token}` } : {})
+         },
+         // Backend lay user_id tu token, frontend chi gui action/type.
+         body: JSON.stringify({ action, type })
        });
        
        const data = await res.json();
@@ -443,12 +452,15 @@ export function PostCard({
       if (!window.confirm('Bạn có chắc chắn muốn xóa bài viết này không? Quay lại sẽ không được.')) return;
 
       try {
-        const deleteUrl = `${API_URL}/posts/${post.id}?user_id=${currentUser.id}`;
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        // Khong can user_id tren query nua.
+        const deleteUrl = `${API_URL}/posts/${post.id}`;
         const res = await fetch(deleteUrl, {
           method: 'DELETE',
           headers: { 
             'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
           }
         });
         
@@ -563,14 +575,15 @@ export function PostCard({
                   setIsFollowing(!isFollowing);
 
                    try {
-                    const token = localStorage.getItem('token');
+                    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
                     const res = await fetch(`${API_URL}/auth/friends/${action}`, {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',
                         ...(token ? { Authorization: `Bearer ${token}` } : {})
                       },
-                      body: JSON.stringify({ followerId: currentUser.id, targetId: post.author.id })
+                      // followerId do backend tu lay qua token.
+                      body: JSON.stringify({ targetId: post.author.id })
                     });
                     if (res.ok) {
                       toast.success(`${!prevIsFollowing ? 'Đã theo dõi' : 'Đã bỏ theo dõi'} ${post.author.name || post.author.username}`);

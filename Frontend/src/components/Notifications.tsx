@@ -52,7 +52,7 @@ export function Notifications({
   const [filter, setFilter] = useState<'all' | 'unread' | 'social' | 'content'>('all');
 
   const getAuthHeaders = (includeJson = false) => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
     const headers: Record<string, string> = {};
     if (includeJson) headers['Content-Type'] = 'application/json';
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -61,7 +61,7 @@ export function Notifications({
 
   useEffect(() => {
     if (currentUserId) {
-      fetch(`${API_URL}/notifications?accountId=${currentUserId}`, {
+      fetch(`${API_URL}/notifications`, {
         cache: 'no-store',
         headers: getAuthHeaders(false)
       })
@@ -143,7 +143,7 @@ export function Notifications({
       const res = await fetch(`${API_URL}/auth/friends/${endpoint}`, {
         method: 'POST',
         headers: getAuthHeaders(true),
-        body: JSON.stringify({ userId: currentUserId, senderId })
+        body: JSON.stringify({ senderId })
       });
       if (res.ok) {
         toast.success(action === 'accept' ? 'Đã chấp nhận kết bạn' : 'Đã từ chối lời mời');
@@ -215,6 +215,12 @@ export function Notifications({
             Đánh dấu đã đọc tất cả
           </Button>
         </div>
+      </Card>
+
+      <Card className="page-soft-surface border-amber-200/70 bg-amber-50/70 p-4 text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
+        <p className="text-sm font-semibold">
+          Lưu ý: Bài viết ở trạng thái chờ duyệt hoặc bị từ chối quá 30 ngày sẽ được tự động xóa để tiết kiệm tài nguyên hệ thống.
+        </p>
       </Card>
 
       <div className="space-y-4">

@@ -17,8 +17,11 @@ export function TrendingContent({ onPostClick, currentUser }: TrendingContentPro
     const fetchTrending = async () => {
       setLoading(true);
       try {
-        const url = `${API_URL}/posts/trending${currentUser?.id ? `?userId=${currentUser.id}` : ''}`;
-        const res = await fetch(url);
+        // Trending van public, nhung truyen token de co the nhan du lieu ca nhan hoa.
+        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+        const res = await fetch(`${API_URL}/posts/trending`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
         const data = await res.json();
         if (data.status === 'success') {
           setTrendingPosts(data.data);
@@ -31,7 +34,7 @@ export function TrendingContent({ onPostClick, currentUser }: TrendingContentPro
     };
 
     fetchTrending();
-  }, [currentUser?.id]);
+  }, [currentUser?.id, currentUser?._id]);
 
   return (
     <div className="w-80 shrink-0">

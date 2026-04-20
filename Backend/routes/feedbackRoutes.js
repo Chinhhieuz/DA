@@ -1,6 +1,7 @@
 const express = require('express');
 const feedbackController = require('../controllers/feedbackController');
 const { isAdmin } = require('../middlewares/adminMiddleware');
+const { protect } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
 
@@ -8,7 +9,8 @@ const router = express.Router();
 router.post('/', feedbackController.createFeedback);
 
 // Chỉ Admin mới được xem và quản lý đóng góp
-router.get('/', isAdmin, feedbackController.getAllFeedback);
-router.put('/:id/read', isAdmin, feedbackController.markAsRead);
+// protect phai dung truoc isAdmin de middleware co req.user.
+router.get('/', protect, isAdmin, feedbackController.getAllFeedback);
+router.put('/:id/read', protect, isAdmin, feedbackController.markAsRead);
 
 module.exports = router;

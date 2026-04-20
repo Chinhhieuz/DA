@@ -46,13 +46,21 @@ export function SearchView({ onPostClick, onUserClick, currentUser }: SearchView
       setIsSearching(true);
 
       try {
-        const postsRes = await fetch(`${API_URL}/posts/search?q=${encodeURIComponent(query)}&userId=${currentUser?.id || ''}`);
+        // Mot bo headers dung chung cho cac API search de backend tu nhan dien user qua token.
+        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+        const authHeaders: Record<string, string> = {};
+        if (token) authHeaders.Authorization = `Bearer ${token}`;
+        const postsRes = await fetch(`${API_URL}/posts/search?q=${encodeURIComponent(query)}`, {
+          headers: authHeaders
+        });
         const postsData = await postsRes.json();
         if (postsData.status === 'success') {
           setFilteredPosts(postsData.data);
         }
 
-        const usersRes = await fetch(`${API_URL}/auth/search/users?q=${encodeURIComponent(query)}&currentUserId=${currentUser?.id || ''}`);
+        const usersRes = await fetch(`${API_URL}/auth/search/users?q=${encodeURIComponent(query)}`, {
+          headers: authHeaders
+        });
         const usersData = await usersRes.json();
         if (usersData.status === 'success') {
           setFilteredUsers(usersData.data);
@@ -80,14 +88,15 @@ export function SearchView({ onPostClick, onUserClick, currentUser }: SearchView
     setFilteredUsers(prev => prev.map(u => u._id === user._id ? { ...u, isFollowing: !isFollowing } : u));
 
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token') || localStorage.getItem('token');
       const res = await fetch(`${API_URL}/auth/friends/${action}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ followerId: currentUser.id, targetId: user._id })
+        // followerId khong gui tu frontend nua; backend lay tu token.
+        body: JSON.stringify({ targetId: user._id })
       });
 
       if (res.ok) {

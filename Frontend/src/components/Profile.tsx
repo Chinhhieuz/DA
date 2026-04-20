@@ -205,6 +205,8 @@ const AppChangePasswordDialog = ({
 
 
 export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange, onProfileUpdate, onPostsChanged, onUserClick, onViewChange }: ProfileProps) {
+  // Dung chung token cho cac thao tac can xac thuc trong trang profile.
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
   const [activeTab, setActiveTab] = useState('posts');
   const [isEditing, setIsEditing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -248,8 +250,12 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
 
   useEffect(() => {
     if (effectiveUserId) {
-      const url = `${API_URL}/auth/profile/aggregated/${effectiveUserId}?currentUserId=${currentUserId || ''}`;
-      fetch(url, { cache: 'no-store' })
+      // API aggregated profile nay co the hoat dong public.
+      // Neu co token thi backend se tinh friend/follow status dung nguoi dang nhap.
+      const authHeaders: Record<string, string> = {};
+      if (token) authHeaders.Authorization = `Bearer ${token}`;
+      const url = `${API_URL}/auth/profile/aggregated/${effectiveUserId}`;
+      fetch(url, { cache: 'no-store', headers: authHeaders })
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') {
@@ -333,7 +339,6 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
 
   const handleSaveProfile = async () => {
     try {
-      const token = localStorage.getItem('token');
       const res = await fetch(`${API_URL}/auth/profile`, {
         method: 'PUT',
         headers: {
@@ -667,20 +672,20 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
               const formData = new FormData();
               formData.append('image', blob, 'avatar.jpg');
               // Gửi kèm user_id để backend xác thực trước khi lưu lên Cloudinary
-              if (currentUser.id) formData.append('user_id', currentUser.id);
               
               const loadingToast = toast.loading('Đang xử lý và tải ảnh đại diện...');
               try {
                 // Truyền user_id qua query string để backend xác thực trước khi upload lên Cloudinary
-                const uploadUrl = currentUser.id 
-                  ? `${API_URL}/upload?user_id=${encodeURIComponent(currentUser.id)}` 
-                  : `${API_URL}/upload`;
-                const uploadRes = await fetch(uploadUrl, { method: 'POST', body: formData });
+                const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+                const uploadRes = await fetch(`${API_URL}/upload`, {
+                  method: 'POST',
+                  headers: token ? { Authorization: `Bearer ${token}` } : {},
+                  body: formData
+                });
                 const uploadData = await uploadRes.json();
                 
                 if (uploadData.status === 'success') {
                   const imageUrl = uploadData.data.url;
-                  const token = localStorage.getItem('token');
                   const res = await fetch(`${API_URL}/auth/profile`, {
                     method: 'PUT',
                     headers: {
@@ -806,14 +811,14 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                       size="sm" 
                       className="rounded-full bg-red-600 text-white hover:bg-red-700"
                       onClick={async () => {
-                        const token = localStorage.getItem('token');
                         const res = await fetch(`${API_URL}/auth/friends/follow`, {
                           method: 'POST',
                           headers: {
                             'Content-Type': 'application/json',
                             ...(token ? { Authorization: `Bearer ${token}` } : {})
                           },
-                          body: JSON.stringify({ followerId: currentUser.id || (currentUser as any)._id, targetId: effectiveUserId })
+                          // Khong gui followerId nua, backend tu lay tu token.
+                          body: JSON.stringify({ targetId: effectiveUserId })
                         });
                         if (res.ok) {
                           toast.success('Đã theo dõi người dùng này');
@@ -834,14 +839,14 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                       variant="outline" 
                       className="rounded-full border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20"
                       onClick={async () => {
-                        const token = localStorage.getItem('token');
                         const res = await fetch(`${API_URL}/auth/friends/unfollow`, {
                           method: 'POST',
                           headers: {
                             'Content-Type': 'application/json',
                             ...(token ? { Authorization: `Bearer ${token}` } : {})
                           },
-                          body: JSON.stringify({ followerId: currentUser.id || (currentUser as any)._id, targetId: effectiveUserId })
+                          // Khong gui followerId nua, backend tu lay tu token.
+                          body: JSON.stringify({ targetId: effectiveUserId })
                         });
                         if (res.ok) {
                           toast.success('Đã bỏ theo dõi');
@@ -999,3 +1004,4 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
     </div>
   );
 }
+

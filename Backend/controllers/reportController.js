@@ -1,28 +1,34 @@
 const reportService = require('../services/reportService');
 
 const handleServiceError = (error, res) => {
-    if (error.message.startsWith('NOT_FOUND:')) {
-        return res.status(404).json({ status: 'fail', message: error.message.split(':')[1] });
+    const message = String(error?.message || 'Unknown error');
+
+    if (message.startsWith('NOT_FOUND:')) {
+        return res.status(404).json({ status: 'fail', message: message.split(':')[1] });
     }
-    if (error.message.startsWith('FORBIDDEN:')) {
-        return res.status(403).json({ status: 'fail', message: error.message.split(':')[1] });
+    if (message.startsWith('FORBIDDEN:')) {
+        return res.status(403).json({ status: 'fail', message: message.split(':')[1] });
     }
-    if (error.message === 'Vui lòng cung cấp đủ thông tin tố cáo!' || 
-        error.message === 'Vui lòng cung cấp đủ thông tin xử lý!' ||
-        error.message === 'Tố cáo này đã được xử lý rồi!' ||
-        error.message.includes('Hành động không hợp lệ') ||
-        error.message === 'Thiếu admin_id!') {
-        return res.status(400).json({ status: 'fail', message: error.message });
+    if (message.includes('Thieu') || message.includes('khong hop le') || message.includes('da duoc xu ly')) {
+        return res.status(400).json({ status: 'fail', message });
     }
-    
-    console.error('[REPORT CONTROLLER] 🚨 Lỗi hệ thống:', error.message);
-    return res.status(500).json({ status: 'error', message: 'Lỗi máy chủ: ' + error.message });
+
+    console.error('[REPORT CONTROLLER] Error:', message);
+    return res.status(500).json({ status: 'error', message: 'Server error: ' + message });
 };
 
 const createReport = async (req, res) => {
     try {
-        const newReport = await reportService.createReportService(req.body);
-        return res.status(201).json({ status: 'success', message: 'Đã gửi tố cáo cho Admin kiểm duyệt!', data: newReport });
+        const payload = req.body || {};
+        const reporterId = req.user?._id ? String(req.user._id) : '';
+        if (reporterId) payload.reporter_id = reporterId;
+
+        const newReport = await reportService.createReportService(payload);
+        return res.status(201).json({
+            status: 'success',
+            message: 'Da gui to cao cho Admin kiem duyet!',
+            data: newReport
+        });
     } catch (error) {
         return handleServiceError(error, res);
     }
@@ -30,8 +36,16 @@ const createReport = async (req, res) => {
 
 const handleReport = async (req, res) => {
     try {
-        const report = await reportService.handleReportService(req.body);
-        return res.status(200).json({ status: 'success', message: `Đã xử lý thành công với quyết định: ${req.body.action}`, data: report });
+        const payload = req.body || {};
+        const adminId = req.user?._id ? String(req.user._id) : '';
+        if (adminId) payload.admin_id = adminId;
+
+        const report = await reportService.handleReportService(payload);
+        return res.status(200).json({
+            status: 'success',
+            message: `Da xu ly thanh cong voi quyet dinh: ${payload.action}`,
+            data: report
+        });
     } catch (error) {
         return handleServiceError(error, res);
     }
@@ -39,7 +53,11 @@ const handleReport = async (req, res) => {
 
 const getPendingReports = async (req, res) => {
     try {
-        const reports = await reportService.getPendingReportsService(req.query.admin_id);
+        const adminId = req.user?._id ? String(req.user._id) : '';
+        if (!adminId) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+        }
+        const reports = await reportService.getPendingReportsService(adminId);
         return res.status(200).json({ status: 'success', data: reports });
     } catch (error) {
         return handleServiceError(error, res);
