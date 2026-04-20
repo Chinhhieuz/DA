@@ -32,6 +32,9 @@ const createCommentService = async (commentData) => {
 
     await newComment.save();
     
+    // Denormalization: Increment Post comment_count
+    await Post.updateOne({ _id: post_id }, { $inc: { comment_count: 1 } });
+    
     // Bắt đầu xử lý nhắc tên (@username)
     processMentions(content, author_id, post_id, postExists.title);
 
@@ -112,10 +115,16 @@ const reactToCommentService = async ({ id, user_id, action, type }) => {
         }
     }
 
+    const oldUpvotes = comment.upvotes || 0;
     comment.upvotes = comment.reactions.filter(r => r.type === 'up' || r.type === '👍').length;
     comment.downvotes = comment.reactions.filter(r => r.type === 'down').length;
     comment.markModified('reactions');
     await comment.save();
+
+    const diff = comment.upvotes - oldUpvotes;
+    if (diff !== 0) {
+        await Account.updateOne({ _id: comment.author }, { $inc: { total_upvotes: diff } });
+    }
 
     if ((action === 'like' || action === 'up') && comment.author.toString() !== user_id) {
         await notificationService.createAndPushNotification({
@@ -150,6 +159,9 @@ const deleteCommentService = async ({ id, user_id }) => {
     await notificationService.deleteNotificationsByComment(id);
 
     await Comment.findByIdAndDelete(id);
+    
+    // Denormalization: Decrement Post comment_count
+    await Post.updateOne({ _id: comment.post }, { $inc: { comment_count: -(1 + threads.length) } });
     
     return id;
 };

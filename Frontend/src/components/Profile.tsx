@@ -252,7 +252,8 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
     if (effectiveUserId) {
       // API aggregated profile nay co the hoat dong public.
       // Neu co token thi backend se tinh friend/follow status dung nguoi dang nhap.
-      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+      const authHeaders: Record<string, string> = {};
+      if (token) authHeaders.Authorization = `Bearer ${token}`;
       const url = `${API_URL}/auth/profile/aggregated/${effectiveUserId}`;
       fetch(url, { cache: 'no-store', headers: authHeaders })
         .then(res => res.json())

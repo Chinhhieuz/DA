@@ -48,7 +48,8 @@ export function SearchView({ onPostClick, onUserClick, currentUser }: SearchView
       try {
         // Mot bo headers dung chung cho cac API search de backend tu nhan dien user qua token.
         const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-        const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+        const authHeaders: Record<string, string> = {};
+        if (token) authHeaders.Authorization = `Bearer ${token}`;
         const postsRes = await fetch(`${API_URL}/posts/search?q=${encodeURIComponent(query)}`, {
           headers: authHeaders
         });

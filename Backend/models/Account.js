@@ -24,6 +24,10 @@ const accountSchema = new mongoose.Schema({
     mssv: { 
         type: String 
     },
+    total_upvotes: {
+        type: Number,
+        default: 0
+    },
     faculty: {
         type: String
     },

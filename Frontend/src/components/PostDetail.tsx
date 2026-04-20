@@ -68,15 +68,13 @@ function CommentReaction({
     setUserReaction(isRemoving ? null : type);
 
     try {
+      const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+      const voteHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) voteHeaders.Authorization = `Bearer ${token}`;
+
       const res = await fetch(`${API_URL}/${targetType}/${targetId}/react`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(() => {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            return token ? { Authorization: `Bearer ${token}` } : {};
-          })()
-        },
+        headers: voteHeaders,
         body: JSON.stringify({ action, type })
       });
       const data = await res.json();
