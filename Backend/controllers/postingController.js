@@ -1,4 +1,5 @@
 const postingService = require('../services/postingService');
+const { getFromCache, setInCache } = require('../utils/memoryCache');
 
 const handleServiceError = (error, res) => {
     if (error.message.startsWith('NOT_FOUND:')) {
@@ -65,7 +66,15 @@ const getAllPosts = async (req, res) => {
 
 const getTrendingPosts = async (req, res) => {
     try {
-        const trendingPosts = await postingService.getTrendingPostsService(req.query.userId);
+        const userId = req.query.userId;
+        const cacheKey = `trendingPosts_${userId || 'anonymous'}`;
+        let trendingPosts = getFromCache(cacheKey);
+
+        if (!trendingPosts) {
+            trendingPosts = await postingService.getTrendingPostsService(userId);
+            setInCache(cacheKey, trendingPosts, 300); // 5 minutes TTL
+        }
+
         return res.status(200).json({ status: 'success', data: trendingPosts });
     } catch (error) {
         return handleServiceError(error, res);

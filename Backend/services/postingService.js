@@ -182,7 +182,7 @@ const getAllPostsService = async ({ userId, community, followingOnly, page = 1, 
     console.log(`[POST SERVICE] Step 2: Found ${posts.length} posts.`);
 
     const postsWithDetails = await Promise.all(posts.map(async (post) => {
-        const commentCount = await getPostCommentAndThreadCount(post._id);
+        const commentCount = post.comment_count;
         const recentComments = await Comment.find({ post: post._id })
             .sort({ created_at: -1 })
             .limit(1)
@@ -229,7 +229,7 @@ const searchPostsService = async ({ keyword, userId }) => {
 
     // Map thêm commentCount và userVote tương tự getAllPostsService
     return await Promise.all(posts.map(async (post) => {
-        const commentCount = await getPostCommentAndThreadCount(post._id);
+        const commentCount = post.comment_count;
         const recentComments = await Comment.find({ post: post._id })
             .sort({ created_at: -1 })
             .limit(1)
@@ -310,10 +310,16 @@ const reactToPostService = async ({ id, user_id, action, type }) => {
         }
     }
 
+    const oldUpvotes = post.upvotes || 0;
     post.upvotes = post.reactions.filter(r => r.type === 'up' || r.type === '👍').length;
     post.downvotes = post.reactions.filter(r => r.type === 'down').length;
     post.markModified('reactions');
     await post.save();
+
+    const diff = post.upvotes - oldUpvotes;
+    if (diff !== 0 && post.status === 'approved') {
+        await Account.updateOne({ _id: post.author }, { $inc: { total_upvotes: diff } });
+    }
 
     // Push notification logic using unified service
     if ((action === 'like' || action === 'up') && post.author.toString() !== user_id) {

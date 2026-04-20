@@ -36,6 +36,9 @@ const createThreadService = async ({ comment_id, author_id, content, image_url }
 
     await newThread.save();
     
+    // Denormalization: Increment Post comment_count
+    await Post.updateOne({ _id: commentExists.post }, { $inc: { comment_count: 1 } });
+    
     // Push notification logic using our new generalized service
     if (commentExists.author.toString() !== author_id) {
         await notificationService.createAndPushNotification({
@@ -56,7 +59,7 @@ const createThreadService = async ({ comment_id, author_id, content, image_url }
 };
 
 const deleteThreadService = async ({ id, user_id }) => {
-    const thread = await Thread.findById(id);
+    const thread = await Thread.findById(id).populate('comment');
     if (!thread) {
         throw new Error('NOT_FOUND:Không tìm thấy phản hồi');
     }
@@ -69,6 +72,12 @@ const deleteThreadService = async ({ id, user_id }) => {
     await notificationService.deleteNotificationsByThread(id);
 
     await Thread.findByIdAndDelete(id);
+    
+    // Denormalization: Decrement Post comment_count
+    if (thread.comment && thread.comment.post) {
+        await Post.updateOne({ _id: thread.comment.post }, { $inc: { comment_count: -1 } });
+    }
+
     return id;
 };
 
@@ -93,10 +102,16 @@ const reactToThreadService = async ({ id, user_id, action, type }) => {
         }
     }
 
+    const oldUpvotes = thread.upvotes || 0;
     thread.upvotes = thread.reactions.filter(r => r.type === 'up' || r.type === '👍').length;
     thread.downvotes = thread.reactions.filter(r => r.type === 'down').length;
     thread.markModified('reactions');
     await thread.save();
+
+    const diff = thread.upvotes - oldUpvotes;
+    if (diff !== 0) {
+        await Account.updateOne({ _id: thread.author }, { $inc: { total_upvotes: diff } });
+    }
 
     // Thông báo nếu là "Thích"
     if ((action === 'like' || action === 'up') && thread.author.toString() !== user_id) {

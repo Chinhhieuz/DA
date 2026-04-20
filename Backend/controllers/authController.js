@@ -135,14 +135,10 @@ const getUserStats = async (req, res) => {
         let authorQuery = userId;
         try { if (mongoose.Types.ObjectId.isValid(userId)) authorQuery = new mongoose.Types.ObjectId(userId); } catch (e) { }
 
-        const [postCount, postLikes, commentLikes, threadLikes] = await Promise.all([
-            Post.countDocuments({ author: authorQuery, status: 'approved' }),
-            Post.aggregate([{ $match: { author: authorQuery, status: 'approved' } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]),
-            Comment.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]),
-            Thread.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }])
-        ]);
-
-        const totalLikes = (postLikes[0]?.total || 0) + (commentLikes[0]?.total || 0) + (threadLikes[0]?.total || 0);
+        const postCount = await Post.countDocuments({ author: authorQuery, status: 'approved' });
+        const account = await Account.findById(userId).select('total_upvotes');
+        const totalLikes = account?.total_upvotes || 0;
+        
         return res.status(200).json({ status: 'success', data: { posts: postCount, totalLikes } });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
@@ -364,13 +360,9 @@ const getAggregatedProfile = async (req, res) => {
         // Dù là xem profile của chính mình hay người khác, con s thng kê ch? tính bài công khai
         const postStatusFilter = { status: 'approved' };
 
-        const [postCount, postLikes, commentLikes, threadLikes] = await Promise.all([
-            Post.countDocuments({ author: authorQuery, ...postStatusFilter }), // Đếm s bài viết
-            Post.aggregate([{ $match: { author: authorQuery, ...postStatusFilter } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]), // T.ng upvotes bài viết
-            Comment.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]), // T.ng upvotes bình luận
-            Thread.aggregate([{ $match: { author: authorQuery } }, { $group: { _id: null, total: { $sum: "$upvotes" } } }]) // T.ng upvotes threads
-        ]);
-        const totalLikes = (postLikes[0]?.total || 0) + (commentLikes[0]?.total || 0) + (threadLikes[0]?.total || 0);
+        const postCount = await Post.countDocuments({ author: authorQuery, ...postStatusFilter });
+        const account = await Account.findById(userId).select('total_upvotes');
+        const totalLikes = account?.total_upvotes || 0;
 
         // 4. Followers & Following
         const followers = await authService.getFollowersService(userId);
@@ -397,7 +389,7 @@ const getAggregatedProfile = async (req, res) => {
         }
         
         const userPosts = await Promise.all(rawUserPosts.map(async (post) => {
-            const pCommentCount = await Comment.countDocuments({ post: post._id });
+            const pCommentCount = post.comment_count;
             const pRecentComments = await Comment.find({ post: post._id })
                 .sort({ created_at: -1 })
                 .limit(1)
@@ -428,7 +420,7 @@ const getAggregatedProfile = async (req, res) => {
                 
                 
                 savedPosts = await Promise.all(validPosts.map(async (post) => {
-                    const commentCount = await Comment.countDocuments({ post: post._id });
+                    const commentCount = post.comment_count;
                     const recentComments = await Comment.find({ post: post._id })
                         .sort({ created_at: -1 })
                         .limit(1)

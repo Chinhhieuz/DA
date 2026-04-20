@@ -148,7 +148,7 @@ function ImageLightbox({ images, startIndex, onClose }: { images: string[]; star
                 i === current ? 'border-primary ring-4 ring-primary/20 scale-110' : 'border-white/20 opacity-40 hover:opacity-100 hover:border-white/50'
               }`}
             >
-              <img src={getOptimizedImageUrl(img, undefined, 200)} alt={`thumb-${i}`} className="w-full h-full object-cover" />
+              <img loading="lazy" src={getOptimizedImageUrl(img, undefined, 200)} alt={`thumb-${i}`} className="w-full h-full object-cover" />
             </button>
           ))}
         </div>
@@ -197,6 +197,7 @@ function ImageCollage({ images, title }: { images: string[]; title: string }) {
               onClick={(e) => openLightbox(e, idx)}
             >
               <img
+                loading="lazy"
                 src={getOptimizedImageUrl(url, undefined, visible.length === 1 ? 800 : 400)}
                 alt={`${title} - ${idx + 1}`}
                 className={`${isSingle ? 'w-full h-auto max-h-[600px] object-contain' : 'w-full h-full object-cover'} transition-transform duration-500 group-hover/img:scale-105`}
