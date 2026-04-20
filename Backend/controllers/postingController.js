@@ -93,7 +93,7 @@ const getTrendingPosts = async (req, res) => {
 
         if (!trendingPosts) {
             trendingPosts = await postingService.getTrendingPostsService(requestUserId);
-            setInCache(cacheKey, trendingPosts, 300); // 5 minutes Cache
+            setInCache(cacheKey, JSON.parse(JSON.stringify(trendingPosts)), 300); // 5 minutes Cache
         }
         
         return res.status(200).json({ status: 'success', data: trendingPosts });

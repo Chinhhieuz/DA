@@ -382,7 +382,7 @@ const searchUsers = async (req, res) => {
 
         if (!users) {
             users = await authService.searchUsersService(q, currentUserId);
-            setInCache(cacheKey, users, 120); // 2 minutes TTL
+            setInCache(cacheKey, JSON.parse(JSON.stringify(users)), 120); // 2 minutes TTL
         }
 
         return res.status(200).json({ status: 'success', data: users });
@@ -432,8 +432,7 @@ const getAggregatedProfile = async (req, res) => {
         const postStatusFilter = { status: 'approved' };
 
         const postCount = await Post.countDocuments({ author: authorQuery, ...postStatusFilter });
-        const account = await Account.findById(userId).select('total_upvotes');
-        const totalLikes = account?.total_upvotes || 0;
+        const totalLikes = profile?.total_upvotes || 0;
 
         // 4. Followers & Following
         const followers = await authService.getFollowersService(resolvedUserId);
@@ -524,7 +523,7 @@ const getAggregatedProfile = async (req, res) => {
             userPosts
         };
 
-        setInCache(cacheKey, profileData, 60); // 1 minute TTL
+        setInCache(cacheKey, JSON.parse(JSON.stringify(profileData)), 60); // 1 minute TTL
 
         return res.status(200).json({
             status: 'success',
