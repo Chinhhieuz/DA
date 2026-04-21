@@ -8,8 +8,6 @@ const Account = require('../models/Account');
 const socketModule = require('../socket');
 const Notification = require('../models/Notification');
 
-const toPlainJson = (value) => JSON.parse(JSON.stringify(value));
-
 const login = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -434,8 +432,7 @@ const getAggregatedProfile = async (req, res) => {
         const postStatusFilter = { status: 'approved' };
 
         const postCount = await Post.countDocuments({ author: authorQuery, ...postStatusFilter });
-        const account = await Account.findById(resolvedUserId).select('total_upvotes');
-        const totalLikes = account?.total_upvotes || 0;
+        const totalLikes = profile?.total_upvotes || 0;
 
         // 4. Followers & Following
         const followers = await authService.getFollowersService(resolvedUserId);
@@ -526,14 +523,11 @@ const getAggregatedProfile = async (req, res) => {
             userPosts
         };
 
-        // NodeCache clone can fail with hydrated Mongoose docs.
-        // Normalize everything to plain JSON before caching.
-        const safeProfileData = toPlainJson(profileData);
-        setInCache(cacheKey, safeProfileData, 60); // 1 minute TTL
+        setInCache(cacheKey, JSON.parse(JSON.stringify(profileData)), 60); // 1 minute TTL
 
         return res.status(200).json({
             status: 'success',
-            data: safeProfileData
+            data: profileData
         });
     } catch (error) {
         console.error('[AUTH CONTROLLER] Ys L-i getAggregatedProfile:', error);
