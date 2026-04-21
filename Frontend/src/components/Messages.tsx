@@ -502,6 +502,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
   const messagesRef = useRef<any[]>([]);
   const markReadInFlightRef = useRef<Set<string>>(new Set());
   const startingConversationUserRef = useRef<string>('');
+  const fallbackPollInFlightRef = useRef<boolean>(false);
   const currentUserId = (() => {
     const idFromProps = sanitizeId(getEntityId(currentUser?.id || currentUser?._id));
     if (idFromProps) return idFromProps;
@@ -1175,6 +1176,41 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       };
     }
   }, [socket, isConnected, currentUserId]);
+
+  // Fallback for hosts where Socket.IO is not available (e.g. serverless runtime):
+  // poll conversations/messages so users still see new messages without refreshing.
+  useEffect(() => {
+    if (!currentUserId || isConnected) return;
+
+    let isStopped = false;
+    const poll = async () => {
+      if (isStopped || fallbackPollInFlightRef.current) return;
+
+      fallbackPollInFlightRef.current = true;
+      try {
+        await fetchConversations();
+
+        const activeConversationId = String(activeConversationIdRef.current || '').trim();
+        if (activeConversationId) {
+          await fetchMessages(false, activeConversationId);
+          await markAsRead(activeConversationId);
+        }
+      } catch (error) {
+        console.error('[Messages] Fallback polling error:', error);
+      } finally {
+        fallbackPollInFlightRef.current = false;
+      }
+    };
+
+    poll();
+    const intervalId = window.setInterval(poll, 3000);
+
+    return () => {
+      isStopped = true;
+      window.clearInterval(intervalId);
+      fallbackPollInFlightRef.current = false;
+    };
+  }, [currentUserId, isConnected, selectedConversationId]);
 
   const handleChatScroll = () => {
     const container = chatContainerRef.current;
