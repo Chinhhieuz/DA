@@ -80,6 +80,17 @@ app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.set('etag', 'strong');
 
+let dbReadyPromise = null;
+const ensureDatabaseConnection = async () => {
+    if (!dbReadyPromise) {
+        dbReadyPromise = connectToDatabase().catch((err) => {
+            dbReadyPromise = null;
+            throw err;
+        });
+    }
+    await dbReadyPromise;
+};
+
 app.use(scanShield);
 
 app.use((req, res, next) => {
@@ -150,6 +161,16 @@ app.get('/api/healthz', (req, res) => {
         uptime: process.uptime(),
         timestamp: new Date().toISOString()
     });
+});
+
+// Ensure DB connection for API requests in both long-running server and serverless runtimes.
+app.use('/api', async (req, res, next) => {
+    try {
+        await ensureDatabaseConnection();
+        return next();
+    } catch (error) {
+        return next(error);
+    }
 });
 
 app.use('/api/auth', authRoutes);
