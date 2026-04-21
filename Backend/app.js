@@ -124,7 +124,10 @@ app.use(helmet({
 const corsOptions = {
     origin(origin, callback) {
         if (isAllowedOrigin(origin)) return callback(null, true);
-        return callback(new Error('Not allowed by CORS'));
+        const corsError = new Error('Not allowed by CORS');
+        corsError.statusCode = 403;
+        corsError.status = 'fail';
+        return callback(corsError);
     },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
@@ -140,10 +143,6 @@ app.use('/api/auth/register', authLimiter);
 
 app.use(noSqlSanitizer);
 app.use(xssSanitizer);
-
-connectToDatabase()
-    .then(() => console.log('[DB] Connected to MongoDB Atlas'))
-    .catch((err) => console.log('[DB] Connection error:', err));
 
 app.get('/api/healthz', (req, res) => {
     res.status(200).json({
@@ -176,9 +175,17 @@ if (require.main === module) {
     socketModule.init(server);
 
     const PORT = process.env.PORT || 5000;
-    server.listen(PORT, () => {
-        console.log(`[APP] Backend + Socket listening at http://localhost:${PORT}`);
-    });
+    connectToDatabase()
+        .then(() => {
+            console.log('[DB] Connected to MongoDB Atlas');
+            server.listen(PORT, () => {
+                console.log(`[APP] Backend + Socket listening at http://localhost:${PORT}`);
+            });
+        })
+        .catch((err) => {
+            console.log('[DB] Connection error:', err);
+            process.exit(1);
+        });
 }
 
 module.exports = app;
