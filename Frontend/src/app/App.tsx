@@ -268,11 +268,6 @@ function AppContent({
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [resetToken, setResetToken] = useState<string | null>(null);
-  const [viewedUserIdState, setViewedUserIdState] = useState<string | null>(() => {
-    const savedViewedUserId = localStorage.getItem('viewedUserId');
-    const normalizedSavedViewedUserId = sanitizeEntityId(savedViewedUserId);
-    return normalizedSavedViewedUserId || null;
-  });
   const [initialPostId, setInitialPostId] = useState<string | null>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement | null>(null);
   
@@ -286,7 +281,9 @@ function AppContent({
   const currentView = pathParts[0] || 'home';
   const rawUrlUserId = currentView === 'profile' && pathParts[1] ? decodeURIComponent(pathParts[1]) : null;
   const urlUserId = sanitizeEntityId(rawUrlUserId);
-  const viewedUserId = urlUserId || viewedUserIdState;
+  // Profile target should come from URL only.
+  // This avoids stale local state/localStorage causing wrong profile id.
+  const viewedUserId = currentView === 'profile' ? (urlUserId || null) : null;
 
   useEffect(() => {
     if (currentView !== 'admin') return;
@@ -501,14 +498,10 @@ function AppContent({
     const normalizedCurrentUserId = sanitizeEntityId(currentUser.id || currentUser._id);
     if (normalizedUserId === normalizedCurrentUserId) {
       // Click vao chinh minh -> mo profile cua minh (/profile)
-      setViewedUserIdState(null);
       navigate('/profile');
-      localStorage.removeItem('viewedUserId');
     } else {
-      // Click vao nguoi khac -> luu viewedUserId va dieu huong /profile/:id
-      setViewedUserIdState(normalizedUserId);
+      // Click vao nguoi khac -> dieu huong /profile/:id
       navigate(`/profile/${encodeURIComponent(normalizedUserId)}`);
-      localStorage.setItem('viewedUserId', normalizedUserId);
     }
     setSelectedPost(null);
   };
@@ -527,10 +520,6 @@ function AppContent({
 
     if (targetView === 'home') {
       fetchPosts(currentUser.id || currentUser._id);
-    }
-    if (targetView === 'profile') {
-      setViewedUserIdState(null);
-      localStorage.removeItem('viewedUserId');
     }
     if (targetView === 'home') setActiveCommunity(null);
     

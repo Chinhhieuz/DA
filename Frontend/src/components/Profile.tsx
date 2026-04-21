@@ -228,9 +228,10 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
+  const currentUsername = String(currentUser.username || '').trim();
   const currentUserId = sanitizeProfileId(currentUser.id || (currentUser as any)._id);
   const viewedProfileUserId = sanitizeProfileId(viewedUserId);
-  const effectiveUserId = viewedProfileUserId || currentUserId;
+  const effectiveUserId = viewedProfileUserId || currentUserId || sanitizeProfileId(currentUsername);
   const isOwnProfile = !viewedProfileUserId || viewedProfileUserId === currentUserId;
 
   const [userComments, setUserComments] = useState<any[]>([]);
@@ -254,7 +255,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
       // Neu co token thi backend se tinh friend/follow status dung nguoi dang nhap.
       const authHeaders: Record<string, string> = {};
       if (token) authHeaders.Authorization = `Bearer ${token}`;
-      const url = `${API_URL}/auth/profile/aggregated/${effectiveUserId}`;
+      const url = `${API_URL}/auth/profile/aggregated/${encodeURIComponent(effectiveUserId)}`;
       fetch(url, { cache: 'no-store', headers: authHeaders })
         .then(res => res.json())
         .then(data => {
