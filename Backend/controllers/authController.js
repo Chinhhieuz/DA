@@ -149,7 +149,7 @@ const getUserStats = async (req, res) => {
         const postCount = await Post.countDocuments({ author: authorQuery, status: 'approved' });
         const account = await Account.findById(userId).select('total_upvotes');
         const totalLikes = account?.total_upvotes || 0;
-        
+
         return res.status(200).json({ status: 'success', data: { posts: postCount, totalLikes } });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
@@ -434,12 +434,8 @@ const getAggregatedProfile = async (req, res) => {
         const postStatusFilter = { status: 'approved' };
 
         const postCount = await Post.countDocuments({ author: authorQuery, ...postStatusFilter });
-<<<<<<< HEAD
         const account = await Account.findById(resolvedUserId).select('total_upvotes');
         const totalLikes = account?.total_upvotes || 0;
-=======
-        const totalLikes = profile?.total_upvotes || 0;
->>>>>>> 1d54e74846620ca4c3dcf0ffc709ff86f2cbcbb1
 
         // 4. Followers & Following
         const followers = await authService.getFollowersService(resolvedUserId);
@@ -458,13 +454,13 @@ const getAggregatedProfile = async (req, res) => {
             .populate('author', 'username email role avatar_url full_name')
             .sort({ created_at: -1 }) // Bài m>i nhất lên trên
             .lean();
-            
+
         let followingListForPosts = [];
         if (currentUserId && mongoose.Types.ObjectId.isValid(currentUserId)) {
             const currentUserAcc = await Account.findById(currentUserId).select('following');
             if (currentUserAcc) followingListForPosts = (currentUserAcc.following || []).map(id => id.toString());
         }
-        
+
         const userPosts = await Promise.all(rawUserPosts.map(async (post) => {
             const pCommentCount = post.comment_count;
             const pRecentComments = await Comment.find({ post: post._id })
@@ -472,7 +468,7 @@ const getAggregatedProfile = async (req, res) => {
                 .limit(1)
                 .populate('author', 'username full_name')
                 .lean();
-                
+
             let pUserVote = null;
             if (currentUserId && post.reactions) {
                 const reaction = post.reactions.find(r => r.user_id && r.user_id.toString() === currentUserId);
@@ -480,14 +476,14 @@ const getAggregatedProfile = async (req, res) => {
             }
             const pAuthorId = post.author ? (post.author._id || post.author).toString() : null;
             const pIsFollowing = pAuthorId ? followingListForPosts.includes(pAuthorId) : false;
-            
+
             return formatPostData(post, pCommentCount, pRecentComments, pUserVote, pIsFollowing);
         }));
 
         if (isOwnProfile) {
             // Chi tra ve friend requests va saved posts khi dang xem profile cua chinh minh.
             friendRequests = await authService.getFriendRequestsService(resolvedUserId);
-            
+
             const user = await Account.findById(resolvedUserId).populate({
                 path: 'savedPosts',
                 populate: { path: 'author', select: 'username full_name avatar_url' }
@@ -495,8 +491,8 @@ const getAggregatedProfile = async (req, res) => {
             if (user && user.savedPosts) {
                 const validPosts = user.savedPosts.filter(p => p !== null);
                 let followingList = (user.following || []).map(id => id.toString());
-                
-                
+
+
                 savedPosts = await Promise.all(validPosts.map(async (post) => {
                     const commentCount = post.comment_count;
                     const recentComments = await Comment.find({ post: post._id })
@@ -504,7 +500,7 @@ const getAggregatedProfile = async (req, res) => {
                         .limit(1)
                         .populate('author', 'username full_name')
                         .lean();
-                    
+
                     let userVote = null;
                     const postObj = post.toObject ? post.toObject() : post;
                     if (postObj.reactions) {
@@ -513,7 +509,7 @@ const getAggregatedProfile = async (req, res) => {
                     }
                     const authorId = postObj.author ? (postObj.author._id || postObj.author).toString() : null;
                     const isFollowing = authorId ? followingList.includes(authorId) : false;
-                    
+
                     return formatPostData(postObj, commentCount, recentComments, userVote, isFollowing);
                 }));
             }
@@ -530,15 +526,10 @@ const getAggregatedProfile = async (req, res) => {
             userPosts
         };
 
-<<<<<<< HEAD
         // NodeCache clone can fail with hydrated Mongoose docs.
         // Normalize everything to plain JSON before caching.
         const safeProfileData = toPlainJson(profileData);
-
         setInCache(cacheKey, safeProfileData, 60); // 1 minute TTL
-=======
-        setInCache(cacheKey, JSON.parse(JSON.stringify(profileData)), 60); // 1 minute TTL
->>>>>>> 1d54e74846620ca4c3dcf0ffc709ff86f2cbcbb1
 
         return res.status(200).json({
             status: 'success',
