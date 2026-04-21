@@ -58,6 +58,12 @@ const getAllPosts = async (req, res) => {
         // Cac endpoint GET co ca che do guest va che do co token.
         // Neu co token, service se tra ve du lieu ca nhan hoa (userVote/isFollowing).
         const requestUserId = resolveRequestUserId(req);
+        const cacheKey = `feed_${requestUserId || 'anonymous'}_${String(req.query.community || '').trim()}_${String(req.query.followingOnly || '').trim()}_${String(req.query.limit || '').trim()}_${String(req.query.page || '').trim()}`;
+        const cachedFeed = getFromCache(cacheKey);
+        if (cachedFeed) {
+            return res.status(200).json(cachedFeed);
+        }
+
         const result = await postingService.getAllPostsService({
             userId: requestUserId,
             community: req.query.community,
@@ -67,10 +73,12 @@ const getAllPosts = async (req, res) => {
         });
 
         if (Array.isArray(result)) {
-            return res.status(200).json({ status: 'success', data: result });
+            const payload = { status: 'success', data: result };
+            setInCache(cacheKey, JSON.parse(JSON.stringify(payload)), 20); // 20s TTL
+            return res.status(200).json(payload);
         }
 
-        return res.status(200).json({
+        const payload = {
             status: 'success',
             data: result.posts || [],
             meta: {
@@ -78,7 +86,10 @@ const getAllPosts = async (req, res) => {
                 limit: result.limit,
                 hasMore: result.hasMore
             }
-        });
+        };
+        setInCache(cacheKey, JSON.parse(JSON.stringify(payload)), 20); // 20s TTL
+
+        return res.status(200).json(payload);
     } catch (error) {
         return handleServiceError(error, res);
     }
