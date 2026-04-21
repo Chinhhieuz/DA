@@ -12,7 +12,14 @@ const handleServiceError = (error, res) => {
 
 const createFeedback = async (req, res) => {
     try {
-        const feedback = await feedbackService.createFeedbackService(req.body);
+        const payload = req.body || {};
+        const authUserId = req.user?._id ? String(req.user._id) : '';
+        if (!authUserId) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+        }
+
+        payload.user_id = authUserId;
+        const feedback = await feedbackService.createFeedbackService(payload);
         return res.status(201).json({ status: 'success', message: 'Cảm ơn bạn đã gửi đóng góp ý kiến!', data: feedback });
     } catch (error) {
         return handleServiceError(error, res);

@@ -6,7 +6,7 @@ const { protect } = require('../middlewares/authMiddleware');
 const router = express.Router();
 
 // Tất cả người dùng có thể gửi đóng góp
-router.post('/', feedbackController.createFeedback);
+router.post('/', protect, feedbackController.createFeedback);
 
 // Chỉ Admin mới được xem và quản lý đóng góp
 // protect phai dung truoc isAdmin de middleware co req.user.

@@ -18,12 +18,7 @@ const loginUser = async (email, password) => {
         throw new Error('Tài khoản hoặc Email không tồn tại!');
     }
 
-    let isMatch = false;
-    if (password === account.password_hash) {
-        isMatch = true; 
-    } else {
-        isMatch = await bcrypt.compare(password, account.password_hash);
-    }
+    const isMatch = await bcrypt.compare(password, account.password_hash);
     
     if (!isMatch) {
         throw new Error('Sai mật khẩu!');
@@ -80,7 +75,7 @@ const loginUser = async (email, password) => {
  * Đăng ký người dùng
  */
 const registerUser = async (userData) => {
-    const { username, email, password, role, full_name, mssv, avatar_url } = userData;
+    const { username, email, password, full_name, mssv, avatar_url } = userData;
 
     const existingAccount = await Account.findOne({
         $or: [
@@ -99,7 +94,7 @@ const registerUser = async (userData) => {
         username,
         email,
         password_hash: hashedPassword,
-        role: role || 'User',
+        role: 'User',
         full_name: full_name || '',
         mssv: mssv || '',
         avatar_url: avatar_url || ''
@@ -208,7 +203,7 @@ const changePasswordAuth = async (accountId, oldPassword, newPassword) => {
     const account = await Account.findById(accountId);
     if (!account) throw new Error('Tài khoản không tồn tại!');
 
-    let isMatch = (oldPassword === account.password_hash) || await bcrypt.compare(oldPassword, account.password_hash);
+    const isMatch = await bcrypt.compare(oldPassword, account.password_hash);
     if (!isMatch) throw new Error('Mật khẩu cũ không chính xác!');
 
     const salt = await bcrypt.genSalt(10);

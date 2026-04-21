@@ -234,7 +234,7 @@ const messageService = {
     getConversations: async (userId) => {
         const normalizedUserId = normalizeId(userId);
         if (!isValidObjectId(normalizedUserId)) {
-            throw createHttpError('Người dùng không hợp lệ');
+            throw createHttpError('Nguoi dung khong hop le');
         }
 
         const conversations = await Conversation.find({
@@ -245,16 +245,32 @@ const messageService = {
             .sort({ updated_at: -1 })
             .lean();
 
-        const conversationsWithUnread = await Promise.all(conversations.map(async (conv) => {
-            const unreadCount = await Message.countDocuments({
-                conversation: conv._id,
-                recipient: normalizedUserId,
-                is_read: false
-            });
-            return {
-                ...conv,
-                unread_count: unreadCount
-            };
+        const conversationIds = conversations.map((conv) => conv?._id).filter(Boolean);
+        const unreadRows = conversationIds.length
+            ? await Message.aggregate([
+                {
+                    $match: {
+                        conversation: { $in: conversationIds },
+                        recipient: new mongoose.Types.ObjectId(normalizedUserId),
+                        is_read: false
+                    }
+                },
+                {
+                    $group: {
+                        _id: '$conversation',
+                        count: { $sum: 1 }
+                    }
+                }
+            ])
+            : [];
+
+        const unreadMap = new Map(
+            unreadRows.map((row) => [String(row._id), Number(row.count || 0)])
+        );
+
+        const conversationsWithUnread = conversations.map((conv) => ({
+            ...conv,
+            unread_count: unreadMap.get(String(conv._id)) || 0
         }));
 
         return conversationsWithUnread;
@@ -509,4 +525,5 @@ const messageService = {
 };
 
 module.exports = messageService;
+
 

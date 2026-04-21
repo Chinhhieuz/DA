@@ -363,6 +363,17 @@ const getFriends = async (req, res) => {
 const getFriendRequests = async (req, res) => {
     try {
         const { userId } = req.params;
+        const requestUserId = req.user?._id ? String(req.user._id) : '';
+        const requestRole = String(req.user?.role || '').toLowerCase();
+
+        if (!requestUserId) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+        }
+
+        if (requestRole !== 'admin' && String(userId) !== requestUserId) {
+            return res.status(403).json({ status: 'fail', message: 'Ban khong co quyen xem loi moi ket ban cua nguoi khac' });
+        }
+
         const requests = await authService.getFriendRequestsService(userId);
         return res.status(200).json({ status: 'success', data: requests });
     } catch (error) {
