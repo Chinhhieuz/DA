@@ -12,14 +12,24 @@ const extractTokenFromRequest = (req) => {
     return '';
 };
 
-// Decode token and hydrate full account object for downstream handlers.
-const resolveAccountFromToken = async (token) => {
-    if (!token) return null;
+const decodeTokenClaims = (token) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const accountId = String(decoded?.accountId || decoded?.id || '').trim();
     if (!accountId) return null;
 
-    const account = await Account.findById(accountId).select('-password_hash');
+    return {
+        _id: accountId,
+        role: decoded?.role || 'User'
+    };
+};
+
+// Decode token and hydrate full account object for downstream handlers.
+const resolveAccountFromToken = async (token) => {
+    if (!token) return null;
+    const claims = decodeTokenClaims(token);
+    if (!claims?._id) return null;
+
+    const account = await Account.findById(claims._id).select('-password_hash');
     return account || null;
 };
 
@@ -49,8 +59,10 @@ const optionalProtect = async (req, res, next) => {
     if (!token) return next();
 
     try {
-        const account = await resolveAccountFromToken(token);
-        if (account) req.user = account;
+        // Fast path for public/optional routes: avoid DB lookup on every request.
+        // Most optional routes only need req.user._id to personalize response.
+        const claims = decodeTokenClaims(token);
+        if (claims?._id) req.user = claims;
     } catch (error) {
         // Ignore invalid token in optional mode and continue as public request.
     }
