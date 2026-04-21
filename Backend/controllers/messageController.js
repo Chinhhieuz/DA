@@ -354,7 +354,7 @@ const messageController = {
 
             const allowedHosts = getAllowedAttachmentHosts(req);
             const host = parsedUrl.hostname.toLowerCase();
-            if (!allowedHosts.has(host) && isLocalOrPrivateHost(host)) {
+            if (!allowedHosts.has(host)) {
                 return res.status(403).json({ status: 'fail', message: 'File host is not allowed' });
             }
 

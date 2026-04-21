@@ -53,7 +53,7 @@ router.post('/friends/remove', protect, authController.removeFriend);
 // Lấy danh sách bạn bè
 router.get('/friends/:userId', authController.getFriends);
 // Lấy danh sách yêu cầu kết bạn đã nhận
-router.get('/friends/requests/:userId', authController.getFriendRequests);
+router.get('/friends/requests/:userId', protect, authController.getFriendRequests);
 // Hủy yêu cầu kết bạn (người gửi hủy)
 router.post('/friends/cancel', protect, authController.cancelFriendRequest);
 

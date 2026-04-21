@@ -1,6 +1,37 @@
 let io;
 const connectedUsers = new Map();
 const { isAllowedOrigin } = require('./utils/originAllowlist');
+const jwt = require('jsonwebtoken');
+
+const decodeSocketToken = (rawToken = '') => {
+  const token = String(rawToken || '').trim();
+  if (!token) return null;
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const accountId = String(decoded?.accountId || decoded?.id || '').trim();
+    if (!accountId) return null;
+
+    return {
+      _id: accountId,
+      role: String(decoded?.role || 'User')
+    };
+  } catch {
+    return null;
+  }
+};
+
+const getRegisterPayloadToken = (payload) => {
+  if (!payload) return '';
+  if (typeof payload === 'string') return '';
+  return String(payload.token || '').trim();
+};
+
+const getRegisterPayloadUserId = (payload) => {
+  if (!payload) return '';
+  if (typeof payload === 'string') return String(payload).trim();
+  return String(payload.userId || payload.accountId || '').trim();
+};
 
 module.exports = {
   init: (httpServer) => {
@@ -42,13 +73,28 @@ module.exports = {
         }
       };
 
-      socket.on('register', (userId) => {
-        if (!userId) {
+      socket.on('register', (payload) => {
+        const requestedUserId = getRegisterPayloadUserId(payload);
+        const payloadToken = getRegisterPayloadToken(payload);
+        const handshakeToken = String(socket.handshake?.auth?.token || '').trim();
+        const claims = decodeSocketToken(payloadToken || handshakeToken);
+
+        if (!claims?._id) {
+          console.warn('[SOCKET] register rejected: invalid auth token');
+          return;
+        }
+
+        if (requestedUserId && requestedUserId !== claims._id) {
+          console.warn('[SOCKET] register rejected: userId does not match token subject');
+          return;
+        }
+
+        const nextUserId = claims._id;
+        if (!nextUserId) {
           console.warn('[SOCKET] register with null/undefined userId');
           return;
         }
 
-        const nextUserId = String(userId);
         const prevUserId = socket.data?.userId ? String(socket.data.userId) : '';
 
         if (prevUserId && prevUserId !== nextUserId) {
@@ -57,6 +103,7 @@ module.exports = {
 
         socket.join(nextUserId);
         socket.data.userId = nextUserId;
+        socket.data.role = claims.role;
 
         const socketIds = connectedUsers.get(nextUserId) || new Set();
         const isFirstConnection = socketIds.size === 0;
@@ -80,19 +127,21 @@ module.exports = {
         console.log(`[SOCKET] user ${String(userId)} unregistered from socket ${socket.id}`);
       });
 
-      socket.on('typing_start', ({ recipientId, conversationId, senderId }) => {
+      socket.on('typing_start', ({ recipientId, conversationId }) => {
+        const senderId = String(socket.data?.userId || '').trim();
         if (!recipientId || !conversationId || !senderId) return;
         io.to(String(recipientId)).emit('typing_start', {
           conversationId: String(conversationId),
-          senderId: String(senderId),
+          senderId,
         });
       });
 
-      socket.on('typing_stop', ({ recipientId, conversationId, senderId }) => {
+      socket.on('typing_stop', ({ recipientId, conversationId }) => {
+        const senderId = String(socket.data?.userId || '').trim();
         if (!recipientId || !conversationId || !senderId) return;
         io.to(String(recipientId)).emit('typing_stop', {
           conversationId: String(conversationId),
-          senderId: String(senderId),
+          senderId,
         });
       });
 

@@ -44,6 +44,14 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
     }
   };
 
+  const readAuthToken = () => {
+    try {
+      return String(sessionStorage.getItem('token') || localStorage.getItem('token') || '').trim();
+    } catch {
+      return '';
+    }
+  };
+
   useEffect(() => {
     const newSocket = io(API_BASE_URL, {
       transports: ['websocket', 'polling'],
@@ -61,8 +69,10 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
 
     const registerIfPossible = () => {
       const currentUserId = resolveCurrentUserId();
+      const token = readAuthToken();
       if (!currentUserId) return;
-      newSocket.emit('register', currentUserId);
+      if (!token) return;
+      newSocket.emit('register', { userId: currentUserId, token });
       lastRegisteredUserIdRef.current = currentUserId;
       console.log('[Socket] register on connect:', currentUserId);
     };
@@ -131,7 +141,9 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
     }
 
     if (nextUserId && prevUserId !== nextUserId) {
-      socket.emit('register', nextUserId);
+      const token = readAuthToken();
+      if (!token) return;
+      socket.emit('register', { userId: nextUserId, token });
       lastRegisteredUserIdRef.current = nextUserId;
       console.log('[Socket] register new user:', nextUserId);
     }
@@ -140,8 +152,10 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
   const registerUser = (id: string) => {
     if (socket && isConnected) {
       const normalized = String(id || '');
+      const token = readAuthToken();
       if (!normalized) return;
-      socket.emit('register', normalized);
+      if (!token) return;
+      socket.emit('register', { userId: normalized, token });
       lastRegisteredUserIdRef.current = normalized;
     }
   };

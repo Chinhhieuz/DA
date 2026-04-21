@@ -363,6 +363,17 @@ const getFriends = async (req, res) => {
 const getFriendRequests = async (req, res) => {
     try {
         const { userId } = req.params;
+        const requestUserId = req.user?._id ? String(req.user._id) : '';
+        const requestRole = String(req.user?.role || '').toLowerCase();
+
+        if (!requestUserId) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+        }
+
+        if (requestRole !== 'admin' && String(userId) !== requestUserId) {
+            return res.status(403).json({ status: 'fail', message: 'Ban khong co quyen xem loi moi ket ban cua nguoi khac' });
+        }
+
         const requests = await authService.getFriendRequestsService(userId);
         return res.status(200).json({ status: 'success', data: requests });
     } catch (error) {
@@ -392,10 +403,48 @@ const searchUsers = async (req, res) => {
 };
 
 
+const getLatestCommentsByPostIds = async (postIds = []) => {
+    const sanitizedPostIds = postIds.filter(Boolean);
+    const latestCommentsByPostId = new Map();
+
+    if (!sanitizedPostIds.length) return latestCommentsByPostId;
+
+    const latestCommentRows = await Comment.aggregate([
+        { $match: { post: { $in: sanitizedPostIds } } },
+        { $sort: { created_at: -1, _id: -1 } },
+        { $group: { _id: '$post', latestCommentId: { $first: '$_id' } } }
+    ]);
+
+    const latestCommentIds = latestCommentRows
+        .map((row) => row?.latestCommentId)
+        .filter(Boolean);
+
+    if (!latestCommentIds.length) return latestCommentsByPostId;
+
+    const latestComments = await Comment.find({ _id: { $in: latestCommentIds } })
+        .select('content author')
+        .populate('author', 'username full_name')
+        .lean();
+
+    const commentById = new Map(
+        latestComments.map((comment) => [String(comment._id), comment])
+    );
+
+    latestCommentRows.forEach((row) => {
+        const postId = row?._id ? String(row._id) : '';
+        const commentId = row?.latestCommentId ? String(row.latestCommentId) : '';
+        if (!postId || !commentId) return;
+
+        const latestComment = commentById.get(commentId);
+        if (latestComment) latestCommentsByPostId.set(postId, [latestComment]);
+    });
+
+    return latestCommentsByPostId;
+};
+
 const getAggregatedProfile = async (req, res) => {
     try {
         const { userId } = req.params;
-        // Neu request da dang nhap thi lay currentUserId tu token.
         const currentUserId = req.user?._id
             ? String(req.user._id)
             : String(req.query?.currentUserId || '').trim();
@@ -406,10 +455,7 @@ const getAggregatedProfile = async (req, res) => {
             return res.status(200).json({ status: 'success', data: profileData });
         }
 
-        // 1. Profile Data
-        // getProfileByIdService ho tro tim theo ObjectId hoac username.
         const profile = await authService.getProfileByIdService(userId, currentUserId);
-        // Sau khi resolve xong profile, dung _id that de query cac collection khac cho nhat quan.
         const resolvedUserId = String(profile?._id || userId || '').trim();
         const normalizedCurrentUserId = String(currentUserId || '').trim();
         const isOwnProfile = !!resolvedUserId && resolvedUserId === normalizedCurrentUserId;
@@ -417,98 +463,110 @@ const getAggregatedProfile = async (req, res) => {
             return res.status(404).json({ status: 'fail', message: 'Nguoi dung khong ton tai' });
         }
 
-        // 2. Comments
-        const comments = await Comment.find({ author: resolvedUserId })
-            .populate('post', 'title community')
-            .sort({ created_at: -1 })
-            .lean();
-
-        // 3. THỐNG KS NGƯoI DTNG (POSTS, LIKES)
         let authorQuery = resolvedUserId;
-        try { if (mongoose.Types.ObjectId.isValid(resolvedUserId)) authorQuery = new mongoose.Types.ObjectId(resolvedUserId); } catch (e) { }
+        try {
+            if (mongoose.Types.ObjectId.isValid(resolvedUserId)) {
+                authorQuery = new mongoose.Types.ObjectId(resolvedUserId);
+            }
+        } catch (e) { }
 
-        // B?I THỰC TẾ: Ch? ếm các bài viết ã ược phê duy?t (status: approved)
-        // Dù là xem profile của chính mình hay người khác, con s thng kê ch? tính bài công khai
         const postStatusFilter = { status: 'approved' };
+        const postFilter = { author: authorQuery, ...postStatusFilter };
 
-        const postCount = await Post.countDocuments({ author: authorQuery, ...postStatusFilter });
+        const [
+            comments,
+            postCount,
+            followers,
+            following,
+            rawUserPosts,
+            currentUserAcc
+        ] = await Promise.all([
+            Comment.find({ author: authorQuery })
+                .populate('post', 'title community')
+                .sort({ created_at: -1 })
+                .lean(),
+            Post.countDocuments(postFilter),
+            authService.getFollowersService(resolvedUserId),
+            authService.getFollowingService(resolvedUserId),
+            Post.find(postFilter)
+                .select('author community created_at title content image_url image_urls video_url upvotes downvotes status reactions comment_count')
+                .populate('author', 'username email role avatar_url full_name')
+                .sort({ created_at: -1, _id: -1 })
+                .lean(),
+            (currentUserId && mongoose.Types.ObjectId.isValid(currentUserId))
+                ? Account.findById(currentUserId).select('following').lean()
+                : Promise.resolve(null)
+        ]);
+
         const totalLikes = profile?.total_upvotes || 0;
-
-        // 4. Followers & Following
-        const followers = await authService.getFollowersService(resolvedUserId);
-        const following = await authService.getFollowingService(resolvedUserId);
-
-        // 5. Friend Requests & Saved Posts (only for own profile)
         let friendRequests = [];
         let savedPosts = [];
         const { formatPostData } = require('../utils/postFormatter');
 
-        // 6. DANH SÁCH B?I VIẾT CỦA NGƯoI DTNG
-        // CH^ LẤY CÁC B?I Đf ĐƯỢC PHS DUY?T (status: approved) f hifn th< trong profile
-        const postFilter = { author: resolvedUserId, status: 'approved' };
+        const followingListForPosts = currentUserAcc
+            ? (currentUserAcc.following || []).map((id) => id.toString())
+            : [];
 
-        const rawUserPosts = await Post.find(postFilter)
-            .populate('author', 'username email role avatar_url full_name')
-            .sort({ created_at: -1 }) // Bài m>i nhất lên trên
-            .lean();
+        const userRecentCommentsByPostId = await getLatestCommentsByPostIds(
+            rawUserPosts.map((post) => post._id)
+        );
 
-        let followingListForPosts = [];
-        if (currentUserId && mongoose.Types.ObjectId.isValid(currentUserId)) {
-            const currentUserAcc = await Account.findById(currentUserId).select('following');
-            if (currentUserAcc) followingListForPosts = (currentUserAcc.following || []).map(id => id.toString());
-        }
-
-        const userPosts = await Promise.all(rawUserPosts.map(async (post) => {
+        const userPosts = rawUserPosts.map((post) => {
+            const postId = String(post._id);
             const pCommentCount = post.comment_count;
-            const pRecentComments = await Comment.find({ post: post._id })
-                .sort({ created_at: -1 })
-                .limit(1)
-                .populate('author', 'username full_name')
-                .lean();
+            const pRecentComments = userRecentCommentsByPostId.get(postId) || [];
 
             let pUserVote = null;
             if (currentUserId && post.reactions) {
-                const reaction = post.reactions.find(r => r.user_id && r.user_id.toString() === currentUserId);
+                const reaction = post.reactions.find((r) => r.user_id && r.user_id.toString() === currentUserId);
                 if (reaction) pUserVote = reaction.type;
             }
+
             const pAuthorId = post.author ? (post.author._id || post.author).toString() : null;
             const pIsFollowing = pAuthorId ? followingListForPosts.includes(pAuthorId) : false;
 
             return formatPostData(post, pCommentCount, pRecentComments, pUserVote, pIsFollowing);
-        }));
+        });
 
         if (isOwnProfile) {
-            // Chi tra ve friend requests va saved posts khi dang xem profile cua chinh minh.
-            friendRequests = await authService.getFriendRequestsService(resolvedUserId);
+            const [friendRequestsResult, user] = await Promise.all([
+                authService.getFriendRequestsService(resolvedUserId),
+                Account.findById(resolvedUserId)
+                    .select('savedPosts following')
+                    .populate({
+                        path: 'savedPosts',
+                        select: 'author community created_at title content image_url image_urls video_url upvotes downvotes status reactions comment_count',
+                        populate: { path: 'author', select: 'username full_name avatar_url' }
+                    })
+                    .lean()
+            ]);
 
-            const user = await Account.findById(resolvedUserId).populate({
-                path: 'savedPosts',
-                populate: { path: 'author', select: 'username full_name avatar_url' }
-            });
-            if (user && user.savedPosts) {
-                const validPosts = user.savedPosts.filter(p => p !== null);
-                let followingList = (user.following || []).map(id => id.toString());
+            friendRequests = friendRequestsResult;
 
+            if (user && Array.isArray(user.savedPosts)) {
+                const validPosts = user.savedPosts.filter(Boolean);
+                const followingList = (user.following || []).map((id) => id.toString());
+                const savedRecentCommentsByPostId = await getLatestCommentsByPostIds(
+                    validPosts.map((post) => post._id)
+                );
 
-                savedPosts = await Promise.all(validPosts.map(async (post) => {
-                    const commentCount = post.comment_count;
-                    const recentComments = await Comment.find({ post: post._id })
-                        .sort({ created_at: -1 })
-                        .limit(1)
-                        .populate('author', 'username full_name')
-                        .lean();
+                savedPosts = validPosts.map((post) => {
+                    const postObj = post && typeof post.toObject === 'function' ? post.toObject() : post;
+                    const postId = String(postObj._id);
+                    const commentCount = postObj.comment_count;
+                    const recentComments = savedRecentCommentsByPostId.get(postId) || [];
 
                     let userVote = null;
-                    const postObj = post.toObject ? post.toObject() : post;
                     if (postObj.reactions) {
-                        const reaction = postObj.reactions.find(r => r.user_id && r.user_id.toString() === resolvedUserId);
+                        const reaction = postObj.reactions.find((r) => r.user_id && r.user_id.toString() === resolvedUserId);
                         if (reaction) userVote = reaction.type;
                     }
+
                     const authorId = postObj.author ? (postObj.author._id || postObj.author).toString() : null;
                     const isFollowing = authorId ? followingList.includes(authorId) : false;
 
                     return formatPostData(postObj, commentCount, recentComments, userVote, isFollowing);
-                }));
+                });
             }
         }
 
@@ -559,3 +617,4 @@ module.exports = {
     searchUsers,
     getAggregatedProfile
 };
+

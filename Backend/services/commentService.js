@@ -59,30 +59,41 @@ const getCommentsByPostService = async (postId, userId) => {
         .populate('author', 'username email role avatar_url full_name')
         .sort({ upvotes: -1, created_at: -1 })
         .lean();
-    
-    for (let comment of comments) {
-        const threads = await Thread.find({ comment: comment._id })
+
+    const commentIds = comments.map((comment) => comment?._id).filter(Boolean);
+    const threads = commentIds.length
+        ? await Thread.find({ comment: { $in: commentIds } })
             .populate('author', 'username email role avatar_url full_name')
             .sort({ created_at: 1 })
-            .lean();
-            
-        // Xử lý userVote cho từng thread
-        comment.threads = threads.map(thread => {
-            let userVote = null;
-            if (userId && thread.reactions && thread.reactions.length > 0) {
-                const reaction = thread.reactions.find(r => r.user_id && r.user_id.toString() === userId);
-                userVote = reaction ? reaction.type : null;
-            }
-            return { ...thread, id: thread._id.toString(), userVote };
-        });
+            .lean()
+        : [];
+
+    const threadsByCommentId = new Map();
+    threads.forEach((thread) => {
+        const key = String(thread.comment);
+        const list = threadsByCommentId.get(key) || [];
+
+        let userVote = null;
+        if (userId && thread.reactions && thread.reactions.length > 0) {
+            const reaction = thread.reactions.find((r) => r.user_id && r.user_id.toString() === userId);
+            userVote = reaction ? reaction.type : null;
+        }
+
+        list.push({ ...thread, id: thread._id.toString(), userVote });
+        threadsByCommentId.set(key, list);
+    });
+
+    comments.forEach((comment) => {
+        const key = String(comment._id);
+        comment.threads = threadsByCommentId.get(key) || [];
 
         if (userId && comment.reactions && comment.reactions.length > 0) {
-            const userReaction = comment.reactions.find(r => r.user_id && r.user_id.toString() === userId);
+            const userReaction = comment.reactions.find((r) => r.user_id && r.user_id.toString() === userId);
             comment.userVote = userReaction ? userReaction.type : null;
         } else {
             comment.userVote = null;
         }
-    }
+    });
 
     return comments;
 };
@@ -173,3 +184,4 @@ module.exports = {
     reactToCommentService,
     deleteCommentService
 };
+
