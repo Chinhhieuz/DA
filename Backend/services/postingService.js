@@ -75,48 +75,55 @@ const getPostBatchEngagementData = async (posts) => {
         return { commentAndThreadCountByPostId, recentCommentsByPostId };
     }
 
-    const [commentCountRows, threadCountRows, latestCommentRows] = await Promise.all([
+    const [commentCountRows, latestCommentRows, commentDocs] = await Promise.all([
         Comment.aggregate([
             { $match: { post: { $in: postIds } } },
             { $group: { _id: '$post', count: { $sum: 1 } } }
-        ]),
-        Thread.aggregate([
-            {
-                $lookup: {
-                    from: 'Comments',
-                    localField: 'comment',
-                    foreignField: '_id',
-                    as: 'commentDoc'
-                }
-            },
-            { $unwind: '$commentDoc' },
-            { $match: { 'commentDoc.post': { $in: postIds } } },
-            { $group: { _id: '$commentDoc.post', count: { $sum: 1 } } }
         ]),
         Comment.aggregate([
             { $match: { post: { $in: postIds } } },
             { $sort: { created_at: -1, _id: -1 } },
             { $group: { _id: '$post', latestCommentId: { $first: '$_id' } } }
-        ])
+        ]),
+        Comment.find({ post: { $in: postIds } })
+            .select('_id post')
+            .lean()
     ]);
+
+    const commentIds = [];
+    const commentIdToPostId = new Map();
+    commentDocs.forEach((comment) => {
+        if (!comment?._id || !comment?.post) return;
+        const commentId = String(comment._id);
+        commentIds.push(comment._id);
+        commentIdToPostId.set(commentId, String(comment.post));
+    });
+
+    const threadCountRows = commentIds.length
+        ? await Thread.aggregate([
+            { $match: { comment: { $in: commentIds } } },
+            { $group: { _id: '$comment', count: { $sum: 1 } } }
+        ])
+        : [];
 
     commentCountRows.forEach((row) => {
         commentAndThreadCountByPostId.set(String(row._id), row.count || 0);
     });
 
     threadCountRows.forEach((row) => {
-        const postId = String(row._id);
+        const postId = commentIdToPostId.get(String(row._id));
+        if (!postId) return;
         const previousCount = commentAndThreadCountByPostId.get(postId) || 0;
         commentAndThreadCountByPostId.set(postId, previousCount + (row.count || 0));
     });
 
     const latestCommentIds = [];
-    const commentIdToPostId = new Map();
+    const latestCommentIdToPostId = new Map();
 
     latestCommentRows.forEach((row) => {
         if (!row?.latestCommentId) return;
         latestCommentIds.push(row.latestCommentId);
-        commentIdToPostId.set(String(row.latestCommentId), String(row._id));
+        latestCommentIdToPostId.set(String(row.latestCommentId), String(row._id));
     });
 
     if (!latestCommentIds.length) {
@@ -128,7 +135,7 @@ const getPostBatchEngagementData = async (posts) => {
         .lean();
 
     latestComments.forEach((comment) => {
-        const postId = commentIdToPostId.get(String(comment._id));
+        const postId = latestCommentIdToPostId.get(String(comment._id));
         if (!postId) return;
         recentCommentsByPostId.set(postId, [comment]);
     });

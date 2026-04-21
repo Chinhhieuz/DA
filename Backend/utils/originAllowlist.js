@@ -44,11 +44,29 @@ const matchesVercelPreview = (origin) => {
     }
 };
 
+const isLocalDevOrigin = (origin) => {
+    try {
+        const parsed = new URL(origin);
+        const protocol = parsed.protocol.toLowerCase();
+        const hostname = parsed.hostname.toLowerCase();
+
+        if (protocol !== 'http:' && protocol !== 'https:') return false;
+
+        return hostname === 'localhost'
+            || hostname === '127.0.0.1'
+            || hostname === '::1'
+            || hostname === '[::1]';
+    } catch {
+        return false;
+    }
+};
+
 const isAllowedOrigin = (origin) => {
     if (!origin) return true;
 
     const normalizedOrigin = normalizeOrigin(origin);
     if (allowedOrigins.has(normalizedOrigin)) return true;
+    if (isLocalDevOrigin(normalizedOrigin)) return true;
 
     return matchesVercelPreview(normalizedOrigin);
 };
