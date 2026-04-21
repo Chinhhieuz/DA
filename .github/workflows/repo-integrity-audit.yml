@@ -1,0 +1,24 @@
+name: Repo Integrity Audit
+
+on:
+  push:
+    branches:
+      - main
+      - fix
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  audit:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Integrity Audit
+        shell: pwsh
+        run: |
+          ./scripts/repo-integrity-audit.ps1 -BaseBranch main
