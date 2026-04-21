@@ -1,7 +1,7 @@
 // Debug: 2026-03-26T13:13:14 (Forcing Vite Reload)
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, Mail, Calendar, MapPin, Link as LinkIcon, Edit, X, Save, MessageCircle, User, AtSign, Globe, ShieldCheck, UserPlus, Check, UserMinus, UserCheck, Clock, Lock, Key, Eye, EyeOff, GraduationCap, BookOpen } from 'lucide-react';
+import { Camera, MapPin, Link as LinkIcon, Edit, X, Save, MessageCircle, User, AtSign, Globe, UserPlus, Check, UserCheck, Lock, Key, Eye, EyeOff, GraduationCap, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -20,6 +20,7 @@ import { ImageAdjuster } from './ImageAdjuster';
 interface ProfileProps {
   currentUser: {
     id?: string;
+    _id?: string;
     name: string;
     avatar: string;
     username: string;
@@ -32,10 +33,39 @@ interface ProfileProps {
   viewedUserId?: string | null;
   onPostClick?: (post: Post) => void;
   onAvatarChange?: (newAvatar: string) => void;
-  onProfileUpdate?: (updatedData: any) => void;
+  onProfileUpdate?: (updatedData: ProfileUpdatePayload) => void;
   onPostsChanged?: () => void;
   onUserClick?: (userId: string) => void;
   onViewChange?: (view: string) => void;
+}
+
+type ProfileUpdatePayload = Partial<{
+  id: string;
+  _id: string;
+  full_name: string;
+  name: string;
+  username: string;
+  avatar_url: string;
+  bio: string;
+  location: string;
+  website: string;
+  mssv: string;
+  faculty: string;
+}>;
+
+interface ProfileCommentItem {
+  _id?: string;
+  created_at?: string;
+  content?: string;
+  image_url?: string;
+  post?: { title?: string };
+}
+
+interface ProfileRelationItem {
+  _id?: string;
+  username?: string;
+  full_name?: string;
+  avatar_url?: string;
 }
 
 interface PasswordModalProps {
@@ -55,27 +85,28 @@ interface PasswordModalProps {
   isChangingPassword: boolean;
 }
 
-const normalizeProfileId = (value: any): string => {
+const normalizeProfileId = (value: unknown): string => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value.trim();
   if (typeof value === 'number') return String(value);
 
   if (typeof value === 'object') {
-    if (typeof value.$oid === 'string') return value.$oid.trim();
-    if (value._id !== undefined && value._id !== value) {
-      const nested = normalizeProfileId(value._id);
+    const record = value as Record<string, unknown>;
+    if (typeof record.$oid === 'string') return record.$oid.trim();
+    if (record._id !== undefined && record._id !== value) {
+      const nested = normalizeProfileId(record._id);
       if (nested) return nested;
     }
-    if (typeof value.id === 'string' || typeof value.id === 'number') {
-      const direct = String(value.id).trim();
+    if (typeof record.id === 'string' || typeof record.id === 'number') {
+      const direct = String(record.id).trim();
       if (direct) return direct;
     }
-    if (typeof value.toHexString === 'function') {
-      const hex = value.toHexString();
+    if (typeof record.toHexString === 'function') {
+      const hex = record.toHexString();
       if (typeof hex === 'string' && hex.trim()) return hex.trim();
     }
-    if (typeof value.toString === 'function') {
-      const raw = value.toString().trim();
+    if (typeof record.toString === 'function') {
+      const raw = record.toString().trim();
       if (raw && raw !== '[object Object]') return raw;
     }
   }
@@ -83,7 +114,7 @@ const normalizeProfileId = (value: any): string => {
   return '';
 };
 
-const sanitizeProfileId = (value: any): string => {
+const sanitizeProfileId = (value: unknown): string => {
   const normalized = normalizeProfileId(value);
   if (!normalized) return '';
 
@@ -229,21 +260,21 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const currentUsername = String(currentUser.username || '').trim();
-  const currentUserId = sanitizeProfileId(currentUser.id || (currentUser as any)._id);
+  const currentUserId = sanitizeProfileId(currentUser.id || currentUser._id);
   const viewedProfileUserId = sanitizeProfileId(viewedUserId);
   const effectiveUserId = viewedProfileUserId || currentUserId || sanitizeProfileId(currentUsername);
   const isOwnProfile = !viewedProfileUserId || viewedProfileUserId === currentUserId;
 
-  const [userComments, setUserComments] = useState<any[]>([]);
+  const [userComments, setUserComments] = useState<ProfileCommentItem[]>([]);
   const [userStats, setUserStats] = useState({ posts: 0, totalLikes: 0 });
-  const [profileData, setProfileData] = useState<any>(isOwnProfile ? currentUser : { name: 'Đang tải...', username: 'loading', avatar: '' });
-  const [followers, setFollowers] = useState<any[]>([]);
-  const [following, setFollowing] = useState<any[]>([]);
-  const [friendRequests, setFriendRequests] = useState<any[]>([]);
+  const [profileData, setProfileData] = useState<Record<string, unknown> & { id?: string; _id?: string; name?: string; full_name?: string; username?: string; avatar?: string; bio?: string; location?: string; website?: string; mssv?: string; faculty?: string }>(isOwnProfile ? currentUser : { name: 'Đang tải...', username: 'loading', avatar: '' });
+  const [followers, setFollowers] = useState<ProfileRelationItem[]>([]);
+  const [following, setFollowing] = useState<ProfileRelationItem[]>([]);
+  const [_friendRequests, setFriendRequests] = useState<ProfileRelationItem[]>([]);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
-  const [friendStatus, setFriendStatus] = useState<'none' | 'friend' | 'sent' | 'received'>('none');
+  const [_friendStatus, setFriendStatus] = useState<'none' | 'friend' | 'sent' | 'received'>('none');
   const [tempAvatar, setTempAvatar] = useState<string | null>(null);
   const [isAdjustingAvatar, setIsAdjustingAvatar] = useState(false);
   const [followerTab, setFollowerTab] = useState<'followers' | 'following'>('followers');
@@ -295,9 +326,9 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
         })
         .catch(err => console.error('Lỗi khi tải thông tin hồ sơ tổng hợp:', err));
     }
-  }, [effectiveUserId, isOwnProfile, currentUserId]);
+  }, [effectiveUserId, isOwnProfile, currentUserId, token]);
 
-  const handleReactUpdate = (postId: string, action: string, type: string) => {
+  const handleReactUpdate = (postId: string, action: string, _type: string) => {
     // Cập nhật lạc quan (Optimistic update)
     setUserStats(prev => ({
       ...prev,
@@ -364,7 +395,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
           : (profileData?.avatar || getImageUrl(currentUser.avatar));
         toast.success('Đã lưu thay đổi hồ sơ');
         setIsEditing(false);
-        setProfileData((prev: any) => ({
+        setProfileData((prev) => ({
           ...prev,
           name: updatedName,
           username: updatedUsername,
@@ -416,7 +447,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          accountId: currentUser.id || (currentUser as any)._id,
+          accountId: currentUser.id || currentUser._id,
           oldPassword,
           newPassword
         })
@@ -867,7 +898,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                     onClick={() => {
                       if (onViewChange) {
                         const targetId = sanitizeProfileId(
-                          profileData?.id || (profileData as any)?._id || effectiveUserId
+                          profileData?.id || profileData?._id || effectiveUserId
                         );
                         const currentId = currentUserId;
                         if (!targetId) {
@@ -940,12 +971,12 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
         <TabsContent value="comments" className="mt-4 space-y-4">
           {userComments.length > 0 ? (
             userComments.map(c => (
-              <Card key={c._id} className="border-border bg-card p-4">
+              <Card key={String(c._id || '')} className="border-border bg-card p-4">
                 <div className="flex gap-2 items-center text-xs text-muted-foreground mb-2">
                   <MessageCircle className="h-4 w-4 text-blue-500" />
                   Bình luận trên bài viết: <span className="font-semibold text-foreground italic">"{c.post?.title || 'Không rõ'}"</span>
                   <span className="mx-2">•</span>
-                  {new Date(c.created_at).toLocaleString('vi-VN')}
+                  {new Date(c.created_at || 0).toLocaleString('vi-VN')}
                 </div>
                 <p className="text-foreground text-sm mb-2">{c.content}</p>
                 {c.image_url && <img src={c.image_url} alt="Minh Họa Bình Luận" className="max-w-[150px] rounded" />}
@@ -978,9 +1009,9 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
             {(followerTab === 'followers' ? followers : following).length > 0 ? (
               (followerTab === 'followers' ? followers : following).map(user => (
                 <Card 
-                  key={user._id} 
+                  key={String(user._id || '')} 
                   className="p-4 flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer border-border bg-card"
-                  onClick={() => onUserClick && onUserClick(user._id)}
+                  onClick={() => onUserClick && onUserClick(String(user._id || ''))}
                 >
                   <Avatar className="h-12 w-12 border-2 border-border/50">
                     <AvatarImage src={getImageUrl(user.avatar_url)} />
@@ -1005,4 +1036,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
     </div>
   );
 }
+
+
+
 

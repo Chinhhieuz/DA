@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, ReactNode, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { API_BASE_URL } from '@/lib/api';
 
@@ -30,7 +30,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const lastRegisteredUserIdRef = useRef<string>('');
 
-  const resolveCurrentUserId = () => {
+  const resolveCurrentUserId = useCallback(() => {
     const propUserId = userId ? String(userId) : '';
     if (propUserId) return propUserId;
 
@@ -42,15 +42,15 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
     } catch {
       return '';
     }
-  };
+  }, [userId]);
 
-  const readAuthToken = () => {
+  const readAuthToken = useCallback(() => {
     try {
       return String(sessionStorage.getItem('token') || localStorage.getItem('token') || '').trim();
     } catch {
       return '';
     }
-  };
+  }, []);
 
   useEffect(() => {
     const newSocket = io(API_BASE_URL, {
@@ -125,7 +125,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
       newSocket.off('presence:user_left');
       newSocket.disconnect();
     };
-  }, []);
+  }, [readAuthToken, resolveCurrentUserId]);
 
   // Handle account switch / logout while keeping same socket
   useEffect(() => {
@@ -147,7 +147,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children, userId
       lastRegisteredUserIdRef.current = nextUserId;
       console.log('[Socket] register new user:', nextUserId);
     }
-  }, [userId, socket, isConnected]);
+  }, [userId, socket, isConnected, readAuthToken, resolveCurrentUserId]);
 
   const registerUser = (id: string) => {
     if (socket && isConnected) {

@@ -1,16 +1,40 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Send, Image as ImageIcon, ArrowBigUp, ArrowBigDown, Trash2, ShieldAlert, Lock, ChevronLeft, CornerDownRight } from 'lucide-react';
+import { Send, Image as ImageIcon, ArrowBigUp, ArrowBigDown, Trash2, ShieldAlert, Lock } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getImageUrl } from '@/lib/imageUtils';
 import { API_URL } from '@/lib/api';
 
-import { PostCard, Post, Comment, Thread as ThreadType } from './PostCard';
+import { PostCard, Post, Comment } from './PostCard';
 import { toast } from 'sonner';
 
+interface ApiAuthor {
+  _id?: string;
+  full_name?: string;
+  username?: string;
+  avatar_url?: string;
+}
+
+interface ApiThread {
+  _id?: string;
+  author?: ApiAuthor;
+  content?: string;
+  image_url?: string;
+  created_at?: string;
+}
+
+interface ApiComment {
+  _id?: string;
+  author?: ApiAuthor;
+  content?: string;
+  image_url?: string;
+  created_at?: string;
+  upvotes?: number;
+  downvotes?: number;
+  userVote?: string | null;
+  threads?: ApiThread[];
+}
 
 
 function CommentReaction({
@@ -81,7 +105,7 @@ function CommentReaction({
       if (!res.ok || data.status !== 'success') {
         throw new Error(data.message || 'Lỗi không xác định');
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(`Lỗi lưu vote ${targetType}:`, e);
       toast.error('Không thể lưu lượt bình chọn.');
       // Revert state
@@ -143,10 +167,9 @@ interface PostDetailProps {
   onReact?: (postId: string, action: string, type: string) => void;
 }
 
-export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClick, onSaveToggle, onCommunityClick, onReact }: PostDetailProps) {
+export function PostDetail({ post, onBack: _onBack, currentUser, onAddComment: _onAddComment, onUserClick, onSaveToggle, onCommunityClick, onReact }: PostDetailProps) {
   const [newComment, setNewComment] = useState('');
   const [commentImage, setCommentImage] = useState('');
-  const [showCommentImageInput, setShowCommentImageInput] = useState(false);
 
   const [comments, setComments] = useState<Comment[]>(post.comments || []);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -164,7 +187,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
         });
         const data = await res.json();
         if (data.status === 'success') {
-          const formattedComments = data.data.map((c: any) => ({
+          const formattedComments = (Array.isArray(data.data) ? data.data : []).map((c: ApiComment) => ({
             id: c._id,
             author: {
               name: c.author?.full_name || c.author?.username || 'Unknown',
@@ -174,11 +197,11 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
             },
             content: c.content,
             image: c.image_url ? getImageUrl(c.image_url, '') : undefined,
-            timestamp: new Date(c.created_at).toLocaleString('vi-VN'),
+            timestamp: new Date(c.created_at || 0).toLocaleString('vi-VN'),
             upvotes: c.upvotes || 0,
             downvotes: c.downvotes || 0,
             userVote: c.userVote || null,
-            threads: (c.threads || []).map((t: any) => ({
+            threads: (Array.isArray(c.threads) ? c.threads : []).map((t: ApiThread) => ({
               id: t._id,
               author: {
                 name: t.author?.full_name || t.author?.username || 'Unknown',
@@ -188,7 +211,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
               },
               content: t.content,
               image: t.image_url ? getImageUrl(t.image_url, '') : undefined,
-              timestamp: new Date(t.created_at).toLocaleString('vi-VN')
+              timestamp: new Date(t.created_at || 0).toLocaleString('vi-VN')
             }))
           }));
           setComments(formattedComments);
@@ -238,12 +261,11 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
         setComments([addedComment, ...comments]);
         setNewComment('');
         setCommentImage('');
-        setShowCommentImageInput(false);
         toast.success('Đã bình luận!');
       } else {
         toast.error(data.message);
       }
-    } catch (e) {
+    } catch {
       toast.error('Lỗi server khi bình luận');
     }
   };
@@ -295,7 +317,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
       } else {
         toast.error('Lỗi: ' + data.message);
       }
-    } catch (e) {
+    } catch {
       toast.error('Lỗi server khi gửi reply');
     }
   };
@@ -319,8 +341,8 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
       } else {
         toast.error(data.message || 'Lỗi không xác định từ server');
       }
-    } catch (e: any) {
-      toast.error('Lỗi server khi xóa bình luận: ' + e.message);
+    } catch (e: unknown) {
+      toast.error(`Lỗi server khi xóa bình luận: ${e instanceof Error ? e.message : 'Không rõ lỗi'}`);
     }
   };
 
@@ -348,8 +370,8 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
       } else {
         toast.error(data.message || 'Lỗi không xác định từ server');
       }
-    } catch (e: any) {
-      toast.error('Lỗi server khi xóa phản hồi: ' + e.message);
+    } catch (e: unknown) {
+      toast.error(`Lỗi server khi xóa phản hồi: ${e instanceof Error ? e.message : 'Không rõ lỗi'}`);
     }
   };
 
@@ -400,7 +422,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
                   className="h-8 w-8 mt-1 border border-border cursor-pointer hover:opacity-80 transition-opacity flex-shrink-0"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onUserClick && comment.author.id && onUserClick(comment.author.id);
+                    if (comment.author.id) onUserClick(comment.author.id);
                   }}
                 >
                   <AvatarImage src={comment.author.avatar} />
@@ -413,7 +435,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
                       className="font-bold text-foreground text-[14px] hover:underline cursor-pointer flex items-center gap-1.5 mb-1"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onUserClick && comment.author.id && onUserClick(comment.author.id);
+                        if (comment.author.id) onUserClick(comment.author.id);
                       }}
                     >
                       {comment.author.username}
@@ -488,7 +510,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
                             className="h-6 w-6 mt-1 border border-border cursor-pointer hover:opacity-80 transition-opacity flex-shrink-0"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onUserClick && thread.author.id && onUserClick(thread.author.id);
+                              if (thread.author.id) onUserClick(thread.author.id);
                             }}
                           >
                             <AvatarImage src={thread.author.avatar} />
@@ -499,11 +521,11 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
                              <div className="bg-muted px-3 py-2 rounded-2xl w-fit max-w-[90%] md:max-w-[85%] self-start">
                                  <span
                                    className="font-bold text-foreground text-[13px] hover:underline cursor-pointer flex items-center gap-1 mb-0.5"
-                                   onClick={(e) => {
-                                     e.stopPropagation();
-                                     onUserClick && thread.author.id && onUserClick(thread.author.id);
-                                   }}
-                                 >
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (thread.author.id) onUserClick(thread.author.id);
+                                    }}
+                                  >
                                    {thread.author.username}
                                    {thread.author.username === post.author.username && (
                                       <span className="bg-primary/10 text-primary text-[8px] px-1.5 py-0.5 rounded-full uppercase font-black tracking-tight border border-primary/20 ml-1">Tác giả</span>
@@ -610,7 +632,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
                               setCommentImage(data.data.url);
                               toast.success('Đã đính kèm ảnh!');
                             } else { toast.error(data.message || 'Lỗi tải ảnh'); }
-                          } catch (error) { toast.error('Lỗi kết nối'); }
+                          } catch { toast.error('Lỗi kết nối'); }
                         }}
                       />
                     </label>
@@ -641,3 +663,7 @@ export function PostDetail({ post, onBack, currentUser, onAddComment, onUserClic
     </div>
   );
 }
+
+
+
+

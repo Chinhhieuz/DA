@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PostCard, Post } from './PostCard';
 import { API_URL } from '@/lib/api';
 import { Loader2, Bookmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import type { AppUser } from '@/types/user';
 
 interface SavedPostsProps {
-  currentUser: any;
+  currentUser: AppUser;
   onPostClick: (post: Post) => void;
   onUserClick: (userId: string) => void;
   onSaveToggle: (postId: string, isSaved: boolean) => void;
@@ -25,7 +26,7 @@ export function SavedPosts({
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchSavedPosts = async () => {
+  const fetchSavedPosts = useCallback(async () => {
     if (!currentUser?.id) return;
     setLoading(true);
     try {
@@ -42,11 +43,11 @@ export function SavedPosts({
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser?.id]);
 
   useEffect(() => {
     fetchSavedPosts();
-  }, [currentUser?.id]);
+  }, [fetchSavedPosts]);
 
   const handleInternalSaveToggle = (postId: string, isSaved: boolean) => {
     if (!isSaved) {

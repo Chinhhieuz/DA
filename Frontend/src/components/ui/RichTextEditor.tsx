@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import {
   Bold,
@@ -17,7 +17,7 @@ import {
 import { Button } from './button';
 
 interface MenuBarProps {
-  editor: any;
+  editor: Editor | null;
 }
 
 const MenuBar = ({ editor }: MenuBarProps) => {

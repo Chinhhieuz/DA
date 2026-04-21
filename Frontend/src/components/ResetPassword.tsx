@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Lock, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Lock } from 'lucide-react';
 import { API_URL } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,7 +48,7 @@ export function ResetPassword({ token, onSuccess }: ResetPasswordProps) {
       } else {
         toast.error(data.message || 'Liên kết không hợp lệ hoặc đã hết hạn.');
       }
-    } catch (e) {
+    } catch {
       toast.error('Lỗi kết nối đến máy chủ');
     } finally {
       setIsLoading(false);

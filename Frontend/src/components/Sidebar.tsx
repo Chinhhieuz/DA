@@ -1,6 +1,4 @@
 import {
-  Search,
-
   PenSquare,
 
   Settings,

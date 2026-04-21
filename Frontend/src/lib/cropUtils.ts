@@ -4,7 +4,7 @@
 export const getCroppedImg = (
   imageSrc: string,
   pixelCrop: { x: number; y: number; width: number; height: number },
-  rotation = 0
+  _rotation = 0
 ): Promise<Blob> => {
   const image = new Image();
   image.src = imageSrc;

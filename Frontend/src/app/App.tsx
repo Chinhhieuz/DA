@@ -14,18 +14,18 @@ import { Settings } from '@/components/Settings'
 import { SearchView } from '@/components/SearchView'
 import { TrendingContent } from '@/components/TrendingContent'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Toaster } from '@/components/ui/sonner'
 import { Login } from '@/components/Login'
-import { Badge } from '@/components/ui/badge'
 import { AdminDashboard } from '@/components/AdminDashboard'
-import { ResetPassword } from '@/components/ResetPassword'
 import { SavedPosts } from '@/components/SavedPosts'
 import { getImageUrl } from '@/lib/imageUtils'
 import { API_URL } from '@/lib/api'
 import { SocketProvider, useSocket } from "@/contexts/SocketContext";
 import { useTheme } from '@/components/theme-provider';
+import type { AppUser as User, JwtPayload, LoginPayload, UserPreferences, UserRole } from '@/types/user';
+import type { NotificationItem } from '@/types/social';
 
 import '../index.css'
 
@@ -36,27 +36,31 @@ const isAbortError = (error: unknown) => {
   return error instanceof DOMException && error.name === 'AbortError';
 };
 
-const normalizeEntityId = (value: any): string => {
+const normalizeEntityId = (value: unknown): string => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value.trim();
   if (typeof value === 'number') return String(value);
 
   if (typeof value === 'object') {
-    if (typeof value.$oid === 'string') return value.$oid.trim();
-    if (value._id !== undefined && value._id !== value) {
-      const nested = normalizeEntityId(value._id);
+    const record = value as Record<string, unknown>;
+    const maybeOid = record.$oid;
+    if (typeof maybeOid === 'string') return maybeOid.trim();
+    if (record._id !== undefined && record._id !== value) {
+      const nested = normalizeEntityId(record._id);
       if (nested) return nested;
     }
-    if (typeof value.id === 'string' || typeof value.id === 'number') {
-      const direct = String(value.id).trim();
+    if (typeof record.id === 'string' || typeof record.id === 'number') {
+      const direct = String(record.id).trim();
       if (direct) return direct;
     }
-    if (typeof value.toHexString === 'function') {
-      const hex = value.toHexString();
+    const toHexString = record.toHexString;
+    if (typeof toHexString === 'function') {
+      const hex = toHexString();
       if (typeof hex === 'string' && hex.trim()) return hex.trim();
     }
-    if (typeof value.toString === 'function') {
-      const str = value.toString().trim();
+    const toStringFn = record.toString;
+    if (typeof toStringFn === 'function') {
+      const str = toStringFn.call(record).trim();
       if (str && str !== '[object Object]') return str;
     }
   }
@@ -64,7 +68,7 @@ const normalizeEntityId = (value: any): string => {
   return '';
 };
 
-const sanitizeEntityId = (value: any): string => {
+const sanitizeEntityId = (value: unknown): string => {
   const normalized = normalizeEntityId(value);
   if (!normalized) return '';
 
@@ -76,7 +80,7 @@ const sanitizeEntityId = (value: any): string => {
   return normalized;
 };
 
-const normalizePreferenceBoolean = (value: any, fallback: boolean): boolean => {
+const normalizePreferenceBoolean = (value: unknown, fallback: boolean): boolean => {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') {
     const lowered = value.trim().toLowerCase();
@@ -90,31 +94,11 @@ const normalizePreferenceBoolean = (value: any, fallback: boolean): boolean => {
   return fallback;
 };
 
-const normalizeUserPreferences = (preferences: any) => ({
+const normalizeUserPreferences = (preferences: Partial<UserPreferences> | null | undefined): UserPreferences => ({
   darkMode: normalizePreferenceBoolean(preferences?.darkMode, false),
   pushNotifications: normalizePreferenceBoolean(preferences?.pushNotifications, true),
   commentNotifications: normalizePreferenceBoolean(preferences?.commentNotifications, true)
 });
-
-export interface User {
-  id?: string;
-  _id?: string;
-  name: string;
-  avatar: string;
-  username: string;
-  role: 'user' | 'moderator' | 'admin';
-  bio?: string;
-  location?: string;
-  website?: string;
-  mssv?: string;
-  faculty?: string;
-  preferences?: {
-    darkMode: boolean;
-    pushNotifications: boolean;
-    commentNotifications: boolean;
-  };
-  savedPosts?: string[];
-}
 
 const defaultUser: User = {
   id: '',
@@ -160,7 +144,7 @@ const removeAuthStorageItem = (key: 'token' | 'currentUser') => {
   }
 };
 
-const parseJwtPayload = (token: string): Record<string, any> | null => {
+const parseJwtPayload = (token: string): JwtPayload | null => {
   if (!token) return null;
   const parts = token.split('.');
   if (parts.length !== 3) return null;
@@ -169,7 +153,9 @@ const parseJwtPayload = (token: string): Record<string, any> | null => {
     const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
     const decoded = atob(padded);
-    return JSON.parse(decoded);
+    const parsed = JSON.parse(decoded) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as JwtPayload;
   } catch {
     return null;
   }
@@ -194,6 +180,12 @@ const readAuthToken = (): string => {
   return String(readAuthStorageItem('token') || '').trim();
 };
 
+const normalizeUserRole = (value: unknown): UserRole => {
+  const normalized = String(value || 'user').toLowerCase();
+  if (normalized === 'admin' || normalized === 'moderator') return normalized;
+  return 'user';
+};
+
 const buildUserFromToken = (token: string): User | null => {
   const payload = parseJwtPayload(token);
   if (!payload) return null;
@@ -201,14 +193,11 @@ const buildUserFromToken = (token: string): User | null => {
   const accountId = sanitizeEntityId(payload.accountId || payload.id || payload._id || payload.sub);
   if (!accountId) return null;
 
-  const normalizedRole = String(payload.role || 'user').toLowerCase();
-  const role: User['role'] = normalizedRole === 'admin' || normalizedRole === 'moderator' ? normalizedRole : 'user';
-
   return {
     ...defaultUser,
     id: accountId,
     _id: accountId,
-    role
+    role: normalizeUserRole(payload.role)
   };
 };
 
@@ -236,6 +225,34 @@ interface AppContentProps {
   fetchUnreadMessagesCount: (userId: string) => Promise<void>;
   fetchUnreadCount: (userId: string) => Promise<void>;
 }
+
+type NotificationSocketPayload = {
+  type?: string;
+  senderName?: string;
+  content?: string;
+};
+
+type MessageSocketPayload = {
+  _id?: string;
+  conversation?: string | { _id?: string };
+  sender?: unknown;
+  recipient?: unknown;
+  content?: string;
+};
+
+type ProfileUpdatePayload = Partial<{
+  id: string;
+  _id: string;
+  full_name: string;
+  name: string;
+  username: string;
+  avatar_url: string;
+  bio: string;
+  location: string;
+  website: string;
+  mssv: string;
+  faculty: string;
+}>;
 
 function AppContent({
   currentUser,
@@ -267,8 +284,6 @@ function AppContent({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [resetToken, setResetToken] = useState<string | null>(null);
-  const [initialPostId, setInitialPostId] = useState<string | null>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement | null>(null);
   
   // Use a ref for userId to ensure listeners always have current ID without re-attaching
@@ -339,7 +354,7 @@ function AppContent({
     }
 
     return false;
-  }, [currentUser.id, currentUser._id]);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -372,7 +387,7 @@ function AppContent({
     if (socket && isConnected) {
       console.log('📡 [App] Attaching global socket listeners');
       
-      const handleNewNotification = (data: any) => {
+      const handleNewNotification = (data: NotificationSocketPayload) => {
         setUnreadNotifications(prev => prev + 1);
         if ('Notification' in window && Notification.permission === 'granted') {
            // We use a small delay or check current state to ensure valid push
@@ -392,7 +407,7 @@ function AppContent({
                mention: 'Bạn được nhắc tên',
                system: 'Thông báo hệ thống'
              };
-             const title = titleMap[data.type] || 'Thông báo mới';
+             const title = titleMap[data.type as string] || 'Thông báo mới';
              const body = data.type === 'friend_request'
                 ? `${data.senderName} đã gửi lời mời kết bạn`
                 : (data.type === 'system' ? data.content : data.senderName + ' đã tương tác với bạn');
@@ -402,14 +417,14 @@ function AppContent({
         }
       };
 
-      const handleReceiveMessage = (message: any) => {
+      const handleReceiveMessage = (message: MessageSocketPayload) => {
           const currentId = userIdRef.current;
           const recipientId = normalizeEntityId(message.recipient);
           const senderId = normalizeEntityId(message.sender);
           const isIncomingForCurrentUser = recipientId === currentId && senderId !== currentId;
           console.log('📩 [App] Global message received:', {
             id: message._id,
-            conv: message.conversation?._id || message.conversation,
+            conv: normalizeEntityId(message.conversation) || message.conversation,
             sender: senderId,
             recipient: recipientId,
             isIncomingForCurrentUser
@@ -452,7 +467,7 @@ function AppContent({
         socket.off('notification_cancelled');
       };
     }
-  }, [socket, isConnected, fetchUnreadMessagesCount]);
+  }, [socket, isConnected, currentUser?.preferences, navigate, fetchUnreadMessagesCount, setUnreadMessagesCount, setUnreadNotifications]);
 
   useEffect(() => {
     if (currentView !== 'home') return;
@@ -527,12 +542,12 @@ function AppContent({
     setSelectedPost(null);
     setMobileMenuOpen(false);
     if (targetView === 'notifications') setUnreadNotifications(0);
-    if (targetView === 'messages') fetchUnreadMessagesCount(currentUser.id || String((currentUser as any)._id));
+    if (targetView === 'messages') fetchUnreadMessagesCount(currentUser.id || String(currentUser._id));
   };
 
   const handlePostClick = (post: Post) => setSelectedPost(post);
 
-  const handleNotificationClick = async (notif: any) => {
+  const handleNotificationClick = async (notif: NotificationItem) => {
     if (notif.type === 'follow' || notif.type === 'friend_request') {
       const senderId = sanitizeEntityId(notif.sender?._id || notif.sender?.id || notif.sender);
       if (senderId) handleUserClick(senderId);
@@ -605,11 +620,13 @@ function AppContent({
       .map((value) => String(value || '').trim().toLowerCase())
       .filter(Boolean);
 
-    const shouldPatchAuthor = (author: any) => {
-      const authorId = sanitizeEntityId(author?.id || author?._id || author);
+    const shouldPatchAuthor = (author: unknown) => {
+      const typedAuthor = (author && typeof author === 'object') ? (author as Record<string, unknown>) : null;
+      if (!typedAuthor) return false;
+      const authorId = sanitizeEntityId(typedAuthor.id || typedAuthor._id || author);
       if (authorId && matchIds.includes(authorId)) return true;
 
-      const authorUsername = String(author?.username || '').trim().toLowerCase();
+      const authorUsername = String(typedAuthor.username || '').trim().toLowerCase();
       return !!authorUsername && matchUsernames.includes(authorUsername);
     };
 
@@ -718,14 +735,14 @@ function AppContent({
             writeAuthStorageItem('currentUser', JSON.stringify(updatedUser));
             syncCurrentUserToVisiblePosts(updatedUser, currentUser);
           }}
-          onProfileUpdate={(data) => {
+          onProfileUpdate={(data: ProfileUpdatePayload) => {
             const normalizedCurrentUserId = sanitizeEntityId(currentUser.id || currentUser._id);
             const normalizedUpdatedUserId = sanitizeEntityId(data?.id || data?._id || currentUser.id || currentUser._id);
             const updatedDisplayName = data?.full_name || data?.name || currentUser.name;
             const updatedUser: User = {
               ...currentUser,
-              id: data?.id || currentUser.id,
-              _id: data?.id || currentUser._id,
+              id: data?.id || data?._id || currentUser.id,
+              _id: data?._id || data?.id || currentUser._id,
               name: updatedDisplayName,
               username: data?.username || currentUser.username,
               avatar: data?.avatar_url ? getImageUrl(data.avatar_url) : currentUser.avatar,
@@ -778,7 +795,7 @@ function AppContent({
   if (currentView === 'login') {
     return (
       <Login 
-        onLogin={(userData: any) => { 
+        onLogin={(userData?: LoginPayload) => { 
           const u = userData?.user;
           const token = String(userData?.token || u?.token || readAuthToken()).trim();
           if (!u || !isTokenUsable(token)) {
@@ -795,10 +812,10 @@ function AppContent({
             ...currentUser,
             id: u._id || u.id,
             _id: u._id || u.id,
-            name: u.full_name || u.username,
-            username: u.username,
+            name: u.full_name || u.username || defaultUser.name,
+            username: u.username || defaultUser.username,
             avatar: getImageUrl(u.avatar_url) || defaultUser.avatar,
-            role: (u.role || 'user').toLowerCase() as any,
+            role: normalizeUserRole(u.role),
             preferences: normalizeUserPreferences(u.preferences || defaultUser.preferences),
             savedPosts: u.savedPosts || []
           };
@@ -806,8 +823,11 @@ function AppContent({
           writeAuthStorageItem('currentUser', JSON.stringify(newUser));
           writeAuthStorageItem('token', token);
           navigate(u.role?.toLowerCase() === 'admin' ? '/admin' : '/');
-          fetchUnreadCount(u._id || u.id);
-          fetchUnreadMessagesCount(u._id || u.id);
+          const loggedInUserId = u._id || u.id || '';
+          if (loggedInUserId) {
+            fetchUnreadCount(loggedInUserId);
+            fetchUnreadMessagesCount(loggedInUserId);
+          }
         }} 
         onBackToHome={() => navigate('/')}
       />
@@ -1058,7 +1078,7 @@ export default function App() {
   }, [posts]);
 
   const fetchPostsPage = useCallback(async ({
-    userId = currentUser?.id || currentUser?._id || '',
+    userId: _userId = currentUser?.id || currentUser?._id || '',
     community = activeCommunity,
     filter = feedFilter,
     page = 1,
@@ -1145,8 +1165,9 @@ export default function App() {
       if (isAbortError(err)) return;
       console.error('Failed to fetch posts:', err);
     } finally {
-      if (requestSeq !== postsRequestSeqRef.current) return;
-      setIsFetchingPosts(false);
+      if (requestSeq === postsRequestSeqRef.current) {
+        setIsFetchingPosts(false);
+      }
     }
   }, [activeCommunity, feedFilter, currentUser.id, currentUser._id, supportsPagedMeta]);
 
@@ -1223,6 +1244,11 @@ export default function App() {
     </SocketProvider>
   );
 }
+
+
+
+
+
 
 
 

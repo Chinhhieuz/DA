@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import DOMPurify from 'dompurify';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,9 @@ import {
   Flag,
   Users,
   FileText,
-  Settings as SettingsIcon,
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  Lock,
   Search,
   Pencil,
   Tag,
@@ -24,9 +22,7 @@ import {
   Clock,
   X,
   Plus,
-  Image as ImageIcon,
   Maximize2,
-  Check,
   Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -34,17 +30,97 @@ import { API_URL, API_BASE_URL } from '@/lib/api';
 import { getImageUrl } from '@/lib/imageUtils';
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import type { AppUser } from '@/types/user';
 
 type AdminTab = 'reports' | 'posts' | 'users' | 'feedback' | 'locked' | 'hidden' | 'communities';
+interface AdminUserItem {
+  _id?: string;
+  username?: string;
+  email?: string;
+  full_name?: string;
+  mssv?: string;
+  role?: string;
+  avatar_url?: string;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
+  lock_reason?: string;
+  warning_count?: number;
+  lock_until?: string;
+  is_locked?: boolean;
+  [key: string]: unknown;
+}
 
-export function AdminDashboard({ currentUser }: { currentUser?: any }) {
+interface AdminPostItem {
+  _id?: string;
+  title?: string;
+  content?: string;
+  community?: string;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
+  image_url?: string;
+  image_urls?: string[];
+  video_url?: string;
+  ai_system_note?: string;
+  author?: AdminUserItem;
+  [key: string]: unknown;
+}
+
+interface AdminReportItem {
+  _id?: string;
+  reason?: string;
+  description?: string;
+  status?: string;
+  created_at?: string;
+  evidence_images?: string[];
+  reporter?: AdminUserItem;
+  post?: AdminPostItem;
+  [key: string]: unknown;
+}
+
+interface FeedbackItem {
+  _id?: string;
+  content?: string;
+  status?: string;
+  type?: string;
+  created_at?: string;
+  user?: AdminUserItem;
+  user_id?: AdminUserItem | string;
+  [key: string]: unknown;
+}
+
+interface CommunityItem {
+  _id?: string;
+  name?: string;
+  description?: string;
+  icon?: string;
+  postCount?: number;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+const formatDateTime = (value?: string | number | Date | null) => {
+  if (!value) return 'N/A';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'N/A' : date.toLocaleString('vi-VN');
+};
+
+const getUserInitial = (username?: string) => (username?.[0] || 'U').toUpperCase();
+
+export function AdminDashboard({ currentUser }: { currentUser?: AppUser }) {
   const [activeTab, setActiveTab] = useState<AdminTab>('reports');
-  const [reports, setReports] = useState<any[]>([]);
-  const [pendingPosts, setPendingPosts] = useState<any[]>([]);
-  const [feedbacks, setFeedbacks] = useState<any[]>([]);
-  const [lockedUsers, setLockedUsers] = useState<any[]>([]);
-  const [hiddenPosts, setHiddenPosts] = useState<any[]>([]);
-  const [communities, setCommunities] = useState<any[]>([]);
+  const [reports, setReports] = useState<AdminReportItem[]>([]);
+  const [pendingPosts, setPendingPosts] = useState<AdminPostItem[]>([]);
+  const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>([]);
+  const [lockedUsers, setLockedUsers] = useState<AdminUserItem[]>([]);
+  const [hiddenPosts, setHiddenPosts] = useState<AdminPostItem[]>([]);
+  const [communities, setCommunities] = useState<CommunityItem[]>([]);
   const [adminStats, setAdminStats] = useState({
     pendingReports: 0,
     pendingPosts: 0,
@@ -52,18 +128,18 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
     newFeedbacks: 0
   });
 
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<AdminUserItem[]>([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreateTopicOpen, setIsCreateTopicOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isEditTopicOpen, setIsEditTopicOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<any>(null);
-  const [editingTopic, setEditingTopic] = useState<any>(null);
-  const [viewingPost, setViewingPost] = useState<any>(null);
-  const [viewingReport, setViewingReport] = useState<any>(null);
+  const [editingUser, setEditingUser] = useState<AdminUserItem | null>(null);
+  const [editingTopic, setEditingTopic] = useState<CommunityItem | null>(null);
+  const [viewingPost, setViewingPost] = useState<AdminPostItem | null>(null);
+  const [viewingReport, setViewingReport] = useState<AdminReportItem | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-  const [selectedCommPosts, setSelectedCommPosts] = useState<any[]>([]);
+  const [selectedCommPosts, setSelectedCommPosts] = useState<AdminPostItem[]>([]);
   const [isViewCommPostsOpen, setIsViewCommPostsOpen] = useState(false);
   const [loadingCommPosts, setLoadingCommPosts] = useState(false);
   const [activeCommName, setActiveCommName] = useState('');
@@ -79,15 +155,15 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
   const [isLoading, setIsLoading] = useState(false);
   const adminUserId = currentUser?.id || currentUser?._id || '';
 
-  const getAuthHeaders = (includeJson = false) => {
+  const getAuthHeaders = useCallback((includeJson = false) => {
     const token = sessionStorage.getItem('token') || localStorage.getItem('token');
     const headers: Record<string, string> = {};
     if (includeJson) headers['Content-Type'] = 'application/json';
     if (token) headers.Authorization = `Bearer ${token}`;
     return headers;
-  };
+  }, []);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     if (!adminUserId) return;
     try {
       const res = await fetch(`${API_URL}/admin/dashboard`, {
@@ -103,9 +179,9 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
     } catch (e) {
       console.error('[AdminDashboard] 🚨 Lỗi tải thống kê:', e);
     }
-  };
+  }, [adminUserId, getAuthHeaders]);
 
-  const handleSearchUsers = async (query = '') => {
+  const handleSearchUsers = useCallback(async (query = '') => {
     if (!adminUserId) return;
     try {
       const q = query ? `?search=${encodeURIComponent(query)}` : '';
@@ -119,11 +195,11 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
     } catch (e) {
       toast.error('Lỗi tải danh sách người dùng!');
     }
-  };
+  }, [adminUserId, getAuthHeaders]);
 
   useEffect(() => {
     fetchStats();
-  }, [adminUserId]);
+  }, [fetchStats]);
 
   useEffect(() => {
     if (activeTab === 'reports' && adminUserId) {
@@ -132,46 +208,46 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
         .then(data => {
           if (data.status === 'success') setReports(data.data);
         })
-        .catch(e => console.error('Lỗi tải danh sách báo cáo!'));
+        .catch(() => console.error('Lỗi tải danh sách báo cáo!'));
     } else if (activeTab === 'posts' && adminUserId) {
       fetch(`${API_URL}/posts/pending`, { headers: getAuthHeaders() })
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') setPendingPosts(data.data);
         })
-        .catch(e => console.error('Lỗi tải danh sách bài viết chờ duyệt!'));
+        .catch(() => console.error('Lỗi tải danh sách bài viết chờ duyệt!'));
     } else if (activeTab === 'feedback' && adminUserId) {
       fetch(`${API_URL}/feedback`, { headers: getAuthHeaders() })
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') setFeedbacks(data.data);
         })
-        .catch(e => console.error('Lỗi tải danh sách góp ý!'));
+        .catch(() => console.error('Lỗi tải danh sách góp ý!'));
     } else if (activeTab === 'locked' && adminUserId) {
       fetch(`${API_URL}/admin/locked`, { headers: getAuthHeaders() })
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') setLockedUsers(data.data);
         })
-        .catch(e => console.error('Lỗi tải danh sách tài khoản bị khóa!'));
+        .catch(() => console.error('Lỗi tải danh sách tài khoản bị khóa!'));
     } else if (activeTab === 'hidden' && adminUserId) {
       fetch(`${API_URL}/admin/hidden-posts`, { headers: getAuthHeaders() })
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') setHiddenPosts(data.data);
         })
-        .catch(e => console.error('Lỗi tải danh sách bài viết bị ẩn!'));
+        .catch(() => console.error('Lỗi tải danh sách bài viết bị ẩn!'));
     } else if (activeTab === 'communities' && adminUserId) {
       fetch(`${API_URL}/communities`, { headers: getAuthHeaders() })
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') setCommunities(data.data);
         })
-        .catch(e => console.error('Lỗi tải danh sách cộng đồng!'));
+        .catch(() => console.error('Lỗi tải danh sách cộng đồng!'));
     } else if (activeTab === 'users' && adminUserId) {
       handleSearchUsers();
     }
-  }, [activeTab, adminUserId]);
+  }, [activeTab, adminUserId, getAuthHeaders, handleSearchUsers]);
 
   const handleReportAction = async (reportId: string, action: string) => {
     try {
@@ -310,7 +386,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
     } catch (e) { toast.error('Lỗi kết nối!'); }
   };
 
-  const openEditTopicDialog = (topic: any) => {
+  const openEditTopicDialog = (topic: CommunityItem) => {
     setEditingTopic(topic);
     setEditTopicFormData({
       name: topic.name || '',
@@ -358,9 +434,9 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       } else {
         toast.error(data.message || 'Lỗi không xác định từ server');
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Error fetching community posts:', e);
-      toast.error(`Lỗi tải danh sách bài viết: ${e.message}`);
+      toast.error(`Lỗi tải danh sách bài viết: ${getErrorMessage(e, 'Khong ro loi')}`);
     } finally {
       setLoadingCommPosts(false); // 6. Kết thúc hiệu ứng tải
     }
@@ -382,8 +458,8 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       setIsCreateOpen(false);
       fetchStats(); // Cập nhật lại stats
       handleSearchUsers(userSearchQuery); // Refresh the list
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Co loi xay ra'));
     } finally {
       setIsLoading(false);
     }
@@ -404,8 +480,8 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       toast.success('Cập nhật tài khoản thành công!');
       setIsEditOpen(false);
       handleSearchUsers(userSearchQuery); // Refresh the list
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Co loi xay ra'));
     } finally {
       setIsLoading(false);
     }
@@ -424,14 +500,14 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
       toast.success('Đã xóa tài khoản thành công!');
       fetchStats(); 
       handleSearchUsers(userSearchQuery); // Refresh the list
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Co loi xay ra'));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const openEditDialog = (user: any) => {
+  const openEditDialog = (user: AdminUserItem) => {
     setEditingUser(user);
     setEditFormData({
       username: user.username || '',
@@ -574,7 +650,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                         size="sm"
                         variant="ghost"
                         className="text-primary hover:bg-primary/10 border border-primary/20"
-                        onClick={() => setViewingPost(report.post)}
+                        onClick={() => setViewingPost(report.post || null)}
                       >
                         <Eye className="h-4 w-4 mr-1" /> Xem bài
                       </Button>
@@ -582,7 +658,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                         size="sm"
                         variant="ghost"
                         className="text-amber-500 hover:text-amber-600 hover:bg-amber-50 border border-amber-200"
-                        onClick={() => handleReportAction(report._id, 'warn_user')}
+                        onClick={() => handleReportAction(String(report._id || ''), 'warn_user')}
                       >
                         <AlertTriangle className="h-4 w-4 mr-1" /> Cảnh cáo
                       </Button>
@@ -590,7 +666,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                         size="sm"
                         variant="ghost"
                         className="text-green-500 hover:text-green-600 hover:bg-green-50 border border-green-200"
-                        onClick={() => handleReportAction(report._id, 'dismiss')}
+                        onClick={() => handleReportAction(String(report._id || ''), 'dismiss')}
                       >
                         <CheckCircle2 className="h-4 w-4 mr-1" /> Hủy báo cáo
                       </Button>
@@ -606,7 +682,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                 <DialogHeader className="bg-muted/30 px-6 py-5 border-b border-border/50">
                   <div className="flex items-center gap-2 mb-1">
                     <Badge variant="destructive" className="text-[10px] h-5 font-black uppercase tracking-tighter">Báo cáo chi tiết</Badge>
-                    <span className="text-xs text-muted-foreground font-medium">{viewingReport && new Date(viewingReport.created_at).toLocaleString('vi-VN')}</span>
+                    <span className="text-xs text-muted-foreground font-medium">{viewingReport && new Date(viewingReport.created_at || 0).toLocaleString('vi-VN')}</span>
                   </div>
                   <DialogTitle className="text-xl font-black text-foreground">
                     {viewingReport?.reason}
@@ -677,7 +753,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                   {/* Post Context Section */}
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Bài viết bị tố cáo</Label>
-                    <div className="p-4 rounded-2xl border border-border bg-card shadow-sm hover:border-primary/30 transition-colors cursor-pointer" onClick={() => { setViewingPost(viewingReport.post); setViewingReport(null); }}>
+                    <div className="p-4 rounded-2xl border border-border bg-card shadow-sm hover:border-primary/30 transition-colors cursor-pointer" onClick={() => { setViewingPost(viewingReport?.post || null); setViewingReport(null); }}>
                       <p className="font-black text-sm mb-1">{viewingReport?.post?.title}</p>
                       <div 
                         className="text-xs text-muted-foreground line-clamp-2 tiptap-prose"
@@ -697,13 +773,13 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                     <Button
                       variant="ghost"
                       className="rounded-xl h-11 px-6 font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200"
-                      onClick={() => { handleReportAction(viewingReport._id, 'warn_user'); setViewingReport(null); }}
+                      onClick={() => { if (viewingReport?._id) handleReportAction(viewingReport._id, 'warn_user'); setViewingReport(null); }}
                     >
                       Cảnh cáo
                     </Button>
                     <Button
                       className="rounded-xl h-11 px-8 font-black bg-green-600 hover:bg-green-700 shadow-lg shadow-green-500/20"
-                      onClick={() => { handleReportAction(viewingReport._id, 'dismiss'); setViewingReport(null); }}
+                      onClick={() => { if (viewingReport?._id) handleReportAction(viewingReport._id, 'dismiss'); setViewingReport(null); }}
                     >
                       Hủy báo cáo
                     </Button>
@@ -717,7 +793,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                 {hiddenPosts.length === 0 ? (
                   <div className="p-8 text-center text-muted-foreground text-sm">Chưa có bài viết nào bị ẩn.</div>
                 ) : hiddenPosts.map((post) => (
-                  <div key={post._id} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-muted/30 transition-colors gap-3">
+                  <div key={String(post._id || '')} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-muted/30 transition-colors gap-3">
                     <div className="space-y-1 flex-1">
                       <p className="text-sm font-bold text-foreground truncate max-w-xl">{post.title}</p>
                       <p className="text-[11px] text-muted-foreground">Người đăng: @{post.author?.username}</p>
@@ -736,7 +812,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                         size="sm"
                         variant="ghost"
                         className="text-green-600 hover:bg-green-50 hover:text-green-700 border border-green-100"
-                        onClick={() => handleRestorePost(post._id)}
+                        onClick={() => handleRestorePost(String(post._id || ''))}
                       >
                         <CheckCircle2 className="h-4 w-4 mr-1" /> Khôi phục
                       </Button>
@@ -761,14 +837,14 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                   <p className="text-sm text-muted-foreground max-w-xs mx-auto">Tất cả bài viết từ cộng đồng đều đã được xử lý xong.</p>
                 </div>
               ) : pendingPosts.map((post) => (
-                <div key={post._id} className="p-4 flex flex-col md:flex-row md:items-start justify-between hover:bg-muted/30 transition-colors gap-3">
+                <div key={String(post._id || '')} className="p-4 flex flex-col md:flex-row md:items-start justify-between hover:bg-muted/30 transition-colors gap-3">
                   <div className="space-y-1 flex-1">
                     <p className="text-sm font-bold text-foreground">{post.title}</p>
                     <div 
                       className="text-xs text-muted-foreground line-clamp-2 tiptap-prose"
                       dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(post.content || '') }}
                     />
-                    <p className="text-xs text-muted-foreground/70 mt-2">Đăng bởi: <span className="font-semibold">@{post.author?.username}</span> • {new Date(post.created_at).toLocaleString('vi-VN')}</p>
+                    <p className="text-xs text-muted-foreground/70 mt-2">Đăng bởi: <span className="font-semibold">@{post.author?.username}</span> • {formatDateTime(post.created_at)}</p>
                     {post.ai_system_note && (
                       <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-50 border border-red-100 text-red-600">
                         <AlertTriangle className="h-3.5 w-3.5" />
@@ -806,7 +882,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                     </Button>
                     <Button
                       size="sm"
-                      onClick={() => handlePostAction(post._id, 'approve')}
+                      onClick={() => handlePostAction(String(post._id || ''), 'approve')}
                       className="bg-green-600 hover:bg-green-700 text-white"
                     >
                       <CheckCircle2 className="h-4 w-4 mr-1" /> Duyệt bài
@@ -814,7 +890,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handlePostAction(post._id, 'reject')}
+                      onClick={() => handlePostAction(String(post._id || ''), 'reject')}
                       className="text-red-600 border-red-200 hover:bg-red-50"
                     >
                       <XCircle className="h-4 w-4 mr-1" /> Từ chối
@@ -842,11 +918,11 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                 </div>
               ) : (
                 lockedUsers.map((user) => (
-                  <div key={user._id} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-muted/30 transition-colors gap-3">
+                  <div key={String(user._id || '')} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-muted/30 transition-colors gap-3">
                     <div className="flex items-center gap-3 flex-1">
                       <Avatar className="h-10 w-10 border border-border">
                         <AvatarImage src={getImageUrl(user.avatar_url)} />
-                        <AvatarFallback>{user.username[0]}</AvatarFallback>
+                        <AvatarFallback>{getUserInitial(user.username)}</AvatarFallback>
                       </Avatar>
                       <div className="min-w-0">
                         <p className="text-sm font-bold text-foreground">@{user.username} ({user.full_name || 'N/A'})</p>
@@ -860,7 +936,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                       size="sm"
                       variant="outline"
                       className="border-green-200 text-green-600 hover:bg-green-50 hover:text-green-700"
-                      onClick={() => handleUnlock(user._id)}
+                      onClick={() => handleUnlock(String(user._id || ''))}
                     >
                       <CheckCircle2 className="h-4 w-4 mr-1" /> Mở khóa
                     </Button>
@@ -965,7 +1041,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                         </td>
                       </tr>
                     ) : communities.map((com) => (
-                      <tr key={com._id} className="hover:bg-muted/20 transition-colors group">
+                      <tr key={String(com._id || '')} className="hover:bg-muted/20 transition-colors group">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-4">
                             <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-xl shadow-inner shrink-0 group-hover:scale-110 transition-transform">
@@ -973,7 +1049,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                             </div>
                             <div className="min-w-0">
                               <p className="font-black text-foreground truncate">{com.name}</p>
-                              <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Topic ID: {com._id.slice(-6)}</p>
+                              <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Topic ID: {String(com._id || '').slice(-6) || 'N/A'}</p>
                             </div>
                           </div>
                         </td>
@@ -991,7 +1067,8 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                               size="sm"
                               variant="ghost"
                               className="h-9 p-2 hover:bg-primary/10 hover:text-primary rounded-lg flex items-center gap-2 group-hover:bg-primary/5"
-                              onClick={() => fetchCommunityPosts(com.name)}
+                              onClick={() => com.name && fetchCommunityPosts(com.name)}
+                              disabled={!com.name}
                             >
                               <Eye className="h-4 w-4" />
                               <span className="text-[11px] font-bold uppercase tracking-wider">Xem bài viết</span>
@@ -1008,7 +1085,8 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                               size="sm"
                               variant="ghost"
                               className="h-9 w-9 p-0 hover:bg-red-500/10 hover:text-red-500 rounded-lg"
-                              onClick={() => handleDeleteCommunity(com._id)}
+                              onClick={() => com._id && handleDeleteCommunity(com._id)}
+                              disabled={!com._id}
                             >
                               <XCircle className="h-4 w-4" />
                             </Button>
@@ -1036,7 +1114,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                   <p className="text-sm text-muted-foreground">Chưa có góp ý nào từ người dùng.</p>
                 </div>
               ) : feedbacks.map((feedback) => (
-                <div key={feedback._id} className={`p-4 flex flex-col md:flex-row md:items-start justify-between hover:bg-muted/30 transition-colors gap-4 ${feedback.status === 'new' ? 'bg-primary/5' : ''}`}>
+                <div key={String(feedback._id || '')} className={`p-4 flex flex-col md:flex-row md:items-start justify-between hover:bg-muted/30 transition-colors gap-4 ${feedback.status === 'new' ? 'bg-primary/5' : ''}`}>
                   <div className="space-y-1 flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <Badge variant="outline" className={
@@ -1047,19 +1125,20 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                         {feedback.type === 'bug' ? 'Lỗi' : feedback.type === 'suggestion' ? 'Góp ý' : 'Khác'}
                       </Badge>
                       {feedback.status === 'new' && <Badge className="bg-primary hover:bg-primary">Mới</Badge>}
-                      <span className="text-xs text-muted-foreground">{new Date(feedback.created_at).toLocaleString('vi-VN')}</span>
+                      <span className="text-xs text-muted-foreground">{formatDateTime(feedback.created_at)}</span>
                     </div>
                     <p className="text-sm text-foreground leading-relaxed">{feedback.content}</p>
                     <div className="flex items-center gap-2 mt-3 p-2 rounded-lg bg-muted/50 w-fit">
                       <img src={getImageUrl(feedback.user?.avatar_url)} alt="Avatar" className="h-6 w-6 rounded-full border border-border" />
-                      <span className="text-xs font-medium text-muted-foreground">@{feedback.user?.username} ({feedback.user?.full_name})</span>
+                      <span className="text-xs font-medium text-muted-foreground">@{feedback.user?.username || 'unknown'} ({feedback.user?.full_name || 'N/A'})</span>
                     </div>
                   </div>
                   {feedback.status === 'new' && (
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleFeedbackAction(feedback._id)}
+                      onClick={() => feedback._id && handleFeedbackAction(feedback._id)}
+                      disabled={!feedback._id}
                       className="shrink-0 border-primary/20 text-primary hover:bg-primary hover:text-white"
                     >
                       Đánh dấu đã đọc
@@ -1197,12 +1276,12 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                         <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground italic">Không tìm thấy người dùng nào.</td>
                       </tr>
                     ) : users.map(user => (
-                      <tr key={user._id} className="hover:bg-muted/30 transition-colors group">
+                      <tr key={String(user._id || '')} className="hover:bg-muted/30 transition-colors group">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <Avatar className="h-9 w-9 border border-border">
                               <AvatarImage src={getImageUrl(user.avatar_url)} />
-                              <AvatarFallback>{user.username[0]}</AvatarFallback>
+                              <AvatarFallback>{getUserInitial(user.username)}</AvatarFallback>
                             </Avatar>
                             <div className="min-w-0">
                               <p className="font-bold text-foreground truncate">@{user.username}</p>
@@ -1233,7 +1312,8 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                               variant="ghost"
                               size="sm"
                               className="h-8 w-8 p-0 hover:bg-red-500/10 hover:text-red-500 text-red-500/70"
-                              onClick={() => handleDeleteUser(user._id)}
+                              onClick={() => user._id && handleDeleteUser(user._id)}
+                              disabled={!user._id}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -1277,7 +1357,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                 </h2>
                 <div className="flex items-center justify-center gap-4 text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-50">
                   <Clock className="h-3.5 w-3.5" />
-                  <span>{viewingPost && new Date(viewingPost.created_at).toLocaleString('vi-VN')}</span>
+                  <span>{viewingPost ? formatDateTime(viewingPost.created_at) : 'N/A'}</span>
                 </div>
                 <div className="h-1 w-20 bg-primary/20 mx-auto rounded-full"></div>
               </header>
@@ -1289,7 +1369,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                 />
 
                 {/* Media Section */}
-                {(viewingPost?.image_urls?.length > 0 || viewingPost?.image_url || viewingPost?.video_url) && (
+                {((viewingPost?.image_urls?.length ?? 0) > 0 || viewingPost?.image_url || viewingPost?.video_url) && (
                   <div className="pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                     {viewingPost?.image_urls?.map((url: string, i: number) => (
                       <div key={i} className="group relative rounded-2xl overflow-hidden border border-border shadow-sm aspect-square bg-muted/20">
@@ -1347,14 +1427,22 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                 <>
                   <Button
                     className="bg-green-600 hover:bg-green-700 text-white font-black h-12 px-8 rounded-2xl shadow-xl shadow-green-500/20 gap-2 transition-all active:scale-95"
-                    onClick={() => { handlePostAction(viewingPost._id, 'approve'); setViewingPost(null); }}
+                    onClick={() => {
+                      if (!viewingPost?._id) return;
+                      handlePostAction(viewingPost._id, 'approve');
+                      setViewingPost(null);
+                    }}
                   >
                     <CheckCircle2 className="h-5 w-5" /> DUYỆT BÀI
                   </Button>
                   <Button
                     variant="outline"
                     className="border-red-200 text-red-500 hover:bg-red-50 font-black h-12 px-8 rounded-2xl transition-all"
-                    onClick={() => { handlePostAction(viewingPost._id, 'reject'); setViewingPost(null); }}
+                    onClick={() => {
+                      if (!viewingPost?._id) return;
+                      handlePostAction(viewingPost._id, 'reject');
+                      setViewingPost(null);
+                    }}
                   >
                     <XCircle className="h-5 w-5 mr-2" /> TỪ CHỐI
                   </Button>
@@ -1413,7 +1501,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
             ) : (
               <div className="space-y-3">
                 {selectedCommPosts.map((post) => (
-                  <Card key={post._id} className="p-4 hover:bg-muted/30 transition-colors border-border/50 group">
+                  <Card key={String(post._id || '')} className="p-4 hover:bg-muted/30 transition-colors border-border/50 group">
                     <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                       <div className="flex-1 min-w-0 space-y-2">
                         <div className="flex items-center gap-2">
@@ -1436,7 +1524,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
                         />
                         <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">
                            <span className="flex items-center gap-1"><Users className="h-3 w-3" /> @{post.author?.username}</span>
-                           <span>• {new Date(post.created_at).toLocaleString('vi-VN')}</span>
+                           <span>• {formatDateTime(post.created_at)}</span>
                         </div>
                       </div>
                       <div className="flex gap-2 shrink-0 md:self-center">
@@ -1485,3 +1573,8 @@ export function AdminDashboard({ currentUser }: { currentUser?: any }) {
     </div>
   );
 }
+
+
+
+
+

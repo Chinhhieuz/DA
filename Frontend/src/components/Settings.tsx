@@ -9,8 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { useTheme } from '@/components/theme-provider';
+import type { AppUser, UserPreferences } from '@/types/user';
 
-const normalizeBoolean = (value: any, fallback: boolean) => {
+const normalizeBoolean = (value: unknown, fallback: boolean) => {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') {
     const lowered = value.trim().toLowerCase();
@@ -24,7 +25,7 @@ const normalizeBoolean = (value: any, fallback: boolean) => {
   return fallback;
 };
 
-export function Settings({ currentUser, onUpdatePreferences, onLogout }: { currentUser?: any, onUpdatePreferences?: (prefs: any) => void, onLogout?: () => void }) {
+export function Settings({ currentUser, onUpdatePreferences, onLogout }: { currentUser?: AppUser, onUpdatePreferences?: (prefs: UserPreferences) => void, onLogout?: () => void }) {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [isSavingPreferences, setIsSavingPreferences] = useState(false);
@@ -99,14 +100,14 @@ export function Settings({ currentUser, onUpdatePreferences, onLogout }: { curre
       }
       if (onUpdatePreferences) onUpdatePreferences(newPrefs);
       toast.success('Đã cập nhật cài đặt');
-    } catch (e: any) {
+    } catch (e: unknown) {
       setPushNotif(previousPrefs.pushNotifications);
       setCommentNotif(previousPrefs.commentNotifications);
       setDarkMode(previousPrefs.darkMode);
       if (key === 'darkMode') {
         setTheme(previousPrefs.darkMode ? 'dark' : 'light');
       }
-      toast.error(e.message || 'Lỗi khi lưu cài đặt');
+      toast.error(e instanceof Error ? e.message : 'Lỗi khi lưu cài đặt');
     } finally {
       setIsSavingPreferences(false);
     }
