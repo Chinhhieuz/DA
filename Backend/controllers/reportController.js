@@ -19,9 +19,18 @@ const handleServiceError = (error, res) => {
 
 const createReport = async (req, res) => {
     try {
-        const payload = req.body || {};
-        const reporterId = req.user?._id ? String(req.user._id) : '';
-        if (reporterId) payload.reporter_id = reporterId;
+        const reporterId = String(req.user?._id || '').trim();
+        if (!reporterId) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+        }
+
+        const payload = {
+            post_id: req.body?.post_id,
+            reason: req.body?.reason,
+            description: req.body?.description,
+            evidence_images: req.body?.evidence_images,
+            reporter_id: reporterId
+        };
 
         const newReport = await reportService.createReportService(payload);
         return res.status(201).json({
@@ -36,9 +45,16 @@ const createReport = async (req, res) => {
 
 const handleReport = async (req, res) => {
     try {
-        const payload = req.body || {};
-        const adminId = req.user?._id ? String(req.user._id) : '';
-        if (adminId) payload.admin_id = adminId;
+        const adminId = String(req.user?._id || '').trim();
+        if (!adminId) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+        }
+
+        const payload = {
+            admin_id: adminId,
+            report_id: req.body?.report_id,
+            action: req.body?.action
+        };
 
         const report = await reportService.handleReportService(payload);
         return res.status(200).json({

@@ -7,8 +7,9 @@ const socketModule = require('../socket');
 const notificationService = require('./notificationService');
 const { processMentions } = require('../utils/mentionUtils');
 
-const createCommentService = async (commentData) => {
-    const { post_id, author_id, content, image_url } = commentData;
+const createCommentService = async (commentData, actorId) => {
+    const { post_id, content, image_url } = commentData || {};
+    const author_id = String(actorId || '').trim();
 
     if (!post_id || !author_id || !content) {
         throw new Error('Vui lòng cung cấp đủ post_id, author_id và nội dung bình luận!');

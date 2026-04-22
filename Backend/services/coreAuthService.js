@@ -4,6 +4,15 @@ const crypto = require('crypto');
 const Account = require('../models/Account'); 
 const User = require('../models/User'); 
 
+// Defense-in-depth: reject hash replay input (raw password equals stored hash).
+const rejectHashReplayInput = (rawPassword, storedHash) => {
+    const input = String(rawPassword || '');
+    const hash = String(storedHash || '');
+    if (input && hash && input === hash) {
+        throw new Error('Sai mat khau!');
+    }
+};
+
 /**
  * Đăng nhập người dùng
  */
@@ -18,6 +27,7 @@ const loginUser = async (email, password) => {
         throw new Error('Tài khoản hoặc Email không tồn tại!');
     }
 
+    rejectHashReplayInput(password, account.password_hash);
     const isMatch = await bcrypt.compare(password, account.password_hash);
     
     if (!isMatch) {
@@ -203,6 +213,7 @@ const changePasswordAuth = async (accountId, oldPassword, newPassword) => {
     const account = await Account.findById(accountId);
     if (!account) throw new Error('Tài khoản không tồn tại!');
 
+    rejectHashReplayInput(oldPassword, account.password_hash);
     const isMatch = await bcrypt.compare(oldPassword, account.password_hash);
     if (!isMatch) throw new Error('Mật khẩu cũ không chính xác!');
 

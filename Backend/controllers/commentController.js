@@ -16,12 +16,18 @@ const handleServiceError = (error, res) => {
 
 const createComment = async (req, res) => {
     try {
-        const payload = req.body || {};
-        // Gan tac gia tu token, khong lay author_id tu body de tranh gia mao.
-        const authUserId = req.user?._id ? String(req.user._id) : '';
-        if (authUserId) payload.author_id = authUserId;
+        const authUserId = String(req.user?._id || '').trim();
+        if (!authUserId) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+        }
 
-        const newComment = await commentService.createCommentService(payload);
+        const payload = {
+            post_id: req.body?.post_id,
+            content: req.body?.content,
+            image_url: req.body?.image_url
+        };
+
+        const newComment = await commentService.createCommentService(payload, authUserId);
         return res.status(201).json({
             status: 'success',
             message: 'Dang binh luan thanh cong!',

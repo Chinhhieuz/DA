@@ -27,10 +27,12 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { API_URL, API_BASE_URL } from '@/lib/api';
+import { apiRequest } from '@/lib/http';
 import { getImageUrl } from '@/lib/imageUtils';
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import type { AppUser } from '@/types/user';
+import { isApiSuccess } from '@/types/api';
 
 type AdminTab = 'reports' | 'posts' | 'users' | 'feedback' | 'locked' | 'hidden' | 'communities';
 interface AdminUserItem {
@@ -163,351 +165,346 @@ export function AdminDashboard({ currentUser }: { currentUser?: AppUser }) {
     return headers;
   }, []);
 
+  const requestWithAuth = useCallback(
+    <TData,>(url: string, init: RequestInit = {}, includeJson = false) => {
+      return apiRequest<TData>(url, {
+        ...init,
+        headers: getAuthHeaders(includeJson)
+      });
+    },
+    [getAuthHeaders]
+  );
+
   const fetchStats = useCallback(async () => {
     if (!adminUserId) return;
     try {
-      const res = await fetch(`${API_URL}/admin/dashboard`, {
-        headers: getAuthHeaders()
-      });
-      const data = await res.json();
-
-      if (data.status === 'success') {
+      const data = await requestWithAuth<typeof adminStats>(`${API_URL}/admin/dashboard`);
+      if (isApiSuccess(data)) {
         setAdminStats(data.data);
       } else {
-        console.warn('[AdminDashboard] ⚠️ Lỗi từ server:', data.message);
+        console.warn('[AdminDashboard] Server returned error:', data.message);
       }
     } catch (e) {
-      console.error('[AdminDashboard] 🚨 Lỗi tải thống kê:', e);
+      console.error('[AdminDashboard] Failed to load stats:', e);
     }
-  }, [adminUserId, getAuthHeaders]);
+  }, [adminUserId, requestWithAuth]);
 
   const handleSearchUsers = useCallback(async (query = '') => {
     if (!adminUserId) return;
     try {
       const q = query ? `?search=${encodeURIComponent(query)}` : '';
-      const res = await fetch(`${API_URL}/admin/users${q}`, {
-        headers: getAuthHeaders()
-      });
-      const data = await res.json();
-      if (data.status === 'success') {
+      const data = await requestWithAuth<AdminUserItem[]>(`${API_URL}/admin/users${q}`);
+      if (isApiSuccess(data)) {
         setUsers(data.data);
       }
     } catch (e) {
-      toast.error('Lỗi tải danh sách người dùng!');
+      toast.error('Loi tai danh sach nguoi dung!');
     }
-  }, [adminUserId, getAuthHeaders]);
+  }, [adminUserId, requestWithAuth]);
 
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
 
   useEffect(() => {
-    if (activeTab === 'reports' && adminUserId) {
-      fetch(`${API_URL}/reports/pending`, { headers: getAuthHeaders() })
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success') setReports(data.data);
-        })
-        .catch(() => console.error('Lỗi tải danh sách báo cáo!'));
-    } else if (activeTab === 'posts' && adminUserId) {
-      fetch(`${API_URL}/posts/pending`, { headers: getAuthHeaders() })
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success') setPendingPosts(data.data);
-        })
-        .catch(() => console.error('Lỗi tải danh sách bài viết chờ duyệt!'));
-    } else if (activeTab === 'feedback' && adminUserId) {
-      fetch(`${API_URL}/feedback`, { headers: getAuthHeaders() })
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success') setFeedbacks(data.data);
-        })
-        .catch(() => console.error('Lỗi tải danh sách góp ý!'));
-    } else if (activeTab === 'locked' && adminUserId) {
-      fetch(`${API_URL}/admin/locked`, { headers: getAuthHeaders() })
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success') setLockedUsers(data.data);
-        })
-        .catch(() => console.error('Lỗi tải danh sách tài khoản bị khóa!'));
-    } else if (activeTab === 'hidden' && adminUserId) {
-      fetch(`${API_URL}/admin/hidden-posts`, { headers: getAuthHeaders() })
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success') setHiddenPosts(data.data);
-        })
-        .catch(() => console.error('Lỗi tải danh sách bài viết bị ẩn!'));
-    } else if (activeTab === 'communities' && adminUserId) {
-      fetch(`${API_URL}/communities`, { headers: getAuthHeaders() })
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success') setCommunities(data.data);
-        })
-        .catch(() => console.error('Lỗi tải danh sách cộng đồng!'));
-    } else if (activeTab === 'users' && adminUserId) {
-      handleSearchUsers();
-    }
-  }, [activeTab, adminUserId, getAuthHeaders, handleSearchUsers]);
+    if (!adminUserId) return;
+
+    const loadTabData = async () => {
+      try {
+        if (activeTab === 'reports') {
+          const data = await requestWithAuth<AdminReportItem[]>(`${API_URL}/reports/pending`);
+          if (isApiSuccess(data)) setReports(data.data);
+        } else if (activeTab === 'posts') {
+          const data = await requestWithAuth<AdminPostItem[]>(`${API_URL}/posts/pending`);
+          if (isApiSuccess(data)) setPendingPosts(data.data);
+        } else if (activeTab === 'feedback') {
+          const data = await requestWithAuth<FeedbackItem[]>(`${API_URL}/feedback`);
+          if (isApiSuccess(data)) setFeedbacks(data.data);
+        } else if (activeTab === 'locked') {
+          const data = await requestWithAuth<AdminUserItem[]>(`${API_URL}/admin/locked`);
+          if (isApiSuccess(data)) setLockedUsers(data.data);
+        } else if (activeTab === 'hidden') {
+          const data = await requestWithAuth<AdminPostItem[]>(`${API_URL}/admin/hidden-posts`);
+          if (isApiSuccess(data)) setHiddenPosts(data.data);
+        } else if (activeTab === 'communities') {
+          const data = await requestWithAuth<CommunityItem[]>(`${API_URL}/communities`);
+          if (isApiSuccess(data)) setCommunities(data.data);
+        } else if (activeTab === 'users') {
+          await handleSearchUsers();
+        }
+      } catch (error) {
+        console.error('[AdminDashboard] Failed to load tab data:', error);
+      }
+    };
+
+    void loadTabData();
+  }, [activeTab, adminUserId, handleSearchUsers, requestWithAuth]);
 
   const handleReportAction = async (reportId: string, action: string) => {
-    try {
-      const res = await fetch(`${API_URL}/reports/handle`, {
-        method: 'POST',
-        headers: getAuthHeaders(true),
-        body: JSON.stringify({ report_id: reportId, action })
-      });
-      const data = await res.json();
-      if (data.status === 'success') {
-        toast.success(`Đã xử lý! Hành động: ${action}`);
-        setReports(reports.filter(r => r._id !== reportId));
-        fetchStats(); // Cập nhật lại stats
-      } else {
-        toast.error(data.message);
-      }
-    } catch (e) { toast.error('Lỗi mạng!'); }
-  };
+  try {
+    const data = await requestWithAuth<null>(`${API_URL}/reports/handle`, {
+      method: 'POST',
+      body: JSON.stringify({ report_id: reportId, action })
+    }, true);
 
-  const handlePostAction = async (postId: string, action: 'approve' | 'reject') => {
-    try {
-      const res = await fetch(`${API_URL}/posts/${postId}/${action}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(true),
-        body: JSON.stringify({})
-      });
-      const data = await res.json();
-      if (data.status === 'success') {
-        toast.success(action === 'approve' ? 'Đã duyệt bài viết!' : 'Đã từ chối bài viết!');
-        setPendingPosts(pendingPosts.filter(p => p._id !== postId));
-        fetchStats(); // Cập nhật lại stats
-      } else {
-        toast.error(data.message);
-      }
-    } catch (e) { toast.error('Lỗi kết nối server!'); }
-  };
+    if (isApiSuccess(data)) {
+      toast.success(`Da xu ly! Hanh dong: ${action}`);
+      setReports(reports.filter(r => r._id !== reportId));
+      fetchStats();
+    } else {
+      toast.error(data.message || 'Loi xu ly bao cao');
+    }
+  } catch {
+    toast.error('Loi mang!');
+  }
+};
 
-  const handleFeedbackAction = async (feedbackId: string) => {
-    try {
-      const res = await fetch(`${API_URL}/feedback/${feedbackId}/read`, {
-        method: 'PUT',
-        headers: getAuthHeaders(true),
-        body: JSON.stringify({})
-      });
-      const data = await res.json();
-      if (data.status === 'success') {
-        toast.success('Đã đánh dấu là đã đọc!');
-        setFeedbacks(feedbacks.map(f => f._id === feedbackId ? { ...f, status: 'read' } : f));
-        fetchStats();
-      } else {
-        toast.error(data.message);
-      }
-    } catch (e) { toast.error('Lỗi kết nối!'); }
-  };
+const handlePostAction = async (postId: string, action: 'approve' | 'reject') => {
+  try {
+    const data = await requestWithAuth<null>(`${API_URL}/posts/${postId}/${action}`, {
+      method: 'PUT',
+      body: JSON.stringify({})
+    }, true);
 
-  const handleUnlock = async (userId: string) => {
-    try {
-      const res = await fetch(`${API_URL}/admin/unlock`, {
-        method: 'POST',
-        headers: getAuthHeaders(true),
-        body: JSON.stringify({ user_id: userId })
-      });
-      const data = await res.json();
-      if (data.status === 'success') {
-        toast.success('Đã mở khóa tài khoản thành công!');
-        setLockedUsers(lockedUsers.filter(u => u._id !== userId));
-        fetchStats();
-      } else {
-        toast.error(data.message);
-      }
-    } catch (e) { toast.error('Lỗi kết nối!'); }
-  };
+    if (isApiSuccess(data)) {
+      toast.success(action === 'approve' ? 'Da duyet bai viet!' : 'Da tu choi bai viet!');
+      setPendingPosts(pendingPosts.filter(p => p._id !== postId));
+      fetchStats();
+    } else {
+      toast.error(data.message || 'Loi cap nhat bai viet');
+    }
+  } catch {
+    toast.error('Loi ket noi server!');
+  }
+};
 
-  const handleRestorePost = async (postId: string) => {
-    try {
-      const res = await fetch(`${API_URL}/admin/posts/${postId}/restore`, {
-        method: 'POST',
-        headers: getAuthHeaders(true),
-        body: JSON.stringify({})
-      });
-      const data = await res.json();
-      if (data.status === 'success') {
-        toast.success('Đã khôi phục bài viết thành công!');
-        setHiddenPosts(hiddenPosts.filter(p => p._id !== postId));
-        fetchStats();
-      } else {
-        toast.error(data.message);
-      }
-    } catch (e) { toast.error('Lỗi kết nối!'); }
-  };
+const handleFeedbackAction = async (feedbackId: string) => {
+  try {
+    const data = await requestWithAuth<null>(`${API_URL}/feedback/${feedbackId}/read`, {
+      method: 'PUT',
+      body: JSON.stringify({})
+    }, true);
 
-  // Community Form State
-  const [comFormData, setComFormData] = useState({
-    name: '', description: '', icon: '👥'
+    if (isApiSuccess(data)) {
+      toast.success('Da danh dau la da doc!');
+      setFeedbacks(feedbacks.map(f => f._id === feedbackId ? { ...f, status: 'read' } : f));
+      fetchStats();
+    } else {
+      toast.error(data.message || 'Loi cap nhat gop y');
+    }
+  } catch {
+    toast.error('Loi ket noi!');
+  }
+};
+
+const handleUnlock = async (userId: string) => {
+  try {
+    const data = await requestWithAuth<null>(`${API_URL}/admin/unlock`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId })
+    }, true);
+
+    if (isApiSuccess(data)) {
+      toast.success('Da mo khoa tai khoan thanh cong!');
+      setLockedUsers(lockedUsers.filter(u => u._id !== userId));
+      fetchStats();
+    } else {
+      toast.error(data.message || 'Loi mo khoa tai khoan');
+    }
+  } catch {
+    toast.error('Loi ket noi!');
+  }
+};
+
+const handleRestorePost = async (postId: string) => {
+  try {
+    const data = await requestWithAuth<null>(`${API_URL}/admin/posts/${postId}/restore`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    }, true);
+
+    if (isApiSuccess(data)) {
+      toast.success('Da khoi phuc bai viet thanh cong!');
+      setHiddenPosts(hiddenPosts.filter(p => p._id !== postId));
+      fetchStats();
+    } else {
+      toast.error(data.message || 'Loi khoi phuc bai viet');
+    }
+  } catch {
+    toast.error('Loi ket noi!');
+  }
+};
+
+// Community Form State
+const [comFormData, setComFormData] = useState({
+  name: '', description: '', icon: '??'
+});
+
+const handleCreateCommunity = async (e: React.FormEvent) => {
+  e.preventDefault();
+  try {
+    const data = await requestWithAuth<CommunityItem>(`${API_URL}/communities`, {
+      method: 'POST',
+      body: JSON.stringify({ ...comFormData, creator_id: adminUserId })
+    }, true);
+
+    if (isApiSuccess(data)) {
+      toast.success('Tao cong dong thanh cong!');
+      setCommunities([data.data, ...communities]);
+      setComFormData({ name: '', description: '', icon: '??' });
+      setIsCreateTopicOpen(false);
+      fetchStats();
+    } else {
+      toast.error(data.message || 'Loi tao cong dong');
+    }
+  } catch {
+    toast.error('Loi ket noi!');
+  }
+};
+
+const handleUpdateTopic = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!editingTopic) return;
+
+  try {
+    const data = await requestWithAuth<CommunityItem>(`${API_URL}/communities/${editingTopic._id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...editTopicFormData })
+    }, true);
+
+    if (isApiSuccess(data)) {
+      toast.success('Cap nhat chu de thanh cong!');
+      setCommunities(communities.map(c => c._id === editingTopic._id ? { ...c, ...data.data } : c));
+      setIsEditTopicOpen(false);
+      fetchStats();
+    } else {
+      toast.error(data.message || 'Loi cap nhat chu de');
+    }
+  } catch {
+    toast.error('Loi ket noi!');
+  }
+};
+
+const openEditTopicDialog = (topic: CommunityItem) => {
+  setEditingTopic(topic);
+  setEditTopicFormData({
+    name: topic.name || '',
+    description: topic.description || '',
+    icon: topic.icon || '??'
   });
+  setIsEditTopicOpen(true);
+};
 
-  const handleCreateCommunity = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API_URL}/communities`, {
-        method: 'POST',
-        headers: getAuthHeaders(true),
-        body: JSON.stringify({ ...comFormData, creator_id: adminUserId })
-      });
-      const data = await res.json();
-      if (data.status === 'success') {
-        toast.success('Tạo cộng đồng thành công!');
-        setCommunities([data.data, ...communities]);
-        setComFormData({ name: '', description: '', icon: '👥' });
-        setIsCreateTopicOpen(false);
-        fetchStats();
-      } else {
-        toast.error(data.message);
-      }
-    } catch (e) { toast.error('Lỗi kết nối!'); }
-  };
+const handleDeleteCommunity = async (communityId: string) => {
+  if (!window.confirm('Ban co chac chan muon xoa cong dong nay?')) return;
 
-  const handleUpdateTopic = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingTopic) return;
-    try {
-      const res = await fetch(`${API_URL}/communities/${editingTopic._id}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(true),
-        body: JSON.stringify({ ...editTopicFormData })
-      });
-      const data = await res.json();
-      if (data.status === 'success') {
-        toast.success('Cập nhật chủ đề thành công!');
-        setCommunities(communities.map(c => c._id === editingTopic._id ? { ...c, ...data.data } : c));
-        setIsEditTopicOpen(false);
-        fetchStats();
-      } else {
-        toast.error(data.message);
-      }
-    } catch (e) { toast.error('Lỗi kết nối!'); }
-  };
-
-  const openEditTopicDialog = (topic: CommunityItem) => {
-    setEditingTopic(topic);
-    setEditTopicFormData({
-      name: topic.name || '',
-      description: topic.description || '',
-      icon: topic.icon || '👥'
+  try {
+    const data = await requestWithAuth<null>(`${API_URL}/communities/${communityId}`, {
+      method: 'DELETE'
     });
-    setIsEditTopicOpen(true);
-  };
 
-  const handleDeleteCommunity = async (communityId: string) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa cộng đồng này?')) return;
-    try {
-      const res = await fetch(`${API_URL}/communities/${communityId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      });
-      const data = await res.json();
-      if (data.status === 'success') {
-        toast.success('Đã xóa cộng đồng!');
-        setCommunities(communities.filter(c => c._id !== communityId));
-        fetchStats();
-      } else {
-        toast.error(data.message);
-      }
-    } catch (e) { toast.error('Lỗi kết nối!'); }
-  };
-
-  /**
-   * [ADMIN] Lấy toàn bộ bài viết của một chủ đề (bao gồm cả các bài chưa duyệt)
-   * Giúp quản trị viên có cái nhìn tổng quát về hoạt động của từng chủ đề
-   */
-  const fetchCommunityPosts = async (communityName: string) => {
-    if (!adminUserId) return;
-    setLoadingCommPosts(true);         // 1. Hiệu ứng đang tải
-    setActiveCommName(communityName); // 2. Ghi nhận tên chủ đề đang xem
-    setIsViewCommPostsOpen(true);    // 3. Mở Dialog hiển thị
-    try {
-      // 4. Gọi API từ Backend, quyền được xác thực bằng Bearer token
-      const res = await fetch(`${API_URL}/posts/admin/community/${encodeURIComponent(communityName)}`, {
-        headers: getAuthHeaders()
-      });
-      const data = await res.json();
-      if (data.status === 'success') {
-        setSelectedCommPosts(data.data); // 5. Cập nhật danh sách bài viết nhận được
-      } else {
-        toast.error(data.message || 'Lỗi không xác định từ server');
-      }
-    } catch (e: unknown) {
-      console.error('Error fetching community posts:', e);
-      toast.error(`Lỗi tải danh sách bài viết: ${getErrorMessage(e, 'Khong ro loi')}`);
-    } finally {
-      setLoadingCommPosts(false); // 6. Kết thúc hiệu ứng tải
+    if (isApiSuccess(data)) {
+      toast.success('Da xoa cong dong!');
+      setCommunities(communities.filter(c => c._id !== communityId));
+      fetchStats();
+    } else {
+      toast.error(data.message || 'Loi xoa cong dong');
     }
-  };
+  } catch {
+    toast.error('Loi ket noi!');
+  }
+};
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      const response = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Lỗi tạo tài khoản');
-      toast.success('Tạo tài khoản thành công!');
-      setFormData({ username: '', email: '', password: '', full_name: '', mssv: '', role: 'User' });
-      setIsCreateOpen(false);
-      fetchStats(); // Cập nhật lại stats
-      handleSearchUsers(userSearchQuery); // Refresh the list
-    } catch (err: unknown) {
-      toast.error(getErrorMessage(err, 'Co loi xay ra'));
-    } finally {
-      setIsLoading(false);
+const fetchCommunityPosts = async (communityName: string) => {
+  if (!adminUserId) return;
+  setLoadingCommPosts(true);
+  setActiveCommName(communityName);
+  setIsViewCommPostsOpen(true);
+
+  try {
+    const data = await requestWithAuth<AdminPostItem[]>(`${API_URL}/posts/admin/community/${encodeURIComponent(communityName)}`);
+    if (isApiSuccess(data)) {
+      setSelectedCommPosts(data.data);
+    } else {
+      toast.error(data.message || 'Loi khong xac dinh tu server');
     }
-  };
+  } catch (e: unknown) {
+    console.error('Error fetching community posts:', e);
+    toast.error(`Loi tai danh sach bai viet: ${getErrorMessage(e, 'Khong ro loi')}`);
+  } finally {
+    setLoadingCommPosts(false);
+  }
+};
 
-  const handleUpdateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingUser) return;
-    setIsLoading(true);
-    try {
-      const response = await fetch(`${API_URL}/admin/users/${editingUser._id}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(true),
-        body: JSON.stringify({ ...editFormData }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Lỗi cập nhật tài khoản');
-      toast.success('Cập nhật tài khoản thành công!');
-      setIsEditOpen(false);
-      handleSearchUsers(userSearchQuery); // Refresh the list
-    } catch (err: unknown) {
-      toast.error(getErrorMessage(err, 'Co loi xay ra'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
+const handleRegister = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setIsLoading(true);
 
-  const handleDeleteUser = async (userId: string) => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa tài khoản này không? Toàn bộ bài viết và bình luận của người dùng này sẽ bị gỡ bỏ vĩnh viễn!")) return;
-    setIsLoading(true);
-    try {
-      const response = await fetch(`${API_URL}/admin/users/${userId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Lỗi xóa tài khoản');
-      toast.success('Đã xóa tài khoản thành công!');
-      fetchStats(); 
-      handleSearchUsers(userSearchQuery); // Refresh the list
-    } catch (err: unknown) {
-      toast.error(getErrorMessage(err, 'Co loi xay ra'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  try {
+    const data = await requestWithAuth<AdminUserItem>(`${API_URL}/auth/register`, {
+      method: 'POST',
+      body: JSON.stringify(formData)
+    }, true);
 
-  const openEditDialog = (user: AdminUserItem) => {
+    if (!isApiSuccess(data)) throw new Error(data.message || 'Loi tao tai khoan');
+
+    toast.success('Tao tai khoan thanh cong!');
+    setFormData({ username: '', email: '', password: '', full_name: '', mssv: '', role: 'User' });
+    setIsCreateOpen(false);
+    fetchStats();
+    void handleSearchUsers(userSearchQuery);
+  } catch (err: unknown) {
+    toast.error(getErrorMessage(err, 'Co loi xay ra'));
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+const handleUpdateUser = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!editingUser) return;
+  setIsLoading(true);
+
+  try {
+    const data = await requestWithAuth<AdminUserItem>(`${API_URL}/admin/users/${editingUser._id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...editFormData })
+    }, true);
+
+    if (!isApiSuccess(data)) throw new Error(data.message || 'Loi cap nhat tai khoan');
+
+    toast.success('Cap nhat tai khoan thanh cong!');
+    setIsEditOpen(false);
+    void handleSearchUsers(userSearchQuery);
+  } catch (err: unknown) {
+    toast.error(getErrorMessage(err, 'Co loi xay ra'));
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+const handleDeleteUser = async (userId: string) => {
+  if (!window.confirm('Ban co chac chan muon xoa tai khoan nay khong? Toan bo bai viet va binh luan cua nguoi dung nay se bi go bo vinh vien!')) return;
+  setIsLoading(true);
+
+  try {
+    const data = await requestWithAuth<null>(`${API_URL}/admin/users/${userId}`, {
+      method: 'DELETE'
+    });
+
+    if (!isApiSuccess(data)) throw new Error(data.message || 'Loi xoa tai khoan');
+
+    toast.success('Da xoa tai khoan thanh cong!');
+    fetchStats();
+    void handleSearchUsers(userSearchQuery);
+  } catch (err: unknown) {
+    toast.error(getErrorMessage(err, 'Co loi xay ra'));
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+const openEditDialog = (user: AdminUserItem) => {
     setEditingUser(user);
     setEditFormData({
       username: user.username || '',
@@ -1573,6 +1570,7 @@ export function AdminDashboard({ currentUser }: { currentUser?: AppUser }) {
     </div>
   );
 }
+
 
 
 

@@ -8,9 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { API_URL } from '@/lib/api';
+import { apiFetch, apiRequest } from '@/lib/http';
 import { useSocket } from '@/contexts/SocketContext';
 import { toast } from 'sonner';
 import type { AppUser } from '@/types/user';
+import { isApiSuccess } from '@/types/api';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -313,6 +315,14 @@ interface MessageAttachment {
   mime_type?: string;
   size?: number;
 }
+
+type UploadedAttachmentPayload = Partial<MessageAttachment> & {
+  kind?: string;
+};
+
+type UploadMessageResponseData =
+  | { attachment?: UploadedAttachmentPayload }
+  | UploadedAttachmentPayload;
 
 const isPdfAttachment = (attachment: MessageAttachment | null | undefined): boolean => {
   if (!attachment) return false;
@@ -657,6 +667,21 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     return `${url}${separator}${params.toString()}`;
   }, []);
 
+  const requestWithAuth = useCallback(
+    <TData,>(
+      url: string,
+      init: RequestInit = {},
+      options: { includeJsonContentType?: boolean; withCacheBust?: boolean } = {}
+    ) => {
+      const { includeJsonContentType = true, withCacheBust = true } = options;
+      return apiRequest<TData>(withCacheBust ? withAuthParam(url) : url, {
+        ...init,
+        headers: getAuthHeaders({ includeJsonContentType })
+      });
+    },
+    [getAuthHeaders, withAuthParam]
+  );
+
   const buildAttachmentDownloadUrl = (attachment: MessageAttachment) => {
     const params = new URLSearchParams();
     params.set('url', attachment.url);
@@ -682,7 +707,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     const endpoint = buildAttachmentDownloadUrl(attachment);
 
     try {
-      const response = await fetch(endpoint, {
+      const response = await apiFetch(endpoint, {
         method: 'GET',
         cache: 'no-store',
         headers: getAuthHeaders({ includeJsonContentType: false })
@@ -736,12 +761,10 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         return [];
       }
 
-      const res = await fetch(withAuthParam(`${API_URL}/messages/conversations`), {
-        cache: 'no-store',
-        headers: getAuthHeaders()
+      const data = await requestWithAuth<ConversationItem[]>(`${API_URL}/messages/conversations`, {
+        cache: 'no-store'
       });
-      const data = await res.json();
-      if (data.status === 'success') {
+      if (isApiSuccess(data)) {
         const sorted = dedupeConversationsByPartner(data.data || [], currentUserId);
         setConversations(sorted);
 
@@ -791,14 +814,11 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
             }
             startingConversationUserRef.current = pendingChatUserId;
 
-            const startRes = await fetch(withAuthParam(`${API_URL}/messages/start/${pendingChatUserId}`), {
-              method: 'POST',
-              headers: getAuthHeaders()
+            const startData = await requestWithAuth<ConversationItem>(`${API_URL}/messages/start/${pendingChatUserId}`, {
+              method: 'POST'
             });
-            const startContentType = (startRes.headers.get('content-type') || '').toLowerCase();
-            const startData = startContentType.includes('application/json') ? await startRes.json() : null;
 
-            if (startRes.ok && startData?.status === 'success') {
+            if (isApiSuccess(startData)) {
               const merged = dedupeConversationsByPartner([startData.data, ...sorted], currentUserId);
               const targetConversation = merged.find((conversation) =>
                 getConversationPartnerId(conversation, currentUserId) === pendingChatUserId
@@ -808,7 +828,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
               clearPendingChatTarget();
               startingConversationUserRef.current = '';
               return merged;
-            } else if (startData?.message) {
+            } else if (startData.message) {
               toast.error(startData.message);
               clearPendingChatTarget();
             } else {
@@ -827,7 +847,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     } finally {
       setLoading(false);
     }
-  }, [currentUserId, getAuthHeaders, selectedConversation, withAuthParam]);
+  }, [currentUserId, requestWithAuth, selectedConversation]);
 
   const startConversationWithUser = async (targetUserId: string) => {
     const normalizedTargetUserId = sanitizeId(targetUserId);
@@ -847,13 +867,11 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
     try {
       startingConversationUserRef.current = normalizedTargetUserId;
-      const response = await fetch(withAuthParam(`${API_URL}/messages/start/${normalizedTargetUserId}`), {
-        method: 'POST',
-        headers: getAuthHeaders()
+      const data = await requestWithAuth<ConversationItem>(`${API_URL}/messages/start/${normalizedTargetUserId}`, {
+        method: 'POST'
       });
-      const data = await response.json();
 
-      if (data.status === 'success') {
+      if (isApiSuccess(data)) {
         const newConversation = data.data;
         const merged = dedupeConversationsByPartner([newConversation, ...conversations], currentUserId);
         const targetConversation = merged.find((conversation) =>
@@ -891,13 +909,8 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       let url = `${API_URL}/messages/${normalizedConversationId}?limit=20`;
       if (before) url += `&before=${encodeURIComponent(before)}`;
 
-      const res = await fetch(withAuthParam(url), {
-        cache: 'no-store',
-        headers: getAuthHeaders()
-      });
-      const data = await res.json();
-
-      if (data.status !== 'success') return;
+      const data = await requestWithAuth<MessageItem[]>(url, { cache: 'no-store' });
+      if (!isApiSuccess(data)) return;
       if (String(activeConversationIdRef.current) !== normalizedConversationId) return;
 
       const newMessages = dedupeMessagesById(
@@ -921,7 +934,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     } finally {
       if (isLoadMore) setLoadingMore(false);
     }
-  }, [getAuthHeaders, hasMore, selectedConversationId, withAuthParam]);
+  }, [hasMore, requestWithAuth, selectedConversationId]);
 
   const markAsRead = useCallback(async (conversationId: string) => {
     const normalizedConversationId = String(conversationId || '').trim();
@@ -930,12 +943,11 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     markReadInFlightRef.current.add(normalizedConversationId);
 
     try {
-      const res = await fetch(withAuthParam(`${API_URL}/messages/${normalizedConversationId}/read`), {
-        method: 'PUT',
-        headers: getAuthHeaders()
+      const data = await requestWithAuth<null>(`${API_URL}/messages/${normalizedConversationId}/read`, {
+        method: 'PUT'
       });
 
-      if (res.ok) {
+      if (isApiSuccess(data)) {
         setConversations(prev => prev.map(conv => {
           if (getConversationId(conv) === normalizedConversationId && conv.last_message) {
             return { ...conv, last_message: { ...conv.last_message, is_read: true }, unread_count: 0 };
@@ -949,7 +961,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     } finally {
       markReadInFlightRef.current.delete(normalizedConversationId);
     }
-  }, [getAuthHeaders, onMessagesRead, withAuthParam]);
+  }, [onMessagesRead, requestWithAuth]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     if (chatContainerRef.current) {
@@ -1002,13 +1014,11 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     const timer = window.setTimeout(async () => {
       try {
         setSearchingUsers(true);
-        const response = await fetch(`${API_URL}/auth/search/users?q=${encodeURIComponent(keyword)}`, {
+        const data = await requestWithAuth<UserSearchItem[]>(`${API_URL}/auth/search/users?q=${encodeURIComponent(keyword)}`, {
           signal: controller.signal,
-          cache: 'no-store',
-          headers: getAuthHeaders({ includeJsonContentType: false })
-        });
-        const data = await response.json();
-        if (data.status === 'success') {
+          cache: 'no-store'
+        }, { includeJsonContentType: false, withCacheBust: false });
+        if (isApiSuccess(data)) {
           // Filter out users who already have a conversation to avoid duplicates in view
           const nonParticipantUsers = (data.data || []).filter((user: UserSearchItem) => {
             const userId = getEntityId(user);
@@ -1032,7 +1042,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [searchTerm, currentUserId, conversations, getAuthHeaders]);
+  }, [searchTerm, currentUserId, conversations, requestWithAuth]);
 
   useEffect(() => {
     activeConversationIdRef.current = selectedConversationId;
@@ -1334,15 +1344,18 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         const formData = new FormData();
         formData.append('file', selectedFile, selectedFile.name);
 
-        const uploadRes = await fetch(withAuthParam(`${API_URL}/messages/upload`), {
+        const uploadData = await requestWithAuth<UploadMessageResponseData>(`${API_URL}/messages/upload`, {
           method: 'POST',
-          headers: getAuthHeaders({ includeJsonContentType: false }),
-          body: formData,
-        });
+          body: formData
+        }, { includeJsonContentType: false });
 
-        const uploadData = await uploadRes.json();
-        if (uploadRes.ok && uploadData.status === 'success') {
-          const uploadedRawAttachment = uploadData?.data?.attachment || uploadData?.data || {};
+        if (isApiSuccess(uploadData)) {
+          const uploadedData = uploadData.data;
+          const uploadedRawAttachment: UploadedAttachmentPayload = (
+            uploadedData && typeof uploadedData === 'object' && 'attachment' in uploadedData
+              ? (uploadedData.attachment || {})
+              : (uploadedData || {})
+          ) as UploadedAttachmentPayload;
           const uploadedAttachment = normalizeAttachment({
             ...uploadedRawAttachment,
             name: uploadedRawAttachment?.name || selectedFile.name,
@@ -1362,9 +1375,8 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         }
       }
 
-      const response = await fetch(withAuthParam(`${API_URL}/messages`), {
+      const payload = await requestWithAuth<MessageItem>(`${API_URL}/messages`, {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify({
           recipientId,
           conversationId: targetConversationId,
@@ -1372,11 +1384,10 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
           attachments: attachments
         })
       });
-
-      const payload = await response.json();
-      if (!response.ok) {
+      if (!isApiSuccess(payload)) {
         throw new Error(payload?.message || 'Không thể gửi tin nhắn');
       }
+
       const savedMessage = normalizeMessageEntityIds(payload?.data, {
         senderId: currentUserId,
         recipientId
@@ -1431,13 +1442,11 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     }
 
     try {
-      const res = await fetch(withAuthParam(`${API_URL}/messages/${normalizedMessageId}/revoke`), {
-        method: 'PUT',
-        headers: getAuthHeaders()
+      const data = await requestWithAuth<MessageItem>(`${API_URL}/messages/${normalizedMessageId}/revoke`, {
+        method: 'PUT'
       });
-      const data = await res.json();
 
-      if (!res.ok) {
+      if (!isApiSuccess(data)) {
         throw new Error(data.message || 'Không thể thu hồi tin nhắn');
       }
 
@@ -1455,17 +1464,15 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     if (!sharingMessage || !recipientId) return;
 
     try {
-      const res = await fetch(withAuthParam(`${API_URL}/messages/share`), {
+      const data = await requestWithAuth<null>(`${API_URL}/messages/share`, {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify({
           messageId: sharingMessage._id || sharingMessage.id,
           recipientId
         })
       });
 
-      const data = await res.json();
-      if (!res.ok) {
+      if (!isApiSuccess(data)) {
         throw new Error(data?.message || 'Không thể chia sẻ tin nhắn');
       }
 
@@ -1508,12 +1515,14 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       const query = params.toString();
       const endpoint = `${API_URL}/messages/conversations/${encodeURIComponent(targetConversationId)}${query ? `?${query}` : ''}`;
 
-      const res = await fetch(endpoint, {
+      const res = await apiFetch(endpoint, {
         method: 'DELETE',
         headers: getAuthHeaders({ includeJsonContentType: false })
       });
       const contentType = (res.headers.get('content-type') || '').toLowerCase();
-      const data = contentType.includes('application/json') ? await res.json() : null;
+      const data = contentType.includes('application/json')
+        ? await res.json() as { message?: string }
+        : null;
 
       if (!res.ok) {
         if (res.status === 401) {
