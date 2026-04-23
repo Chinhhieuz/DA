@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getImageUrl, getOptimizedImageUrl } from '@/lib/imageUtils';
+import { getOptimizedImageUrl } from '@/lib/imageUtils';
 import { API_URL } from '@/lib/api';
 import { toast } from 'sonner';
 import DOMPurify from 'dompurify';
-import { MessageCircle, MoreHorizontal, Flag, ArrowBigUp, ArrowBigDown, Share2, Trash2, Bookmark, UserPlus, Check, X, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
+import { MessageCircle, MoreHorizontal, Flag, ArrowBigUp, ArrowBigDown, Share2, Trash2, Bookmark, UserPlus, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -312,7 +312,7 @@ export function PostCard({
   onSaveToggle, 
   onCommunityClick,
   onDeleteSuccess,
-  showAllImages = false
+  showAllImages: _showAllImages = false
 }: PostCardProps) {
   const [upVotes, setUpVotes] = useState(post.upvotes);
   const [downVotes, setDownVotes] = useState(post.downvotes || 0);
@@ -360,9 +360,9 @@ export function PostCard({
       } else {
         toast.error(data.message);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Lỗi khi lưu bài:', err);
-      toast.error(`Lỗi khi lưu bài viết: ${err.message || 'Không rõ nguyên nhân'}`);
+      toast.error(`Lỗi khi lưu bài viết: ${err instanceof Error ? err.message : 'Không rõ nguyên nhân'}`);
     }
   };
 
@@ -421,7 +421,7 @@ export function PostCard({
        }
 
        if (onReact) onReact(post.id, action, type);
-    } catch (e: any) { 
+    } catch (e: unknown) { 
       console.error('Lỗi lưu vote:', e);
       toast.error('Không thể lưu lượt bình chọn. Vui lòng thử lại!');
       // Revert state
@@ -476,9 +476,9 @@ export function PostCard({
         } else {
           toast.error(data.message);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Lỗi khi xóa bài:', err);
-        toast.error(`Lỗi mạng khi xóa bài viết: ${err.message}`);
+        toast.error(`Lỗi mạng khi xóa bài viết: ${err instanceof Error ? err.message : ''}`);
       }
     }, 100);
   };
@@ -486,7 +486,7 @@ export function PostCard({
   const handlePostContentClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement | null;
     if (!target) {
-      onPostClick && onPostClick(post);
+      if (onPostClick) onPostClick(post);
       return;
     }
 
@@ -504,7 +504,7 @@ export function PostCard({
       return;
     }
 
-    onPostClick && onPostClick(post);
+    if (onPostClick) onPostClick(post);
   };
 
   return (
@@ -516,7 +516,10 @@ export function PostCard({
           <div className="mb-3 flex items-start gap-3">
             <Avatar 
               className="h-11 w-11 cursor-pointer border-2 border-background shadow-md ring-2 ring-primary/20 dark:ring-primary/40 transition-opacity hover:opacity-80"
-              onClick={(e) => { e.stopPropagation(); onUserClick && post.author.id && onUserClick(post.author.id); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onUserClick && post.author.id) onUserClick(post.author.id);
+              }}
             >
               <AvatarImage src={post.author.avatar} className="object-cover" />
               <AvatarFallback className="bg-muted text-muted-foreground">{post.author.name?.[0] || 'U'}</AvatarFallback>
@@ -525,7 +528,10 @@ export function PostCard({
               <div className="flex items-center gap-1.5">
                 <span 
                   className="font-bold text-foreground text-[14px] hover:underline cursor-pointer"
-                  onClick={(e) => { e.stopPropagation(); onUserClick && post.author.id && onUserClick(post.author.id); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onUserClick && post.author.id) onUserClick(post.author.id);
+                  }}
                 >
                    {post.author.name || post.author.username}
                 </span>
@@ -535,7 +541,10 @@ export function PostCard({
                 <Badge 
                   variant="secondary" 
                   className="flex cursor-pointer items-center gap-1 border-none bg-primary/10 px-3 py-1 font-semibold text-primary hover:bg-primary/20"
-                  onClick={(e) => { e.stopPropagation(); onCommunityClick && onCommunityClick(post.community); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onCommunityClick) onCommunityClick(post.community);
+                  }}
                 >
                   {post.community}
                 </Badge>
@@ -592,7 +601,7 @@ export function PostCard({
                       toast.error(data.message || 'Lỗi khi thực hiện thao tác');
                       setIsFollowing(prevIsFollowing);
                     }
-                  } catch (err) {
+                  } catch {
                     toast.error('Lỗi kết nối máy chủ');
                     setIsFollowing(prevIsFollowing);
                   }
@@ -694,7 +703,10 @@ export function PostCard({
                 variant="ghost"
                 size="sm"
                 className="rounded-full px-4 font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-                onClick={(e) => { e.stopPropagation(); onPostClick && onPostClick(post); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onPostClick) onPostClick(post);
+                }}
               >
                 <MessageCircle className="h-4 w-4" />
                 <span>Bình luận</span>
@@ -770,3 +782,5 @@ export function PostCard({
   );
 }
 export default PostCard;
+
+

@@ -1,7 +1,7 @@
-// Debug: 2026-03-26T13:13:14 (Forcing Vite Reload)
-import { useState, useRef, useEffect } from 'react';
+﻿// Debug: 2026-03-26T13:13:14 (Forcing Vite Reload)
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, Mail, Calendar, MapPin, Link as LinkIcon, Edit, X, Save, MessageCircle, User, AtSign, Globe, ShieldCheck, UserPlus, Check, UserMinus, UserCheck, Clock, Lock, Key, Eye, EyeOff, GraduationCap, BookOpen } from 'lucide-react';
+import { Camera, MapPin, Link as LinkIcon, Edit, X, Save, MessageCircle, User, AtSign, Globe, UserPlus, Check, UserCheck, Lock, Key, Eye, EyeOff, GraduationCap, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -15,11 +15,14 @@ import PostCard from './PostCard';
 import type { Post } from './PostCard';
 import { getImageUrl } from '@/lib/imageUtils';
 import { API_URL } from '@/lib/api';
+import { apiRequest } from '@/lib/http';
 import { ImageAdjuster } from './ImageAdjuster';
+import { isApiSuccess } from '@/types/api';
 
 interface ProfileProps {
   currentUser: {
     id?: string;
+    _id?: string;
     name: string;
     avatar: string;
     username: string;
@@ -32,10 +35,39 @@ interface ProfileProps {
   viewedUserId?: string | null;
   onPostClick?: (post: Post) => void;
   onAvatarChange?: (newAvatar: string) => void;
-  onProfileUpdate?: (updatedData: any) => void;
+  onProfileUpdate?: (updatedData: ProfileUpdatePayload) => void;
   onPostsChanged?: () => void;
   onUserClick?: (userId: string) => void;
   onViewChange?: (view: string) => void;
+}
+
+type ProfileUpdatePayload = Partial<{
+  id: string;
+  _id: string;
+  full_name: string;
+  name: string;
+  username: string;
+  avatar_url: string;
+  bio: string;
+  location: string;
+  website: string;
+  mssv: string;
+  faculty: string;
+}>;
+
+interface ProfileCommentItem {
+  _id?: string;
+  created_at?: string;
+  content?: string;
+  image_url?: string;
+  post?: { title?: string };
+}
+
+interface ProfileRelationItem {
+  _id?: string;
+  username?: string;
+  full_name?: string;
+  avatar_url?: string;
 }
 
 interface PasswordModalProps {
@@ -55,27 +87,28 @@ interface PasswordModalProps {
   isChangingPassword: boolean;
 }
 
-const normalizeProfileId = (value: any): string => {
+const normalizeProfileId = (value: unknown): string => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value.trim();
   if (typeof value === 'number') return String(value);
 
   if (typeof value === 'object') {
-    if (typeof value.$oid === 'string') return value.$oid.trim();
-    if (value._id !== undefined && value._id !== value) {
-      const nested = normalizeProfileId(value._id);
+    const record = value as Record<string, unknown>;
+    if (typeof record.$oid === 'string') return record.$oid.trim();
+    if (record._id !== undefined && record._id !== value) {
+      const nested = normalizeProfileId(record._id);
       if (nested) return nested;
     }
-    if (typeof value.id === 'string' || typeof value.id === 'number') {
-      const direct = String(value.id).trim();
+    if (typeof record.id === 'string' || typeof record.id === 'number') {
+      const direct = String(record.id).trim();
       if (direct) return direct;
     }
-    if (typeof value.toHexString === 'function') {
-      const hex = value.toHexString();
+    if (typeof record.toHexString === 'function') {
+      const hex = record.toHexString();
       if (typeof hex === 'string' && hex.trim()) return hex.trim();
     }
-    if (typeof value.toString === 'function') {
-      const raw = value.toString().trim();
+    if (typeof record.toString === 'function') {
+      const raw = record.toString().trim();
       if (raw && raw !== '[object Object]') return raw;
     }
   }
@@ -83,7 +116,7 @@ const normalizeProfileId = (value: any): string => {
   return '';
 };
 
-const sanitizeProfileId = (value: any): string => {
+const sanitizeProfileId = (value: unknown): string => {
   const normalized = normalizeProfileId(value);
   if (!normalized) return '';
 
@@ -207,6 +240,12 @@ const AppChangePasswordDialog = ({
 export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange, onProfileUpdate, onPostsChanged, onUserClick, onViewChange }: ProfileProps) {
   // Dung chung token cho cac thao tac can xac thuc trong trang profile.
   const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+  const buildAuthHeaders = useCallback((includeJson = false): Record<string, string> => {
+    const headers: Record<string, string> = {};
+    if (includeJson) headers['Content-Type'] = 'application/json';
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+  }, [token]);
   const [activeTab, setActiveTab] = useState('posts');
   const [isEditing, setIsEditing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -229,75 +268,81 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const currentUsername = String(currentUser.username || '').trim();
-  const currentUserId = sanitizeProfileId(currentUser.id || (currentUser as any)._id);
+  const currentUserId = sanitizeProfileId(currentUser.id || currentUser._id);
   const viewedProfileUserId = sanitizeProfileId(viewedUserId);
   const effectiveUserId = viewedProfileUserId || currentUserId || sanitizeProfileId(currentUsername);
   const isOwnProfile = !viewedProfileUserId || viewedProfileUserId === currentUserId;
 
-  const [userComments, setUserComments] = useState<any[]>([]);
+  const [userComments, setUserComments] = useState<ProfileCommentItem[]>([]);
   const [userStats, setUserStats] = useState({ posts: 0, totalLikes: 0 });
-  const [profileData, setProfileData] = useState<any>(isOwnProfile ? currentUser : { name: 'Đang tải...', username: 'loading', avatar: '' });
-  const [followers, setFollowers] = useState<any[]>([]);
-  const [following, setFollowing] = useState<any[]>([]);
-  const [friendRequests, setFriendRequests] = useState<any[]>([]);
+  const [profileData, setProfileData] = useState<Record<string, unknown> & { id?: string; _id?: string; name?: string; full_name?: string; username?: string; avatar?: string; bio?: string; location?: string; website?: string; mssv?: string; faculty?: string }>(isOwnProfile ? currentUser : { name: 'Đang tải...', username: 'loading', avatar: '' });
+  const [followers, setFollowers] = useState<ProfileRelationItem[]>([]);
+  const [following, setFollowing] = useState<ProfileRelationItem[]>([]);
+  const [_friendRequests, setFriendRequests] = useState<ProfileRelationItem[]>([]);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
-  const [friendStatus, setFriendStatus] = useState<'none' | 'friend' | 'sent' | 'received'>('none');
+  const [_friendStatus, setFriendStatus] = useState<'none' | 'friend' | 'sent' | 'received'>('none');
   const [tempAvatar, setTempAvatar] = useState<string | null>(null);
   const [isAdjustingAvatar, setIsAdjustingAvatar] = useState(false);
   const [followerTab, setFollowerTab] = useState<'followers' | 'following'>('followers');
   const [internalUserPosts, setInternalUserPosts] = useState<Post[]>([]);
 
   useEffect(() => {
-    if (effectiveUserId) {
-      // API aggregated profile nay co the hoat dong public.
-      // Neu co token thi backend se tinh friend/follow status dung nguoi dang nhap.
-      const authHeaders: Record<string, string> = {};
-      if (token) authHeaders.Authorization = `Bearer ${token}`;
-      const url = `${API_URL}/auth/profile/aggregated/${encodeURIComponent(effectiveUserId)}`;
-      fetch(url, { cache: 'no-store', headers: authHeaders })
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success') {
-            const aggr = data.data;
-            const u = aggr.profile;
-            setProfileData({
-              id: u._id,
-              name: u.full_name || u.username,
-              avatar: getImageUrl(u.avatar_url),
-              username: u.username,
-              bio: u.bio,
-              location: u.location,
-              website: u.website,
-              mssv: u.mssv,
-              faculty: u.faculty
-            });
-            
-            setFollowersCount(u.followersCount || 0);
-            setFollowingCount(u.followingCount || 0);
+    if (!effectiveUserId) return;
 
-            if (!isOwnProfile) {
-              setIsFollowing(!!u.isFollowing);
-              setFriendStatus(u.friendStatus || 'none');
-            }
+    const url = `${API_URL}/auth/profile/aggregated/${encodeURIComponent(effectiveUserId)}`;
+    apiRequest<Record<string, unknown> & {
+      profile?: Record<string, unknown>;
+      comments?: ProfileCommentItem[];
+      stats?: { posts?: number; totalLikes?: number };
+      followers?: ProfileRelationItem[];
+      following?: ProfileRelationItem[];
+      friendRequests?: ProfileRelationItem[];
+      userPosts?: Post[];
+    }>(url, { cache: 'no-store', headers: buildAuthHeaders(false) })
+      .then((data) => {
+        if (!isApiSuccess(data)) return;
+        const aggr = data.data;
+        const u = (aggr.profile || {}) as Record<string, unknown>;
 
-            setUserComments(aggr.comments || []);
-            setUserStats(aggr.stats || { posts: 0, totalLikes: 0 });
-            setFollowers(aggr.followers || []);
-            setFollowing(aggr.following || []);
-            setInternalUserPosts(aggr.userPosts || []);
-            
-            if (isOwnProfile) {
-              setFriendRequests(aggr.friendRequests || []);
-            }
-          }
-        })
-        .catch(err => console.error('Lỗi khi tải thông tin hồ sơ tổng hợp:', err));
-    }
-  }, [effectiveUserId, isOwnProfile, currentUserId]);
+        setProfileData({
+          id: String(u._id || ''),
+          name: String(u.full_name || u.username || ''),
+          avatar: getImageUrl(String(u.avatar_url || '')),
+          username: String(u.username || ''),
+          bio: String(u.bio || ''),
+          location: String(u.location || ''),
+          website: String(u.website || ''),
+          mssv: String(u.mssv || ''),
+          faculty: String(u.faculty || '')
+        });
 
-  const handleReactUpdate = (postId: string, action: string, type: string) => {
+        setFollowersCount(Number(u.followersCount || 0));
+        setFollowingCount(Number(u.followingCount || 0));
+
+        if (!isOwnProfile) {
+          setIsFollowing(Boolean(u.isFollowing));
+          setFriendStatus((String(u.friendStatus || 'none') as 'none' | 'friend' | 'sent' | 'received'));
+        }
+
+        setUserComments(aggr.comments || []);
+        setUserStats({
+          posts: Number(aggr.stats?.posts || 0),
+          totalLikes: Number(aggr.stats?.totalLikes || 0)
+        });
+        setFollowers(aggr.followers || []);
+        setFollowing(aggr.following || []);
+        setInternalUserPosts(aggr.userPosts || []);
+
+        if (isOwnProfile) {
+          setFriendRequests(aggr.friendRequests || []);
+        }
+      })
+      .catch((err) => console.error('Loi khi tai thong tin ho so tong hop:', err));
+  }, [effectiveUserId, isOwnProfile, buildAuthHeaders]);
+
+  const handleReactUpdate = (postId: string, action: string, _type: string) => {
     // Cập nhật lạc quan (Optimistic update)
     setUserStats(prev => ({
       ...prev,
@@ -307,12 +352,16 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
     // Tải lại dữ liệu chính xác từ server sau một khoảng trễ ngắn
     setTimeout(() => {
       if (effectiveUserId) {
-        fetch(`${API_URL}/auth/stats/${effectiveUserId}`, { cache: 'no-store' })
-          .then(res => res.json())
-          .then(data => {
-            if (data.status === 'success') setUserStats(data.data);
+        apiRequest<{ posts?: number; totalLikes?: number }>(`${API_URL}/auth/stats/${effectiveUserId}`, { cache: 'no-store' })
+          .then((data) => {
+            if (isApiSuccess(data)) {
+              setUserStats({
+                posts: Number(data.data?.posts || 0),
+                totalLikes: Number(data.data?.totalLikes || 0)
+              });
+            }
           })
-          .catch(err => console.error('Lỗi khi cập nhật thống kê:', err));
+          .catch((err) => console.error('Loi khi cap nhat thong ke:', err));
       }
     }, 500);
   };
@@ -340,12 +389,9 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
 
   const handleSaveProfile = async () => {
     try {
-      const res = await fetch(`${API_URL}/auth/profile`, {
+      const data = await apiRequest<ProfileUpdatePayload>(`${API_URL}/auth/profile`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
+        headers: buildAuthHeaders(true),
         body: JSON.stringify({
           full_name: formData.name,
           bio: formData.bio,
@@ -355,8 +401,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
           faculty: formData.faculty
         })
       });
-      const data = await res.json();
-      if (data.status === 'success') {
+      if (isApiSuccess(data)) {
         const updatedName = data.data?.full_name || data.data?.name || formData.name;
         const updatedUsername = data.data?.username || profileData?.username || currentUser.username;
         const updatedAvatar = data.data?.avatar_url
@@ -364,7 +409,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
           : (profileData?.avatar || getImageUrl(currentUser.avatar));
         toast.success('Đã lưu thay đổi hồ sơ');
         setIsEditing(false);
-        setProfileData((prev: any) => ({
+        setProfileData((prev) => ({
           ...prev,
           name: updatedName,
           username: updatedUsername,
@@ -390,9 +435,9 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
         if (onProfileUpdate) onProfileUpdate(data.data);
         if (onPostsChanged) onPostsChanged();
       } else {
-        toast.error(data.message);
+        toast.error(data.message || 'Loi cap nhat ho so');
       }
-    } catch (e) { toast.error('Lỗi máy chủ'); }
+    } catch (e) { toast.error('Loi may chu'); }
   };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
@@ -412,17 +457,16 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
 
     setIsChangingPassword(true);
     try {
-      const res = await fetch(`${API_URL}/auth/change-password`, {
+      const data = await apiRequest<null>(`${API_URL}/auth/change-password`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildAuthHeaders(true),
         body: JSON.stringify({
-          accountId: currentUser.id || (currentUser as any)._id,
+          accountId: currentUser.id || currentUser._id,
           oldPassword,
           newPassword
         })
       });
-      const data = await res.json();
-      if (data.status === 'success') {
+      if (isApiSuccess(data)) {
         toast.success('Đổi mật khẩu thành công!');
         setIsChangePasswordOpen(false);
         setOldPassword('');
@@ -435,6 +479,38 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
       toast.error('Lỗi kết nối server');
     } finally {
       setIsChangingPassword(false);
+    }
+  };
+
+  const handleFollow = async () => {
+    const data = await apiRequest<null>(`${API_URL}/auth/friends/follow`, {
+      method: 'POST',
+      headers: buildAuthHeaders(true),
+      body: JSON.stringify({ targetId: effectiveUserId })
+    });
+
+    if (isApiSuccess(data)) {
+      toast.success('Đã theo dõi người dùng này');
+      setIsFollowing(true);
+      setFollowersCount(prev => prev + 1);
+      return;
+    }
+
+    toast.error(data.message || 'Loi khi theo doi');
+  };
+
+  const handleUnfollow = async () => {
+    const data = await apiRequest<null>(`${API_URL}/auth/friends/unfollow`, {
+      method: 'POST',
+      headers: buildAuthHeaders(true),
+      body: JSON.stringify({ targetId: effectiveUserId })
+    });
+
+    if (isApiSuccess(data)) {
+      toast.success('Đã bỏ theo dõi');
+      setIsFollowing(false);
+      setFollowersCount(prev => Math.max(0, prev - 1));
+      return;
     }
   };
 
@@ -676,42 +752,36 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
               
               const loadingToast = toast.loading('Đang xử lý và tải ảnh đại diện...');
               try {
-                // Truyền user_id qua query string để backend xác thực trước khi upload lên Cloudinary
-                const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-                const uploadRes = await fetch(`${API_URL}/upload`, {
+                const uploadData = await apiRequest<{ url?: string }>(`${API_URL}/upload`, {
                   method: 'POST',
-                  headers: token ? { Authorization: `Bearer ${token}` } : {},
+                  headers: buildAuthHeaders(false),
                   body: formData
                 });
-                const uploadData = await uploadRes.json();
-                
-                if (uploadData.status === 'success') {
+
+                if (isApiSuccess(uploadData) && uploadData.data?.url) {
                   const imageUrl = uploadData.data.url;
-                  const res = await fetch(`${API_URL}/auth/profile`, {
+                  const data = await apiRequest<ProfileUpdatePayload>(`${API_URL}/auth/profile`, {
                     method: 'PUT',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      ...(token ? { Authorization: `Bearer ${token}` } : {})
-                    },
+                    headers: buildAuthHeaders(true),
                     body: JSON.stringify({ avatar_url: imageUrl })
                   });
-                  const data = await res.json();
+
                   toast.dismiss(loadingToast);
-                  if (data.status === 'success') {
+                  if (isApiSuccess(data)) {
                     const fullAvatarUrl = getImageUrl(imageUrl);
                     if (onAvatarChange) onAvatarChange(fullAvatarUrl);
                     setProfileData({ ...profileData, avatar: fullAvatarUrl });
                     toast.success('Đã cập nhật ảnh đại diện');
                   } else {
-                    toast.error(data.message);
+                    toast.error(data.message || 'Loi cap nhat anh dai dien');
                   }
                 } else {
                   toast.dismiss(loadingToast);
-                  toast.error(uploadData.message || 'Lỗi lưu tệp!');
+                  toast.error(uploadData.message || 'Loi luu tep!');
                 }
               } catch (err) {
                 toast.dismiss(loadingToast);
-                toast.error('Lỗi kết nối máy chủ!');
+                toast.error('Loi ket noi may chu!');
               }
             }}
           />
@@ -811,25 +881,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                     <Button 
                       size="sm" 
                       className="rounded-full bg-red-600 text-white hover:bg-red-700"
-                      onClick={async () => {
-                        const res = await fetch(`${API_URL}/auth/friends/follow`, {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            ...(token ? { Authorization: `Bearer ${token}` } : {})
-                          },
-                          // Khong gui followerId nua, backend tu lay tu token.
-                          body: JSON.stringify({ targetId: effectiveUserId })
-                        });
-                        if (res.ok) {
-                          toast.success('Đã theo dõi người dùng này');
-                          setIsFollowing(true);
-                          setFollowersCount(prev => prev + 1);
-                        } else {
-                          const err = await res.json();
-                          toast.error(err.message || 'Lỗi khi theo dõi');
-                        }
-                      }}
+                      onClick={() => { void handleFollow(); }}
                     >
                       <UserPlus className="mr-2 h-4 w-4" />
                       Theo dõi
@@ -839,22 +891,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                       size="sm" 
                       variant="outline" 
                       className="rounded-full border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20"
-                      onClick={async () => {
-                        const res = await fetch(`${API_URL}/auth/friends/unfollow`, {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            ...(token ? { Authorization: `Bearer ${token}` } : {})
-                          },
-                          // Khong gui followerId nua, backend tu lay tu token.
-                          body: JSON.stringify({ targetId: effectiveUserId })
-                        });
-                        if (res.ok) {
-                          toast.success('Đã bỏ theo dõi');
-                          setIsFollowing(false);
-                          setFollowersCount(prev => Math.max(0, prev - 1));
-                        }
-                      }}
+                      onClick={() => { void handleUnfollow(); }}
                     >
                       <UserCheck className="mr-2 h-4 w-4" />
                       Đang theo dõi
@@ -867,7 +904,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
                     onClick={() => {
                       if (onViewChange) {
                         const targetId = sanitizeProfileId(
-                          profileData?.id || (profileData as any)?._id || effectiveUserId
+                          profileData?.id || profileData?._id || effectiveUserId
                         );
                         const currentId = currentUserId;
                         if (!targetId) {
@@ -940,12 +977,12 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
         <TabsContent value="comments" className="mt-4 space-y-4">
           {userComments.length > 0 ? (
             userComments.map(c => (
-              <Card key={c._id} className="border-border bg-card p-4">
+              <Card key={String(c._id || '')} className="border-border bg-card p-4">
                 <div className="flex gap-2 items-center text-xs text-muted-foreground mb-2">
                   <MessageCircle className="h-4 w-4 text-blue-500" />
                   Bình luận trên bài viết: <span className="font-semibold text-foreground italic">"{c.post?.title || 'Không rõ'}"</span>
                   <span className="mx-2">•</span>
-                  {new Date(c.created_at).toLocaleString('vi-VN')}
+                  {new Date(c.created_at || 0).toLocaleString('vi-VN')}
                 </div>
                 <p className="text-foreground text-sm mb-2">{c.content}</p>
                 {c.image_url && <img src={c.image_url} alt="Minh Họa Bình Luận" className="max-w-[150px] rounded" />}
@@ -978,9 +1015,9 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
             {(followerTab === 'followers' ? followers : following).length > 0 ? (
               (followerTab === 'followers' ? followers : following).map(user => (
                 <Card 
-                  key={user._id} 
+                  key={String(user._id || '')} 
                   className="p-4 flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer border-border bg-card"
-                  onClick={() => onUserClick && onUserClick(user._id)}
+                  onClick={() => onUserClick && onUserClick(String(user._id || ''))}
                 >
                   <Avatar className="h-12 w-12 border-2 border-border/50">
                     <AvatarImage src={getImageUrl(user.avatar_url)} />
@@ -1005,4 +1042,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
     </div>
   );
 }
+
+
+
 

@@ -17,7 +17,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { API_URL } from '@/lib/api';
 import { toast } from 'sonner';
 import { Image as ImageIcon, X, Loader2, Camera } from 'lucide-react';
@@ -26,7 +25,7 @@ interface ReportModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   postId: string;
-  currentUser: any;
+  currentUser?: { id?: string; _id?: string };
 }
 
 const REPORT_REASONS = [
@@ -39,7 +38,7 @@ const REPORT_REASONS = [
   "Khác"
 ];
 
-export function ReportModal({ isOpen, onOpenChange, postId, currentUser }: ReportModalProps) {
+export function ReportModal({ isOpen, onOpenChange, postId, currentUser: _currentUser }: ReportModalProps) {
   const [reason, setReason] = useState<string>("");
   const [description, setDescription] = useState<string>("");
   const [images, setImages] = useState<File[]>([]);

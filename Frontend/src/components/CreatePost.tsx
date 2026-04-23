@@ -10,9 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from 'sonner'
 import { API_URL } from '@/lib/api';
 import { getImageUrl } from '@/lib/imageUtils';
+import type { Post } from './PostCard';
+import type { CommunityTopic } from '@/types/social';
 
 interface CreatePostProps {
-  onPostCreated: (post: any) => void;
+  onPostCreated: (post: Post) => void;
   currentUser: {
     id?: string;
     name: string;
@@ -100,7 +102,7 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [community, setCommunity] = useState('');
-  const [communities, setCommunities] = useState<any[]>([]);
+  const [communities, setCommunities] = useState<CommunityTopic[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Lưu trữ File object và preview URL cục bộ — CHƯA upload lên Cloudinary
@@ -262,7 +264,7 @@ export function CreatePost({ onPostCreated, currentUser }: CreatePostProps) {
         setPreviewUrls([]);
         setSelectedVideoFile(null);
         setVideoPreviewUrl('');
-        onPostCreated(data.data);
+        onPostCreated(data.data as Post);
       } else {
         toast.error(data.message || 'Không thể đăng bài viết, vui lòng thử lại sau');
       }

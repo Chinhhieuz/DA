@@ -16,11 +16,18 @@ const handleServiceError = (error, res) => {
 
 const createThread = async (req, res) => {
     try {
-        const payload = req.body || {};
-        const authUserId = req.user?._id ? String(req.user._id) : '';
-        if (authUserId) payload.author_id = authUserId;
+        const authUserId = String(req.user?._id || '').trim();
+        if (!authUserId) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
+        }
 
-        const newThread = await threadService.createThreadService(payload);
+        const payload = {
+            comment_id: req.body?.comment_id,
+            content: req.body?.content,
+            image_url: req.body?.image_url
+        };
+
+        const newThread = await threadService.createThreadService(payload, authUserId);
         return res.status(201).json({
             status: 'success',
             message: 'Tra loi binh luan thanh cong!',

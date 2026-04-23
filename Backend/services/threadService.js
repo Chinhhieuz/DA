@@ -5,7 +5,8 @@ const Account = require('../models/Account');
 const { processMentions } = require('../utils/mentionUtils');
 const notificationService = require('./notificationService');
 
-const createThreadService = async ({ comment_id, author_id, content, image_url }) => {
+const createThreadService = async ({ comment_id, content, image_url } = {}, actorId) => {
+    const author_id = String(actorId || '').trim();
     if (!comment_id || !author_id || !content) {
         throw new Error('Vui lòng cung cấp đủ comment_id, author_id và nội dung phản hồi!');
     }

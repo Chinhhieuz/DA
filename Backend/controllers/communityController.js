@@ -29,11 +29,18 @@ const getAllCommunities = async (req, res) => {
 
 const createCommunity = async (req, res) => {
     try {
-        const payload = req.body || {};
-        // Neu client khong truyen creator_id thi lay tu token admin hien tai.
-        if (!payload.creator_id && req.user?._id) {
-            payload.creator_id = String(req.user._id);
+        const creatorId = String(req.user?._id || '').trim();
+        if (!creatorId) {
+            return res.status(401).json({ status: 'fail', message: 'Unauthorized' });
         }
+
+        const payload = {
+            name: req.body?.name,
+            description: req.body?.description,
+            icon: req.body?.icon,
+            creator_id: creatorId
+        };
+
         const community = await communityService.createCommunityService(payload);
         return res.status(201).json({ status: 'success', data: community });
     } catch (error) {

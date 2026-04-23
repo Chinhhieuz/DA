@@ -37,6 +37,41 @@ const HARD_BLOCKLIST = [
     'हराम', 'अश्लील', 'आतंकवाद', 'नशीली दवाएं'
 ];
 
+// Terms that are ambiguous without context (education/medical/history/news can be legitimate).
+const CONTEXTUAL_BLOCKLIST = [
+    'sex', 'sexual', 'porn', 'porno', 'hentai',
+    'thuoc kich duc', 'ma tuy', 'dap da', 'ke keo',
+    'drug', 'drugs', 'drogas', 'meth', 'cocaine', 'heroin',
+    'terrorism', 'terrorismo', 'terrorismus', 'isis'
+];
+
+const BENIGN_CONTEXT_HINTS = [
+    'giao duc gioi tinh', 'suc khoe sinh san', 'suc khoe tinh duc',
+    'sex education', 'sexual health',
+    'y te', 'medical', 'medicine', 'doctor', 'benh', 'dieu tri',
+    'phong ngua', 'phong tranh', 'prevention', 'awareness',
+    'lich su', 'historical', 'history',
+    'nghien cuu', 'research', 'hoc tap', 'education', 'bai giang', 'tai lieu hoc',
+    'bao chi', 'journalism', 'news', 'documentary',
+    'phap ly', 'legal', 'luat', 'case study'
+];
+
+const RAW_UNSAFE_INTENT_PATTERNS = [
+    /\b(xem|coi|watch|find|download|tim)\b.{0,24}\b(porn|porno|hentai|sex|xxx|18\+)\b/iu,
+    /\b(clip|video|anh|image)\b.{0,18}\b(porn|porno|hentai|sex|xxx|18\+)\b/iu,
+    /\b(mua|ban|buy|sell|ship)\b.{0,24}\b(ma tuy|dap da|ke keo|drug|drugs|meth|cocaine|heroin)\b/iu,
+    /\b(tham gia|join|support|ung ho)\b.{0,24}\b(isis|terrorism|terrorismo|terrorismus)\b/iu
+];
+
+const COMPACT_UNSAFE_INTENT_PATTERNS = [
+    /xemporn/,
+    /watchporn/,
+    /downloadporn/,
+    /buydrugs/,
+    /selldrugs/,
+    /joinisis/
+];
+
 function parseExtraBlocklist(raw) {
     return String(raw || '')
         .split(',')
@@ -148,6 +183,13 @@ const BASE_BLOCK_TERMS = buildBlockTerms([
     ...HARD_BLOCKLIST,
     ...parseExtraBlocklist(process.env.AI_MODERATION_EXTRA_BLOCKLIST)
 ], 2);
+const CONTEXTUAL_BLOCK_TERMS = buildBlockTerms(CONTEXTUAL_BLOCKLIST, 2);
+const CONTEXTUAL_BLOCK_TERM_COMPACTS = new Set(
+    CONTEXTUAL_BLOCK_TERMS
+        .map((term) => term.compact)
+        .filter(Boolean)
+);
+const BENIGN_CONTEXT_TERMS = buildBlockTerms(BENIGN_CONTEXT_HINTS, 3);
 
 let remoteBlockTerms = [];
 let remoteBlocklistRefreshingPromise = null;
@@ -238,12 +280,12 @@ function getActiveBlockTerms() {
     return [...BASE_BLOCK_TERMS, ...remoteBlockTerms];
 }
 
-function findBlockedTerm(title, content) {
-    const variants = buildSearchVariants(title, content);
-    const terms = getActiveBlockTerms();
+function findTermInVariants(terms, variants, options = {}) {
+    const skipCompacts = options.skipCompacts instanceof Set ? options.skipCompacts : null;
 
     for (const term of terms) {
         if (!term.raw && !term.compact) continue;
+        if (skipCompacts && term.compact && skipCompacts.has(term.compact)) continue;
 
         const matched = variants.some((sample) => (
             (term.raw && sample.includes(term.raw))
@@ -253,6 +295,35 @@ function findBlockedTerm(title, content) {
         if (matched) return term.raw || term.compact;
     }
     return '';
+}
+
+function findBlockedTerm(title, content) {
+    const variants = buildSearchVariants(title, content);
+    const terms = getActiveBlockTerms();
+    return findTermInVariants(terms, variants, { skipCompacts: CONTEXTUAL_BLOCK_TERM_COMPACTS });
+}
+
+function findContextualTerm(title, content) {
+    const variants = buildSearchVariants(title, content);
+    return findTermInVariants(CONTEXTUAL_BLOCK_TERMS, variants);
+}
+
+function hasBenignContext(title, content) {
+    const variants = buildSearchVariants(title, content);
+    return Boolean(findTermInVariants(BENIGN_CONTEXT_TERMS, variants));
+}
+
+function hasUnsafeIntentSignals(title, content) {
+    const raw = `${title || ''} ${content || ''}`.toLowerCase().normalize('NFKC');
+    const compact = normalizeForMatch(raw);
+
+    for (const pattern of RAW_UNSAFE_INTENT_PATTERNS) {
+        if (pattern.test(raw)) return true;
+    }
+    for (const pattern of COMPACT_UNSAFE_INTENT_PATTERNS) {
+        if (pattern.test(compact)) return true;
+    }
+    return false;
 }
 
 function findBlockedPattern(title, content) {
@@ -786,12 +857,29 @@ const checkContent = async (title, content, imageInputs = [], videoInputs = []) 
         return { status: 'REJECT', reason: `Phat hien tu ngu bi cam: ${blockedTerm}` };
     }
 
+    const contextualTerm = findContextualTerm(title, content);
+    const benignContext = contextualTerm ? hasBenignContext(title, content) : false;
+    const unsafeIntentSignals = contextualTerm ? hasUnsafeIntentSignals(title, content) : false;
+    if (contextualTerm) {
+        if (unsafeIntentSignals && !benignContext) {
+            console.log(`[AI Moderation] CONTEXTUAL+INTENT HIT: "${contextualTerm}"`);
+            return { status: 'REJECT', reason: `Phat hien noi dung nhay cam co dau hieu vi pham: ${contextualTerm}` };
+        }
+
+        console.log(
+            `[AI Moderation] CONTEXTUAL HIT: "${contextualTerm}" (benignContext=${benignContext}, unsafeIntent=${unsafeIntentSignals}) -> defer to AI model`
+        );
+    }
+
     try {
         const { GoogleGenerativeAI } = require('@google/generative-ai');
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) {
             if (hasMediaInput) {
                 return { status: 'REJECT', reason: 'Khong the duyet anh/video tu dong - Chuyen Admin duyet thu cong' };
+            }
+            if (contextualTerm && !benignContext) {
+                return { status: 'REJECT', reason: `Phat hien chu de nhay cam can Admin duyet: ${contextualTerm}` };
             }
             return { status: 'PASS', reason: '' };
         }
@@ -824,8 +912,12 @@ Rules:
   "languages": ["optional detected languages"]
 }
 6) If media is the cause of REJECT, include at least one concrete visual cue (e.g., blood, open wound, corpse). Do not keep generic.
+7) Do NOT reject solely because of keywords like sex/porn/drugs/terrorism when context is clearly educational, medical, historical, legal, journalistic, or prevention-focused and there is no solicitation/instruction for harm.
 
 Script hints: ${scriptHints.join(', ') || 'Unknown'}
+Contextual term hit: ${contextualTerm || 'none'}
+Benign context signals: ${benignContext ? 'yes' : 'no'}
+Unsafe intent signals: ${unsafeIntentSignals ? 'yes' : 'no'}
 Text (original):
 ${rawText || '[EMPTY]'}
 

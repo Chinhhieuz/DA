@@ -3,10 +3,11 @@ import { TrendingUp, ArrowBigUp, Loader2 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Post } from './PostCard';
 import { API_URL } from '@/lib/api';
+import type { AppUser } from '@/types/user';
 
 interface TrendingContentProps {
   onPostClick: (post: Post) => void;
-  currentUser?: any;
+  currentUser?: AppUser;
 }
 
 export function TrendingContent({ onPostClick, currentUser }: TrendingContentProps) {

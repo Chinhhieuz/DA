@@ -1,14 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
-import { Bell, User, Menu, Search, TrendingUp, Settings, LogOut, ChevronRight, CircleHelp, Moon, MessageSquare, MessageSquareMore } from 'lucide-react';
+import { Bell, User, Menu, Search, TrendingUp, Settings, LogOut, ChevronRight, MessageSquare, MessageSquareMore } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Post } from './PostCard';
-import { User as UserType } from '@/app/App';
 import { getImageUrl } from '@/lib/imageUtils';
 import { API_URL } from '@/lib/api';
+import { apiRequest } from '@/lib/http';
 import { toast } from 'sonner';
 import { useSocket } from '@/contexts/SocketContext';
+import type { AppUser as UserType } from '@/types/user';
+import type { CommunityTopic } from '@/types/social';
+import { isApiSuccess } from '@/types/api';
 import {
   Dialog,
   DialogContent,
@@ -42,19 +45,18 @@ export function Header({ onViewChange, onMenuToggle, onDesktopMenuToggle, notifi
   const [feedbackContent, setFeedbackContent] = useState('');
   const [feedbackType, setFeedbackType] = useState('suggestion');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [trendingTopics, setTrendingTopics] = useState<any[]>([]);
+  const [trendingTopics, setTrendingTopics] = useState<CommunityTopic[]>([]);
   const searchRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const { isConnected } = useSocket();
+  const { isConnected: _isConnected } = useSocket();
 
   useEffect(() => {
     const fetchTrendingTopics = async () => {
       try {
-        const res = await fetch(`${API_URL}/communities`);
-        const data = await res.json();
-        if (data.status === 'success') {
-          const sorted = data.data
-            .sort((a: any, b: any) => (b.postCount || 0) - (a.postCount || 0))
+        const data = await apiRequest<CommunityTopic[]>(`${API_URL}/communities`);
+        if (isApiSuccess(data)) {
+          const sorted = (Array.isArray(data.data) ? data.data : [])
+            .sort((a: CommunityTopic, b: CommunityTopic) => (b.postCount || 0) - (a.postCount || 0))
             .slice(0, 5);
           setTrendingTopics(sorted);
         }

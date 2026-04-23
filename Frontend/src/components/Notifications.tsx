@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Heart, MessageCircle, UserPlus, TrendingUp, ShieldCheck, MessageSquare, UserCheck, BellRing } from 'lucide-react';
 import { API_URL } from '@/lib/api';
+import { apiRequest } from '@/lib/http';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useSocket } from '@/contexts/SocketContext';
+import type { AppUser } from '@/types/user';
+import type { NotificationItem } from '@/types/social';
+import { isApiSuccess } from '@/types/api';
 
 const getIcon = (type: string) => {
   switch (type) {
@@ -42,12 +46,12 @@ export function Notifications({
   onMarkAllAsRead,
   onNotificationClick
 }: {
-  currentUser?: any,
+  currentUser?: AppUser,
   onMarkAllAsRead?: () => void,
-  onNotificationClick?: (notification: any) => void
+  onNotificationClick?: (notification: NotificationItem) => void
 }) {
   const { socket } = useSocket();
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const currentUserId = currentUser?.id || currentUser?._id;
   const [filter, setFilter] = useState<'all' | 'unread' | 'social' | 'content'>('all');
 
@@ -61,14 +65,13 @@ export function Notifications({
 
   useEffect(() => {
     if (currentUserId) {
-      fetch(`${API_URL}/notifications`, {
+      apiRequest<NotificationItem[]>(`${API_URL}/notifications`, {
         cache: 'no-store',
         headers: getAuthHeaders(false)
       })
-        .then(res => res.ok ? res.json() : Promise.reject(new Error('Fetch notifications failed')))
-        .then(data => {
-          if (data.status === 'success') {
-            setNotifications(data.data);
+        .then((data) => {
+          if (isApiSuccess(data)) {
+            setNotifications(Array.isArray(data.data) ? data.data : []);
           }
         })
         .catch(() => setNotifications([]));
@@ -78,9 +81,9 @@ export function Notifications({
   useEffect(() => {
     if (!socket) return;
 
-    const handler = (data: any) => {
+    const handler = (data: { type?: string; senderId?: string }) => {
       if (data.type === 'friend_request') {
-        setNotifications((prev: any[]) => prev.filter((n: any) =>
+        setNotifications((prev) => prev.filter((n) =>
           !(n.type === 'friend_request' && n.sender?._id === data.senderId)
         ));
       }
@@ -88,10 +91,10 @@ export function Notifications({
 
     socket.on('notification_cancelled', handler);
 
-    const newNotificationHandler = (data: any) => {
-      const newNotif = {
+    const newNotificationHandler = (data: { id?: string; type?: string; content?: string; sender?: NotificationItem['sender']; senderName?: string; postId?: string; postTitle?: string; title?: string; created_at?: string; }) => {
+      const newNotif: NotificationItem = {
         _id: data.id || Date.now().toString(),
-        type: data.type,
+        type: data.type || 'system',
         content: data.content,
         sender: data.sender || { username: data.senderName, avatar_url: '' },
         post: data.postId ? { _id: data.postId, title: data.postTitle || data.title || 'Bài viết' } : null,
@@ -121,7 +124,7 @@ export function Notifications({
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
       if (onMarkAllAsRead) onMarkAllAsRead();
       toast.success('Đã đánh dấu tất cả là đã đọc');
-    } catch (e) {
+    } catch {
       toast.error('Lỗi khi đánh dấu đã đọc');
     }
   };
@@ -134,10 +137,13 @@ export function Notifications({
         headers: getAuthHeaders(false)
       });
       setNotifications(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
-    } catch (e) {}
+    } catch {
+      // Ignore per-item read failures to keep notification list responsive.
+    }
   };
 
   const handleFriendAction = async (notifId: string, senderId: string, action: 'accept' | 'reject') => {
+    if (!senderId) return;
     try {
       const endpoint = action === 'accept' ? 'accept' : 'reject';
       const res = await fetch(`${API_URL}/auth/friends/${endpoint}`, {
@@ -149,7 +155,7 @@ export function Notifications({
         toast.success(action === 'accept' ? 'Đã chấp nhận kết bạn' : 'Đã từ chối lời mời');
         setNotifications(prev => prev.filter(n => n._id !== notifId));
       }
-    } catch (e) {
+    } catch {
       toast.error('Lỗi khi thực hiện thao tác');
     }
   };
@@ -242,7 +248,7 @@ export function Notifications({
           <Card
             key={notification._id}
             onClick={() => {
-              handleMarkAsRead(notification._id, notification.isRead);
+              handleMarkAsRead(notification._id, !!notification.isRead);
               if (onNotificationClick) onNotificationClick(notification);
             }}
             className={`page-section-card cursor-pointer p-4 transition-all hover:-translate-y-0.5 hover:shadow-lg ${!notification.isRead ? 'border-primary/20 bg-primary/5' : ''}`}
@@ -271,7 +277,15 @@ export function Notifications({
                     {notification.type === 'follow' && ' đã bắt đầu theo dõi bạn'}
                     {notification.type === 'system' && ' gửi thông báo hệ thống'}
                   </span>
-                  {notification.post && <span className="font-semibold text-foreground"> "{notification.post?.title}"</span>}
+                  {notification.post && (
+                    <span className="font-semibold text-foreground">
+                      "{
+                        typeof notification.post === 'string'
+                          ? notification.post
+                          : (notification.post?.title || 'Bài viết')
+                      }"
+                    </span>
+                  )}
                 </div>
 
                 {(notification.type === 'comment' || notification.type === 'mention' || notification.type === 'system') && notification.content && (
@@ -287,7 +301,7 @@ export function Notifications({
                       className="h-9 rounded-full bg-green-600 px-4 text-white hover:bg-green-700"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleFriendAction(notification._id, notification.sender?._id, 'accept');
+                        handleFriendAction(notification._id, notification.sender?._id || '', 'accept');
                       }}
                     >
                       Đồng ý
@@ -298,7 +312,7 @@ export function Notifications({
                       className="h-9 rounded-full"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleFriendAction(notification._id, notification.sender?._id, 'reject');
+                        handleFriendAction(notification._id, notification.sender?._id || '', 'reject');
                       }}
                     >
                       Từ chối
@@ -309,7 +323,7 @@ export function Notifications({
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span className="rounded-full bg-muted px-2.5 py-1 font-semibold text-foreground/80">{getCategoryLabel(notification.type)}</span>
                   <span>•</span>
-                  <span>{new Date(notification.created_at).toLocaleString('vi-VN')}</span>
+                  <span>{notification.created_at ? new Date(notification.created_at).toLocaleString('vi-VN') : 'N/A'}</span>
                 </div>
               </div>
 

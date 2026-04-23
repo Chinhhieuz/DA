@@ -13,22 +13,7 @@ import {
 } from 'lucide-react';
 import { API_URL } from '@/lib/api';
 import { toast } from 'sonner';
-
-type LoginAccount = {
-  _id?: string;
-  id?: string;
-  full_name?: string;
-  username?: string;
-  avatar_url?: string;
-  role?: string;
-  preferences?: unknown;
-  savedPosts?: string[];
-};
-
-type LoginPayload = {
-  token?: string;
-  user?: LoginAccount;
-} & Record<string, unknown>;
+import type { LoginPayload } from '@/types/user';
 
 export function Login({
   onLogin,

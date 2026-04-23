@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, TrendingUp, UserPlus, Check } from 'lucide-react';
 import { API_URL } from '@/lib/api';
+import { apiRequest } from '@/lib/http';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
@@ -8,28 +9,30 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PostCard, Post } from './PostCard';
+import type { AppUser } from '@/types/user';
+import type { CommunityTopic, SearchUser } from '@/types/social';
+import { isApiSuccess } from '@/types/api';
 
 interface SearchViewProps {
   onPostClick?: (post: Post) => void;
   onUserClick?: (userId: string) => void;
-  currentUser?: any;
+  currentUser?: AppUser;
 }
 
 export function SearchView({ onPostClick, onUserClick, currentUser }: SearchViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredPosts, setFilteredPosts] = useState<Post[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<any[]>([]);
+  const [filteredUsers, setFilteredUsers] = useState<SearchUser[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [trendingTopics, setTrendingTopics] = useState<any[]>([]);
+  const [trendingTopics, setTrendingTopics] = useState<CommunityTopic[]>([]);
 
   useEffect(() => {
     const fetchTrendingTopics = async () => {
       try {
-        const res = await fetch(`${API_URL}/communities`);
-        const data = await res.json();
-        if (data.status === 'success') {
-          const sorted = data.data
-            .sort((a: any, b: any) => (b.postCount || 0) - (a.postCount || 0))
+        const data = await apiRequest<CommunityTopic[]>(`${API_URL}/communities`);
+        if (isApiSuccess(data)) {
+          const sorted = (Array.isArray(data.data) ? data.data : [])
+            .sort((a: CommunityTopic, b: CommunityTopic) => (b.postCount || 0) - (a.postCount || 0))
             .slice(0, 7);
           setTrendingTopics(sorted);
         }
@@ -50,20 +53,18 @@ export function SearchView({ onPostClick, onUserClick, currentUser }: SearchView
         const token = sessionStorage.getItem('token') || localStorage.getItem('token');
         const authHeaders: Record<string, string> = {};
         if (token) authHeaders.Authorization = `Bearer ${token}`;
-        const postsRes = await fetch(`${API_URL}/posts/search?q=${encodeURIComponent(query)}`, {
+        const postsData = await apiRequest<Post[]>(`${API_URL}/posts/search?q=${encodeURIComponent(query)}`, {
           headers: authHeaders
         });
-        const postsData = await postsRes.json();
-        if (postsData.status === 'success') {
-          setFilteredPosts(postsData.data);
+        if (isApiSuccess(postsData)) {
+          setFilteredPosts(Array.isArray(postsData.data) ? postsData.data : []);
         }
 
-        const usersRes = await fetch(`${API_URL}/auth/search/users?q=${encodeURIComponent(query)}`, {
+        const usersData = await apiRequest<SearchUser[]>(`${API_URL}/auth/search/users?q=${encodeURIComponent(query)}`, {
           headers: authHeaders
         });
-        const usersData = await usersRes.json();
-        if (usersData.status === 'success') {
-          setFilteredUsers(usersData.data);
+        if (isApiSuccess(usersData)) {
+          setFilteredUsers(Array.isArray(usersData.data) ? usersData.data : []);
         }
       } catch (err) {
         console.error('Lỗi tìm kiếm:', err);
@@ -76,7 +77,7 @@ export function SearchView({ onPostClick, onUserClick, currentUser }: SearchView
     }
   };
 
-  const toggleFollowUser = async (user: any) => {
+  const toggleFollowUser = async (user: SearchUser) => {
     if (!currentUser?.id) {
       toast.error('Vui lòng đăng nhập để theo dõi');
       return;

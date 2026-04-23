@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User as UserIcon, Sparkles } from 'lucide-react';
+import { Send, Bot, User as UserIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 

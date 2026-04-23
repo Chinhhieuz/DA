@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getImageUrl } from '@/lib/imageUtils';
-import { Search, Send, MoreVertical, ImagePlus, Video, FileText, X, Loader2, MoreHorizontal, Share2, RotateCcw, Trash2 } from 'lucide-react';
+import { Search, Send, MoreVertical, ImagePlus, FileText, X, Loader2, MoreHorizontal, Share2, RotateCcw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { API_URL } from '@/lib/api';
+import { apiFetch, apiRequest } from '@/lib/http';
 import { useSocket } from '@/contexts/SocketContext';
 import { toast } from 'sonner';
+import type { AppUser } from '@/types/user';
+import { isApiSuccess } from '@/types/api';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,31 +26,83 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-const normalizeId = (value: any): string => {
+interface ParticipantItem {
+  _id?: string | number;
+  id?: string | number;
+  username?: string;
+  full_name?: string;
+  avatar_url?: string;
+  [key: string]: unknown;
+}
+
+interface MessageItem {
+  _id?: string | number;
+  id?: string | number;
+  sender?: unknown;
+  recipient?: unknown;
+  conversation?: unknown;
+  content?: string;
+  createdAt?: string;
+  created_at?: string;
+  timestamp?: string;
+  is_revoked?: boolean;
+  is_read?: boolean;
+  attachments?: unknown[];
+  sender_id?: string | number;
+  recipient_id?: string | number;
+  from?: unknown;
+  to?: unknown;
+  [key: string]: unknown;
+}
+
+interface ConversationItem {
+  _id?: string | number;
+  id?: string | number;
+  participants?: ParticipantItem[];
+  last_message?: MessageItem;
+  unread_count?: number;
+  updated_at?: string;
+  updatedAt?: string;
+  createdAt?: string;
+  [key: string]: unknown;
+}
+
+interface UserSearchItem {
+  _id?: string | number;
+  username?: string;
+  full_name?: string;
+  avatar_url?: string;
+  [key: string]: unknown;
+}
+
+const normalizeId = (value: unknown): string => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value.trim();
   if (typeof value === 'number') return String(value);
 
   if (typeof value === 'object') {
-    if (typeof value.$oid === 'string') return value.$oid.trim();
+    const record = value as Record<string, unknown>;
+    if (typeof record.$oid === 'string') return record.$oid.trim();
 
-    if (value._id !== undefined && value._id !== value) {
-      const nestedId = normalizeId(value._id);
+    if (record._id !== undefined && record._id !== value) {
+      const nestedId = normalizeId(record._id);
       if (nestedId) return nestedId;
     }
 
-    if (typeof value.id === 'string' || typeof value.id === 'number') {
-      const directId = String(value.id).trim();
+    if (typeof record.id === 'string' || typeof record.id === 'number') {
+      const directId = String(record.id).trim();
       if (directId) return directId;
     }
 
-    if (typeof value.toHexString === 'function') {
-      const hex = value.toHexString();
+    const toHexString = record.toHexString;
+    if (typeof toHexString === 'function') {
+      const hex = toHexString();
       if (typeof hex === 'string' && hex.trim()) return hex.trim();
     }
 
-    if (typeof value.toString === 'function') {
-      const str = value.toString().trim();
+    const toStringFn = record.toString;
+    if (typeof toStringFn === 'function') {
+      const str = toStringFn.call(record).trim();
       if (str && str !== '[object Object]') return str;
     }
   }
@@ -55,7 +110,7 @@ const normalizeId = (value: any): string => {
   return '';
 };
 
-const sanitizeId = (value: any): string => {
+const sanitizeId = (value: unknown): string => {
   const normalized = normalizeId(value);
   if (!normalized) return '';
 
@@ -83,7 +138,7 @@ const getJwtAccountId = (token: string): string => {
 };
 
 const normalizeMessageEntityIds = (
-  message: any,
+  message: MessageItem,
   fallback: { senderId?: string; recipientId?: string } = {}
 ) => {
   if (!message || typeof message !== 'object') return message;
@@ -128,19 +183,24 @@ const clearPendingChatTarget = () => {
   }
 };
 
-const getEntityId = (value: any) => normalizeId(value);
-const getConversationId = (value: any) => {
+const getEntityId = (value: unknown) => normalizeId(value);
+const getConversationId = (value: unknown) => {
   if (typeof value === 'string' || typeof value === 'number') {
     return normalizeId(value);
   }
-  return normalizeId(value?._id || value?.id || value?.conversation?._id || value?.conversation || '');
+  const record = (value && typeof value === 'object') ? (value as Record<string, unknown>) : null;
+  const nestedConversation = (record?.conversation && typeof record.conversation === 'object')
+    ? (record.conversation as Record<string, unknown>)
+    : null;
+  return normalizeId(record?._id || record?.id || nestedConversation?._id || record?.conversation || '');
 };
 
-const getMessageId = (value: any) => {
+const getMessageId = (value: unknown) => {
   if (typeof value === 'string' || typeof value === 'number') {
     return normalizeId(value);
   }
-  return normalizeId(value?._id || value?.id || '');
+  const record = (value && typeof value === 'object') ? (value as Record<string, unknown>) : null;
+  return normalizeId(record?._id || record?.id || '');
 };
 const REVOKED_MESSAGE_LABEL = 'Tin nhắn đã được thu hồi';
 const URL_PATTERN = /(https?:\/\/[^\s]+)/gi;
@@ -161,18 +221,18 @@ const getSharedPostLinkLabel = (rawUrl: string): string => {
 };
 
 // Helper to get the other person in a 1-on-1 conversation
-const getOtherParticipant = (participants: any[], currentUserId: string = '') => {
+const getOtherParticipant = (participants: ParticipantItem[] = [], currentUserId: string = ''): ParticipantItem => {
   const fallback = { _id: '', id: '', username: 'Unknown', full_name: 'Người dùng', avatar_url: '' };
   if (!Array.isArray(participants) || participants.length === 0) return fallback;
 
   const normalizedCurrentUserId = normalizeId(currentUserId);
-  const other = participants.find((p: any) => {
+  const other = participants.find((p) => {
     const participantId = getEntityId(p);
     if (!participantId) return false;
     if (!normalizedCurrentUserId) return true;
     return participantId !== normalizedCurrentUserId;
   });
-  const selected = other || participants.find((p: any) => !!getEntityId(p)) || participants[0];
+  const selected = other || participants.find((p) => !!getEntityId(p)) || participants[0];
 
   if (selected && typeof selected === 'object' && getEntityId(selected)) return selected;
 
@@ -182,19 +242,19 @@ const getOtherParticipant = (participants: any[], currentUserId: string = '') =>
     : fallback;
 };
 
-const getConversationPartnerId = (conversation: any, currentUserId: string = '') => {
+const getConversationPartnerId = (conversation: ConversationItem | null | undefined, currentUserId: string = '') => {
   if (!conversation) return '';
   const normalizedCurrentUserId = normalizeId(currentUserId);
   if (!normalizedCurrentUserId) return '';
   const participants = Array.isArray(conversation.participants) ? conversation.participants : [];
-  const other = participants.find((p: any) => {
+  const other = participants.find((p) => {
     const participantId = getEntityId(p);
     return participantId && participantId !== normalizedCurrentUserId;
   });
   return getEntityId(other || '');
 };
 
-const getConversationSortTime = (conversation: any) => {
+const getConversationSortTime = (conversation: ConversationItem | null | undefined) => {
   return new Date(
     conversation?.last_message?.createdAt ||
     conversation?.last_message?.created_at ||
@@ -205,8 +265,8 @@ const getConversationSortTime = (conversation: any) => {
   ).getTime();
 };
 
-const dedupeConversationsByPartner = (conversations: any[], currentUserId: string = '') => {
-  const map = new Map<string, any>();
+const dedupeConversationsByPartner = (conversations: ConversationItem[], currentUserId: string = '') => {
+  const map = new Map<string, ConversationItem>();
 
   for (const conversation of conversations || []) {
     const partnerId = getConversationPartnerId(conversation, currentUserId);
@@ -230,9 +290,9 @@ const dedupeConversationsByPartner = (conversations: any[], currentUserId: strin
   return Array.from(map.values()).sort((a, b) => getConversationSortTime(b) - getConversationSortTime(a));
 };
 
-const dedupeMessagesById = (messages: any[]) => {
+const dedupeMessagesById = (messages: MessageItem[]) => {
   const seen = new Set<string>();
-  const result: any[] = [];
+  const result: MessageItem[] = [];
 
   for (const msg of messages || []) {
     const msgId = getMessageId(msg);
@@ -255,6 +315,14 @@ interface MessageAttachment {
   mime_type?: string;
   size?: number;
 }
+
+type UploadedAttachmentPayload = Partial<MessageAttachment> & {
+  kind?: string;
+};
+
+type UploadMessageResponseData =
+  | { attachment?: UploadedAttachmentPayload }
+  | UploadedAttachmentPayload;
 
 const isPdfAttachment = (attachment: MessageAttachment | null | undefined): boolean => {
   if (!attachment) return false;
@@ -289,7 +357,7 @@ const inferAttachmentKind = (url: string = '', mimeType: string = '', declaredKi
   return 'file';
 };
 
-const normalizeAttachment = (attachment: any): MessageAttachment | null => {
+const normalizeAttachment = (attachment: unknown): MessageAttachment | null => {
   if (!attachment) return null;
   if (typeof attachment === 'string') {
     const url = attachment.trim();
@@ -300,27 +368,28 @@ const normalizeAttachment = (attachment: any): MessageAttachment | null => {
     };
   }
   if (typeof attachment !== 'object') return null;
+  const record = attachment as Record<string, unknown>;
 
-  const url = String(attachment.url || attachment.path || '').trim();
+  const url = String(record.url || record.path || '').trim();
   if (!url) return null;
-  const mimeType = String(attachment.mime_type || attachment.mimeType || '').trim();
-  const kind = inferAttachmentKind(url, mimeType, String(attachment.kind || attachment.type || ''));
+  const mimeType = String(record.mime_type || record.mimeType || '').trim();
+  const kind = inferAttachmentKind(url, mimeType, String(record.kind || record.type || ''));
 
   const normalized: MessageAttachment = { url, kind };
-  if (attachment.name && String(attachment.name).trim()) normalized.name = String(attachment.name).trim();
+  if (record.name && String(record.name).trim()) normalized.name = String(record.name).trim();
   if (mimeType) normalized.mime_type = mimeType;
-  if (Number.isFinite(attachment.size) && Number(attachment.size) > 0) normalized.size = Number(attachment.size);
+  if (Number.isFinite(record.size) && Number(record.size) > 0) normalized.size = Number(record.size);
   return normalized;
 };
 
-const getNormalizedAttachments = (message: any): MessageAttachment[] => {
+const getNormalizedAttachments = (message: MessageItem): MessageAttachment[] => {
   if (!Array.isArray(message?.attachments)) return [];
   return message.attachments
-    .map((attachment: any) => normalizeAttachment(attachment))
+    .map((attachment) => normalizeAttachment(attachment))
     .filter(Boolean) as MessageAttachment[];
 };
 
-const getMessageAttachmentSummary = (message: any): string => {
+const getMessageAttachmentSummary = (message: MessageItem): string => {
   const attachments = getNormalizedAttachments(message);
   if (!attachments.length) return '';
   const hasVideo = attachments.some((attachment) => attachment.kind === 'video');
@@ -397,7 +466,7 @@ const ensureDownloadFileName = (filename: string, mimeType: string, url: string,
   return ext ? `${safeName}.${ext}` : safeName;
 };
 
-const isOutgoingMessage = (message: any, currentUserId: string = '') => {
+const isOutgoingMessage = (message: MessageItem, currentUserId: string = '') => {
   const normalizedCurrentUserId = normalizeId(currentUserId);
   if (!normalizedCurrentUserId) return false;
 
@@ -426,66 +495,28 @@ const isOutgoingMessage = (message: any, currentUserId: string = '') => {
 };
 
 interface MessagesProps {
-  currentUser: any;
+  currentUser: AppUser;
   onUserClick?: (userId: string) => void;
   onMessagesRead?: () => void;
 }
 
-interface Conversation {
-  id: string;
-  user: {
-    name: string;
-    avatar: string;
-    username: string;
-  };
-  lastMessage: string;
-  timestamp: string;
-  unread: number;
-}
-
-interface ChatMessage {
-  id: string;
-  content: string;
-  sender: 'me' | 'other' | string;
-  timestamp: string;
-  _id?: string;
-  createdAt?: string;
-  created_at?: string;
-  is_revoked?: boolean;
-  attachments?: Array<string | MessageAttachment>;
-}
-
-const mockConversations: Conversation[] = [
-  {
-    id: '1',
-    user: {
-      name: 'Minh Anh',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
-      username: 'minhanh',
-    },
-    lastMessage: 'Cảm ơn bạn đã chia sẻ!',
-    timestamp: '5 phút trước',
-    unread: 2,
-  }
-];
-
 export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesProps) {
   const { socket, isConnected, onlineUserIds } = useSocket();
-  const [conversations, setConversations] = useState<any[]>([]);
-  const [selectedConversation, setSelectedConversation] = useState<any | null>(null);
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<ConversationItem | null>(null);
   const [messageInput, setMessageInput] = useState('');
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<MessageItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewKind, setPreviewKind] = useState<AttachmentKind | null>(null);
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [userSearchResults, setUserSearchResults] = useState<any[]>([]);
+  const [userSearchResults, setUserSearchResults] = useState<UserSearchItem[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [isZoomedInOverlay, setIsZoomedInOverlay] = useState(false);
-  const [sharingMessage, setSharingMessage] = useState<any | null>(null);
+  const [sharingMessage, setSharingMessage] = useState<MessageItem | null>(null);
   const [shareSearchTerm, setShareSearchTerm] = useState('');
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -499,7 +530,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
   const prevScrollHeightRef = useRef<number>(0);
   const typingTimeoutRef = useRef<number | null>(null);
   const activeConversationIdRef = useRef<string>('');
-  const messagesRef = useRef<any[]>([]);
+  const messagesRef = useRef<MessageItem[]>([]);
   const markReadInFlightRef = useRef<Set<string>>(new Set());
   const startingConversationUserRef = useRef<string>('');
   const fallbackPollInFlightRef = useRef<boolean>(false);
@@ -578,7 +609,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     }));
   };
 
-  const removeConversationFromState = (conversationId: string, partnerId: string = '') => {
+  const removeConversationFromState = useCallback((conversationId: string, partnerId: string = '') => {
     const normalizedConversationId = String(conversationId || '').trim();
     const normalizedPartnerId = String(partnerId || '').trim();
     if (!normalizedConversationId && !normalizedPartnerId) return;
@@ -607,13 +638,13 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     }
 
     if (onMessagesRead) onMessagesRead();
-  };
+  }, [currentUserId, onMessagesRead, selectedConversation]);
 
   // Helper to get auth headers with fresh token
-  const getAuthHeaders = (options: { includeJsonContentType?: boolean; includeAuthorization?: boolean } = {}) => {
+  const getAuthHeaders = useCallback((options: { includeJsonContentType?: boolean; includeAuthorization?: boolean } = {}) => {
     const { includeJsonContentType = true, includeAuthorization = true } = options;
     const freshToken = sessionStorage.getItem('token') || localStorage.getItem('token');
-    const headers: any = {
+    const headers: Record<string, string> = {
       'Cache-Control': 'no-cache',
       'Pragma': 'no-cache'
     };
@@ -627,14 +658,29 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       headers['Authorization'] = `Bearer ${normalizedToken}`;
     }
     return headers;
-  };
+  }, []);
 
-  const withAuthParam = (url: string) => {
+  const withAuthParam = useCallback((url: string) => {
     const params = new URLSearchParams();
     params.set('_t', String(Date.now()));
     const separator = url.includes('?') ? '&' : '?';
     return `${url}${separator}${params.toString()}`;
-  };
+  }, []);
+
+  const requestWithAuth = useCallback(
+    <TData,>(
+      url: string,
+      init: RequestInit = {},
+      options: { includeJsonContentType?: boolean; withCacheBust?: boolean } = {}
+    ) => {
+      const { includeJsonContentType = true, withCacheBust = true } = options;
+      return apiRequest<TData>(withCacheBust ? withAuthParam(url) : url, {
+        ...init,
+        headers: getAuthHeaders({ includeJsonContentType })
+      });
+    },
+    [getAuthHeaders, withAuthParam]
+  );
 
   const buildAttachmentDownloadUrl = (attachment: MessageAttachment) => {
     const params = new URLSearchParams();
@@ -661,7 +707,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     const endpoint = buildAttachmentDownloadUrl(attachment);
 
     try {
-      const response = await fetch(endpoint, {
+      const response = await apiFetch(endpoint, {
         method: 'GET',
         cache: 'no-store',
         headers: getAuthHeaders({ includeJsonContentType: false })
@@ -707,7 +753,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
   };
 
   // Load conversations
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     try {
       if (!currentUserId) {
         setConversations([]);
@@ -715,12 +761,10 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         return [];
       }
 
-      const res = await fetch(withAuthParam(`${API_URL}/messages/conversations`), {
-        cache: 'no-store',
-        headers: getAuthHeaders()
+      const data = await requestWithAuth<ConversationItem[]>(`${API_URL}/messages/conversations`, {
+        cache: 'no-store'
       });
-      const data = await res.json();
-      if (data.status === 'success') {
+      if (isApiSuccess(data)) {
         const sorted = dedupeConversationsByPartner(data.data || [], currentUserId);
         setConversations(sorted);
 
@@ -728,7 +772,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         if (selectedConversation) {
           const selectedId = getConversationId(selectedConversation);
           const selectedPartnerId = getConversationPartnerId(selectedConversation, currentUserId);
-          const matchedConversation = sorted.find((conversation: any) => {
+          const matchedConversation = sorted.find((conversation) => {
             const conversationId = getConversationId(conversation);
             const conversationPartnerId = getConversationPartnerId(conversation, currentUserId);
             if (selectedId && conversationId === selectedId) return true;
@@ -757,7 +801,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
             return sorted;
           }
 
-          const existingConversation = sorted.find((conversation: any) =>
+          const existingConversation = sorted.find((conversation) =>
             getConversationPartnerId(conversation, currentUserId) === pendingChatUserId
           );
 
@@ -770,16 +814,13 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
             }
             startingConversationUserRef.current = pendingChatUserId;
 
-            const startRes = await fetch(withAuthParam(`${API_URL}/messages/start/${pendingChatUserId}`), {
-              method: 'POST',
-              headers: getAuthHeaders()
+            const startData = await requestWithAuth<ConversationItem>(`${API_URL}/messages/start/${pendingChatUserId}`, {
+              method: 'POST'
             });
-            const startContentType = (startRes.headers.get('content-type') || '').toLowerCase();
-            const startData = startContentType.includes('application/json') ? await startRes.json() : null;
 
-            if (startRes.ok && startData?.status === 'success') {
+            if (isApiSuccess(startData)) {
               const merged = dedupeConversationsByPartner([startData.data, ...sorted], currentUserId);
-              const targetConversation = merged.find((conversation: any) =>
+              const targetConversation = merged.find((conversation) =>
                 getConversationPartnerId(conversation, currentUserId) === pendingChatUserId
               ) || startData.data;
               setSelectedConversation(targetConversation);
@@ -787,7 +828,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
               clearPendingChatTarget();
               startingConversationUserRef.current = '';
               return merged;
-            } else if (startData?.message) {
+            } else if (startData.message) {
               toast.error(startData.message);
               clearPendingChatTarget();
             } else {
@@ -806,14 +847,14 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUserId, requestWithAuth, selectedConversation]);
 
   const startConversationWithUser = async (targetUserId: string) => {
     const normalizedTargetUserId = sanitizeId(targetUserId);
     if (!normalizedTargetUserId || normalizedTargetUserId === currentUserId) return;
     if (startingConversationUserRef.current === normalizedTargetUserId) return;
 
-    const existingConversation = conversations.find((conversation: any) =>
+    const existingConversation = conversations.find((conversation) =>
       getConversationPartnerId(conversation, currentUserId) === normalizedTargetUserId
     );
 
@@ -826,16 +867,14 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
     try {
       startingConversationUserRef.current = normalizedTargetUserId;
-      const response = await fetch(withAuthParam(`${API_URL}/messages/start/${normalizedTargetUserId}`), {
-        method: 'POST',
-        headers: getAuthHeaders()
+      const data = await requestWithAuth<ConversationItem>(`${API_URL}/messages/start/${normalizedTargetUserId}`, {
+        method: 'POST'
       });
-      const data = await response.json();
 
-      if (data.status === 'success') {
+      if (isApiSuccess(data)) {
         const newConversation = data.data;
         const merged = dedupeConversationsByPartner([newConversation, ...conversations], currentUserId);
-        const targetConversation = merged.find((conversation: any) =>
+        const targetConversation = merged.find((conversation) =>
           getConversationPartnerId(conversation, currentUserId) === normalizedTargetUserId
         ) || newConversation;
         setConversations(merged);
@@ -855,7 +894,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     }
   };
 
-  const fetchMessages = async (isLoadMore = false, targetConversationId: string = selectedConversationId) => {
+  const fetchMessages = useCallback(async (isLoadMore = false, targetConversationId: string = selectedConversationId) => {
     const normalizedConversationId = String(targetConversationId || '').trim();
     if (!normalizedConversationId) return;
     if (isLoadMore && !hasMore) return;
@@ -870,17 +909,12 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       let url = `${API_URL}/messages/${normalizedConversationId}?limit=20`;
       if (before) url += `&before=${encodeURIComponent(before)}`;
 
-      const res = await fetch(withAuthParam(url), {
-        cache: 'no-store',
-        headers: getAuthHeaders()
-      });
-      const data = await res.json();
-
-      if (data.status !== 'success') return;
+      const data = await requestWithAuth<MessageItem[]>(url, { cache: 'no-store' });
+      if (!isApiSuccess(data)) return;
       if (String(activeConversationIdRef.current) !== normalizedConversationId) return;
 
       const newMessages = dedupeMessagesById(
-        (Array.isArray(data.data) ? data.data : []).map((message: any) =>
+        (Array.isArray(data.data) ? data.data : []).map((message: MessageItem) =>
           normalizeMessageEntityIds(message)
         )
       );
@@ -900,21 +934,20 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     } finally {
       if (isLoadMore) setLoadingMore(false);
     }
-  };
+  }, [hasMore, requestWithAuth, selectedConversationId]);
 
-  const markAsRead = async (conversationId: string) => {
+  const markAsRead = useCallback(async (conversationId: string) => {
     const normalizedConversationId = String(conversationId || '').trim();
     if (!normalizedConversationId) return;
     if (markReadInFlightRef.current.has(normalizedConversationId)) return;
     markReadInFlightRef.current.add(normalizedConversationId);
 
     try {
-      const res = await fetch(withAuthParam(`${API_URL}/messages/${normalizedConversationId}/read`), {
-        method: 'PUT',
-        headers: getAuthHeaders()
+      const data = await requestWithAuth<null>(`${API_URL}/messages/${normalizedConversationId}/read`, {
+        method: 'PUT'
       });
 
-      if (res.ok) {
+      if (isApiSuccess(data)) {
         setConversations(prev => prev.map(conv => {
           if (getConversationId(conv) === normalizedConversationId && conv.last_message) {
             return { ...conv, last_message: { ...conv.last_message, is_read: true }, unread_count: 0 };
@@ -928,9 +961,9 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     } finally {
       markReadInFlightRef.current.delete(normalizedConversationId);
     }
-  };
+  }, [onMessagesRead, requestWithAuth]);
 
-  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     if (chatContainerRef.current) {
       const container = chatContainerRef.current;
       if (behavior === 'instant') {
@@ -942,7 +975,19 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         });
       }
     }
-  };
+  }, []);
+
+  const emitTypingState = useCallback((isTyping: boolean) => {
+    if (!socket || !selectedConversation || !selectedConversationId) return;
+    const recipientId = getConversationPartnerId(selectedConversation, currentUserId);
+    if (!recipientId || recipientId === currentUserId) return;
+
+    socket.emit(isTyping ? 'typing_start' : 'typing_stop', {
+      recipientId: String(recipientId),
+      conversationId: selectedConversationId,
+      senderId: currentUserId
+    });
+  }, [currentUserId, selectedConversation, selectedConversationId, socket]);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -955,7 +1000,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
     setLoading(true);
     fetchConversations();
-  }, [currentUserId]);
+  }, [currentUserId, fetchConversations]);
 
   useEffect(() => {
     if (!searchTerm.trim() || searchTerm.trim().length < 2) {
@@ -969,25 +1014,23 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     const timer = window.setTimeout(async () => {
       try {
         setSearchingUsers(true);
-        const response = await fetch(`${API_URL}/auth/search/users?q=${encodeURIComponent(keyword)}`, {
+        const data = await requestWithAuth<UserSearchItem[]>(`${API_URL}/auth/search/users?q=${encodeURIComponent(keyword)}`, {
           signal: controller.signal,
-          cache: 'no-store',
-          headers: getAuthHeaders({ includeJsonContentType: false })
-        });
-        const data = await response.json();
-        if (data.status === 'success') {
+          cache: 'no-store'
+        }, { includeJsonContentType: false, withCacheBust: false });
+        if (isApiSuccess(data)) {
           // Filter out users who already have a conversation to avoid duplicates in view
-          const nonParticipantUsers = (data.data || []).filter((user: any) => {
+          const nonParticipantUsers = (data.data || []).filter((user: UserSearchItem) => {
             const userId = getEntityId(user);
             if (userId === currentUserId) return false;
             return !conversations.some(c =>
-              c.participants?.some((p: any) => getEntityId(p) === userId)
+              c.participants?.some((p) => getEntityId(p) === userId)
             );
           });
           setUserSearchResults(nonParticipantUsers);
         }
-      } catch (error: any) {
-        if (error.name !== 'AbortError') {
+      } catch (error: unknown) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
           console.error('Lỗi tìm người dùng để nhắn tin:', error);
         }
       } finally {
@@ -999,7 +1042,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [searchTerm, currentUserId, conversations.length]);
+  }, [searchTerm, currentUserId, conversations, requestWithAuth]);
 
   useEffect(() => {
     activeConversationIdRef.current = selectedConversationId;
@@ -1017,7 +1060,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     return () => {
       emitTypingState(false);
     };
-  }, [selectedConversationId]);
+  }, [selectedConversationId, emitTypingState, fetchMessages, markAsRead]);
 
   useEffect(() => {
     return () => {
@@ -1053,11 +1096,11 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         return () => clearTimeout(timer);
       }
     }
-  }, [messages]);
+  }, [messages, isInitialLoad, scrollToBottom]);
 
   useEffect(() => {
     if (socket && isConnected) {
-      const handleReceiveMessage = (message: any) => {
+      const handleReceiveMessage = (message: MessageItem) => {
         const normalizedMessage = normalizeMessageEntityIds(message);
         const msgId = getMessageId(normalizedMessage);
         const msgConvId = getConversationId(normalizedMessage.conversation);
@@ -1118,25 +1161,25 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         });
       };
 
-      const handleMessageRevoked = ({ messageId, conversationId }: any) => {
+      const handleMessageRevoked = ({ messageId, conversationId }: { messageId?: string; conversationId?: string }) => {
         const msgConvId = String(conversationId);
         applyRevokedState(String(messageId), msgConvId);
       };
 
 
-      const handleTypingStart = ({ conversationId, senderId }: any) => {
+      const handleTypingStart = ({ conversationId, senderId }: { conversationId?: string; senderId?: string }) => {
         if (String(conversationId) === String(activeConversationIdRef.current) && String(senderId) !== currentUserId) {
           setTypingUserId(String(senderId));
         }
       };
 
-      const handleTypingStop = ({ conversationId, senderId }: any) => {
+      const handleTypingStop = ({ conversationId, senderId }: { conversationId?: string; senderId?: string }) => {
         if (String(conversationId) === String(activeConversationIdRef.current) && String(senderId) !== currentUserId) {
           setTypingUserId(null);
         }
       };
 
-      const handleMessagesSeen = ({ conversationId, seenBy }: any) => {
+      const handleMessagesSeen = ({ conversationId, seenBy }: { conversationId?: string; seenBy?: string }) => {
         if (String(seenBy) === currentUserId) return;
 
         if (String(conversationId) === String(activeConversationIdRef.current)) {
@@ -1153,7 +1196,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         }));
       };
 
-      const handleConversationDeleted = ({ conversationId }: any) => {
+      const handleConversationDeleted = ({ conversationId }: { conversationId?: string }) => {
         const normalizedConversationId = String(conversationId || '').trim();
         if (!normalizedConversationId) return;
         removeConversationFromState(normalizedConversationId);
@@ -1175,7 +1218,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         socket.off('conversation_deleted', handleConversationDeleted);
       };
     }
-  }, [socket, isConnected, currentUserId]);
+  }, [socket, isConnected, currentUserId, fetchConversations, markAsRead, removeConversationFromState]);
 
   // Fallback for hosts where Socket.IO is not available (e.g. serverless runtime):
   // poll conversations/messages so users still see new messages without refreshing.
@@ -1210,7 +1253,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       window.clearInterval(intervalId);
       fallbackPollInFlightRef.current = false;
     };
-  }, [currentUserId, isConnected, selectedConversationId]);
+  }, [currentUserId, isConnected, fetchConversations, fetchMessages, markAsRead]);
 
   const handleChatScroll = () => {
     const container = chatContainerRef.current;
@@ -1252,18 +1295,6 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  };
-
-  const emitTypingState = (isTyping: boolean) => {
-    if (!socket || !selectedConversation || !selectedConversationId) return;
-    const recipientId = getConversationPartnerId(selectedConversation, currentUserId);
-    if (!recipientId || recipientId === currentUserId) return;
-
-    socket.emit(isTyping ? 'typing_start' : 'typing_stop', {
-      recipientId: String(recipientId),
-      conversationId: selectedConversationId,
-      senderId: currentUserId
-    });
   };
 
   const handleMessageInputChange = (value: string) => {
@@ -1313,15 +1344,18 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         const formData = new FormData();
         formData.append('file', selectedFile, selectedFile.name);
 
-        const uploadRes = await fetch(withAuthParam(`${API_URL}/messages/upload`), {
+        const uploadData = await requestWithAuth<UploadMessageResponseData>(`${API_URL}/messages/upload`, {
           method: 'POST',
-          headers: getAuthHeaders({ includeJsonContentType: false }),
-          body: formData,
-        });
+          body: formData
+        }, { includeJsonContentType: false });
 
-        const uploadData = await uploadRes.json();
-        if (uploadRes.ok && uploadData.status === 'success') {
-          const uploadedRawAttachment = uploadData?.data?.attachment || uploadData?.data || {};
+        if (isApiSuccess(uploadData)) {
+          const uploadedData = uploadData.data;
+          const uploadedRawAttachment: UploadedAttachmentPayload = (
+            uploadedData && typeof uploadedData === 'object' && 'attachment' in uploadedData
+              ? (uploadedData.attachment || {})
+              : (uploadedData || {})
+          ) as UploadedAttachmentPayload;
           const uploadedAttachment = normalizeAttachment({
             ...uploadedRawAttachment,
             name: uploadedRawAttachment?.name || selectedFile.name,
@@ -1341,9 +1375,8 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
         }
       }
 
-      const response = await fetch(withAuthParam(`${API_URL}/messages`), {
+      const payload = await requestWithAuth<MessageItem>(`${API_URL}/messages`, {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify({
           recipientId,
           conversationId: targetConversationId,
@@ -1351,11 +1384,10 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
           attachments: attachments
         })
       });
-
-      const payload = await response.json();
-      if (!response.ok) {
+      if (!isApiSuccess(payload)) {
         throw new Error(payload?.message || 'Không thể gửi tin nhắn');
       }
+
       const savedMessage = normalizeMessageEntityIds(payload?.data, {
         senderId: currentUserId,
         recipientId
@@ -1410,13 +1442,11 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     }
 
     try {
-      const res = await fetch(withAuthParam(`${API_URL}/messages/${normalizedMessageId}/revoke`), {
-        method: 'PUT',
-        headers: getAuthHeaders()
+      const data = await requestWithAuth<MessageItem>(`${API_URL}/messages/${normalizedMessageId}/revoke`, {
+        method: 'PUT'
       });
-      const data = await res.json();
 
-      if (!res.ok) {
+      if (!isApiSuccess(data)) {
         throw new Error(data.message || 'Không thể thu hồi tin nhắn');
       }
 
@@ -1434,17 +1464,15 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     if (!sharingMessage || !recipientId) return;
 
     try {
-      const res = await fetch(withAuthParam(`${API_URL}/messages/share`), {
+      const data = await requestWithAuth<null>(`${API_URL}/messages/share`, {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify({
           messageId: sharingMessage._id || sharingMessage.id,
           recipientId
         })
       });
 
-      const data = await res.json();
-      if (!res.ok) {
+      if (!isApiSuccess(data)) {
         throw new Error(data?.message || 'Không thể chia sẻ tin nhắn');
       }
 
@@ -1487,12 +1515,14 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
       const query = params.toString();
       const endpoint = `${API_URL}/messages/conversations/${encodeURIComponent(targetConversationId)}${query ? `?${query}` : ''}`;
 
-      const res = await fetch(endpoint, {
+      const res = await apiFetch(endpoint, {
         method: 'DELETE',
         headers: getAuthHeaders({ includeJsonContentType: false })
       });
       const contentType = (res.headers.get('content-type') || '').toLowerCase();
-      const data = contentType.includes('application/json') ? await res.json() : null;
+      const data = contentType.includes('application/json')
+        ? await res.json() as { message?: string }
+        : null;
 
       if (!res.ok) {
         if (res.status === 401) {
@@ -1519,17 +1549,17 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     }
   };
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
-  const filteredConversations = conversations.filter((conv: any) => {
+  const filteredConversations = conversations.filter((conv) => {
     if (!normalizedSearchTerm) return true;
-    const other = getOtherParticipant(conv.participants, currentUserId);
+    const other = getOtherParticipant(conv.participants || [], currentUserId);
     return (other.full_name || '').toLowerCase().includes(normalizedSearchTerm) ||
       (other.username || '').toLowerCase().includes(normalizedSearchTerm);
   });
   const showUserSearchArea = searchTerm.trim().length >= 2;
   const activeChatPartner = selectedConversation
-    ? getOtherParticipant(selectedConversation.participants, currentUserId)
+    ? getOtherParticipant(selectedConversation.participants || [], currentUserId)
     : null;
-  const totalUnread = conversations.reduce((total: number, conversation: any) => {
+  const totalUnread = conversations.reduce((total: number, conversation) => {
     return total + (conversation.unread_count || 0);
   }, 0);
   const onlineIdSet = new Set(onlineUserIds);
@@ -1580,9 +1610,9 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
             ) : (
               <div className="flex flex-col space-y-1.5 p-2">
                 {/* Existing Conversations */}
-                {(conversations.length > 0 || searchTerm) && filteredConversations.map((conversation: any) => {
+                {(conversations.length > 0 || searchTerm) && filteredConversations.map((conversation) => {
                   const isSelected = getConversationId(selectedConversation) === getConversationId(conversation);
-                  const other = getOtherParticipant(conversation.participants, currentUserId);
+                  const other = getOtherParticipant(conversation.participants || [], currentUserId);
                   const partnerId = getConversationPartnerId(conversation, currentUserId);
                   const isPartnerOnline = partnerId ? onlineIdSet.has(partnerId) : false;
                   const unreadCount = conversation.unread_count || 0;
@@ -1591,7 +1621,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
 
                   return (
                     <button
-                      key={conversation._id || conversation.id || partnerId}
+                      key={String(conversation._id || conversation.id || partnerId)}
                       onClick={() => setSelectedConversation(conversation)}
                       className={`group relative w-full overflow-hidden rounded-2xl border px-3 py-3 flex items-center gap-3 text-left transition-all duration-200 ${isSelected
                           ? 'border-primary/30 bg-primary/[0.12] shadow-md shadow-primary/15 ring-1 ring-primary/30'
@@ -1616,14 +1646,14 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
                             {other.full_name || other.username}
                           </h4>
                           <span className={`text-[10px] ${isUnread ? 'text-primary' : 'text-muted-foreground'}`}>
-                            {lastMsg ? new Date(lastMsg.createdAt || lastMsg.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}
+                            {lastMsg ? new Date(lastMsg.createdAt || lastMsg.created_at || 0).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
                           <p className={`text-sm truncate ${isUnread ? 'text-foreground font-semibold' : 'text-muted-foreground'} max-w-[155px]`}>
                             {lastMsg?.is_revoked
                               ? REVOKED_MESSAGE_LABEL
-                              : (lastMsg?.content || getMessageAttachmentSummary(lastMsg) || 'Chưa có tin nhắn')}
+                              : (lastMsg?.content || getMessageAttachmentSummary(lastMsg || ({} as MessageItem)) || 'Chưa có tin nhắn')}
                           </p>
                           {isUnread && (
                             <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
@@ -1650,7 +1680,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
                         <p className="px-2 pb-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Người dùng mới</p>
                         {userSearchResults.map((user) => (
                           <button
-                            key={user._id}
+                            key={String(user._id)}
                             onClick={() => startConversationWithUser(String(user._id))}
                             className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-muted/80"
                           >
@@ -1763,7 +1793,7 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
                 const messageAttachments = getNormalizedAttachments(message);
                 return (
                   <div
-                    key={message._id || message.id}
+                    key={String(message._id || message.id)}
                     className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
                   >
                     <div className="group flex max-w-[78%] items-end gap-2">
@@ -2008,15 +2038,15 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
               <div className="space-y-2">
                 {conversations
                   .filter(conv => {
-                    const other = getOtherParticipant(conv.participants, currentUserId);
+                    const other = getOtherParticipant(conv.participants || [], currentUserId);
                     const term = shareSearchTerm.toLowerCase();
                     return (other.full_name || '').toLowerCase().includes(term) || (other.username || '').toLowerCase().includes(term);
                   })
                   .map(conv => {
-                    const other = getOtherParticipant(conv.participants, currentUserId);
+                    const other = getOtherParticipant(conv.participants || [], currentUserId);
                     return (
                       <button
-                        key={conv._id}
+                        key={String(conv._id)}
                         onClick={() => handleShareMessage(getConversationPartnerId(conv, currentUserId))}
                         className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors text-left"
                       >
@@ -2040,6 +2070,15 @@ export function Messages({ currentUser, onUserClick, onMessagesRead }: MessagesP
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
 
 
 
