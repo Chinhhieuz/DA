@@ -493,6 +493,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
       toast.success('Đã theo dõi người dùng này');
       setIsFollowing(true);
       setFollowersCount(prev => prev + 1);
+      if (onPostsChanged) onPostsChanged();
       return;
     }
 
@@ -510,6 +511,7 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
       toast.success('Đã bỏ theo dõi');
       setIsFollowing(false);
       setFollowersCount(prev => Math.max(0, prev - 1));
+      if (onPostsChanged) onPostsChanged();
       return;
     }
   };

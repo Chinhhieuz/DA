@@ -58,10 +58,15 @@ const getAllPosts = async (req, res) => {
         // Cac endpoint GET co ca che do guest va che do co token.
         // Neu co token, service se tra ve du lieu ca nhan hoa (userVote/isFollowing).
         const requestUserId = resolveRequestUserId(req);
+        const isFollowingOnly = String(req.query?.followingOnly || '').trim() === 'true';
+        // Chi cache cho guest/public de tranh tra ve du lieu stale sau khi follow/unfollow.
+        const shouldUseInMemoryCache = !requestUserId && !isFollowingOnly;
         const cacheKey = `feed_${requestUserId || 'anonymous'}_${String(req.query.community || '').trim()}_${String(req.query.followingOnly || '').trim()}_${String(req.query.limit || '').trim()}_${String(req.query.page || '').trim()}`;
-        const cachedFeed = getFromCache(cacheKey);
-        if (cachedFeed) {
-            return res.status(200).json(cachedFeed);
+        if (shouldUseInMemoryCache) {
+            const cachedFeed = getFromCache(cacheKey);
+            if (cachedFeed) {
+                return res.status(200).json(cachedFeed);
+            }
         }
 
         const result = await postingService.getAllPostsService({
@@ -74,7 +79,9 @@ const getAllPosts = async (req, res) => {
 
         if (Array.isArray(result)) {
             const payload = { status: 'success', data: result };
-            setInCache(cacheKey, JSON.parse(JSON.stringify(payload)), 20); // 20s TTL
+            if (shouldUseInMemoryCache) {
+                setInCache(cacheKey, JSON.parse(JSON.stringify(payload)), 20); // 20s TTL
+            }
             return res.status(200).json(payload);
         }
 
@@ -87,7 +94,9 @@ const getAllPosts = async (req, res) => {
                 hasMore: result.hasMore
             }
         };
-        setInCache(cacheKey, JSON.parse(JSON.stringify(payload)), 20); // 20s TTL
+        if (shouldUseInMemoryCache) {
+            setInCache(cacheKey, JSON.parse(JSON.stringify(payload)), 20); // 20s TTL
+        }
 
         return res.status(200).json(payload);
     } catch (error) {
@@ -99,12 +108,15 @@ const getTrendingPosts = async (req, res) => {
     try {
         // Trending van public, nhung neu co token se duoc ca nhan hoa thong tin follow/vote.
         const requestUserId = resolveRequestUserId(req);
+        const shouldUseInMemoryCache = !requestUserId;
         const cacheKey = `trendingPosts_${requestUserId || 'anonymous'}`;
-        let trendingPosts = getFromCache(cacheKey);
+        let trendingPosts = shouldUseInMemoryCache ? getFromCache(cacheKey) : null;
 
         if (!trendingPosts) {
             trendingPosts = await postingService.getTrendingPostsService(requestUserId);
-            setInCache(cacheKey, JSON.parse(JSON.stringify(trendingPosts)), 300); // 5 minutes Cache
+            if (shouldUseInMemoryCache) {
+                setInCache(cacheKey, JSON.parse(JSON.stringify(trendingPosts)), 300); // 5 minutes Cache
+            }
         }
         
         return res.status(200).json({ status: 'success', data: trendingPosts });
