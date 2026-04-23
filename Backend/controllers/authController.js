@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { getFromCache, setInCache } = require('../utils/memoryCache');
+const { memoryCache, getFromCache, setInCache, clearCache } = require('../utils/memoryCache');
 const Post = require('../models/Post');
 const Comment = require('../models/Comment');
 const Thread = require('../models/Thread');
@@ -7,6 +7,39 @@ const authService = require('../services/authService');
 const Account = require('../models/Account');
 const socketModule = require('../socket');
 const Notification = require('../models/Notification');
+
+const invalidateUserScopedCaches = (rawUserIds = []) => {
+    const userIds = Array.from(new Set(
+        (Array.isArray(rawUserIds) ? rawUserIds : [rawUserIds])
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+    ));
+
+    if (!userIds.length) return;
+
+    try {
+        const cacheKeys = memoryCache.keys();
+        if (!Array.isArray(cacheKeys) || !cacheKeys.length) return;
+
+        cacheKeys.forEach((key) => {
+            if (typeof key !== 'string') return;
+
+            const shouldClearAggregatedProfile = key.startsWith('aggregatedProfile_') && userIds.some((userId) => (
+                key.startsWith(`aggregatedProfile_${userId}_`) || key.endsWith(`_${userId}`)
+            ));
+
+            const shouldClearSearchUsers = key.startsWith('searchUsers_') && userIds.some((userId) => key.endsWith(`_${userId}`));
+            const shouldClearFeed = key.startsWith('feed_') && userIds.some((userId) => key.startsWith(`feed_${userId}_`));
+            const shouldClearTrending = key.startsWith('trendingPosts_') && userIds.some((userId) => key === `trendingPosts_${userId}`);
+
+            if (shouldClearAggregatedProfile || shouldClearSearchUsers || shouldClearFeed || shouldClearTrending) {
+                clearCache(key);
+            }
+        });
+    } catch (error) {
+        console.error('[AUTH CACHE] Khong the xoa cache user-scoped:', error.message);
+    }
+};
 
 const login = async (req, res) => {
     try {
@@ -287,11 +320,12 @@ const followUser = async (req, res) => {
     try {
         // followerId lay tu token, chi can targetId tu client.
         const followerId = req.user?._id ? String(req.user._id) : '';
-        const { targetId } = req.body;
+        const targetId = String(req.body?.targetId || '').trim();
         if (!followerId || !targetId) {
             return res.status(400).json({ status: 'fail', message: 'Thieu du lieu follow' });
         }
         const result = await authService.followUserService(followerId, targetId);
+        invalidateUserScopedCaches([followerId, targetId]);
 
         // Gửi Socket Notification cho người ược follow
         try {
@@ -319,11 +353,12 @@ const unfollowUser = async (req, res) => {
     try {
         // followerId lay tu token, chi can targetId tu client.
         const followerId = req.user?._id ? String(req.user._id) : '';
-        const { targetId } = req.body;
+        const targetId = String(req.body?.targetId || '').trim();
         if (!followerId || !targetId) {
             return res.status(400).json({ status: 'fail', message: 'Thieu du lieu unfollow' });
         }
         const result = await authService.unfollowUserService(followerId, targetId);
+        invalidateUserScopedCaches([followerId, targetId]);
         return res.status(200).json({ status: 'success', message: result.message });
     } catch (error) {
         return res.status(400).json({ status: 'fail', message: error.message });
@@ -450,9 +485,13 @@ const getAggregatedProfile = async (req, res) => {
             : String(req.query?.currentUserId || '').trim();
 
         const cacheKey = `aggregatedProfile_${userId}_${currentUserId}`;
-        let profileData = getFromCache(cacheKey);
-        if (profileData) {
-            return res.status(200).json({ status: 'success', data: profileData });
+        const shouldUseInMemoryCache = !currentUserId;
+        let profileData = null;
+        if (shouldUseInMemoryCache) {
+            profileData = getFromCache(cacheKey);
+            if (profileData) {
+                return res.status(200).json({ status: 'success', data: profileData });
+            }
         }
 
         const profile = await authService.getProfileByIdService(userId, currentUserId);
@@ -581,7 +620,9 @@ const getAggregatedProfile = async (req, res) => {
             userPosts
         };
 
-        setInCache(cacheKey, JSON.parse(JSON.stringify(profileData)), 60); // 1 minute TTL
+        if (shouldUseInMemoryCache) {
+            setInCache(cacheKey, JSON.parse(JSON.stringify(profileData)), 60); // 1 minute TTL
+        }
 
         return res.status(200).json({
             status: 'success',

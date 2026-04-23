@@ -101,6 +101,7 @@ const REMOTE_MAX_TERM_LENGTH = parseNumberEnv(process.env.AI_MODERATION_REMOTE_M
 const MEDIA_FETCH_TIMEOUT_MS = parseNumberEnv(process.env.AI_MODERATION_MEDIA_FETCH_TIMEOUT_MS, 6500);
 const MODEL_RETRY_ATTEMPTS = Math.max(1, parseNumberEnv(process.env.AI_MODERATION_MODEL_RETRY_ATTEMPTS, 2));
 const MODEL_RETRY_BASE_DELAY_MS = parseNumberEnv(process.env.AI_MODERATION_MODEL_RETRY_BASE_DELAY_MS, 800);
+const MIN_COMPACT_TERM_MATCH_LENGTH = parseNumberEnv(process.env.AI_MODERATION_MIN_COMPACT_TERM_MATCH_LENGTH, 5);
 
 const LEET_CHAR_MAP = {
     '0': 'o',
@@ -155,22 +156,44 @@ function normalizeForMatch(input) {
     return withoutMarks.replace(/[\s.\-_*|,@"'`~:;()[\]{}?!+=\\/]+/g, '');
 }
 
+function normalizeForTokenMatch(input) {
+    const text = String(input || '').toLowerCase().normalize('NFKC');
+    const mapped = [...text].map((ch) => LEET_CHAR_MAP[ch] || ch).join('');
+    const withoutMarks = mapped.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return withoutMarks
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim()
+        .replace(/\s+/g, ' ');
+}
+
+function escapeRegex(input) {
+    return String(input || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function buildSearchVariants(title, content) {
     const source = `${title || ''} ${content || ''}`.trim();
     const rawLower = source.toLowerCase();
     const nfkc = rawLower.normalize('NFKC');
     const withoutMarks = nfkc.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const tokenized = normalizeForTokenMatch(source);
     const compact = normalizeForMatch(source);
-    return [...new Set([rawLower, nfkc, withoutMarks, compact].filter(Boolean))];
+    const textVariants = [...new Set([
+        normalizeForTokenMatch(rawLower),
+        normalizeForTokenMatch(nfkc),
+        normalizeForTokenMatch(withoutMarks),
+        tokenized
+    ].filter(Boolean))];
+    return { textVariants, compact };
 }
 
 function toBlockTerm(term, minCompactLength = 2) {
     const raw = String(term || '').trim().toLowerCase();
     if (!raw || raw.length > REMOTE_MAX_TERM_LENGTH) return null;
 
+    const tokenized = normalizeForTokenMatch(raw);
     const compact = normalizeForMatch(raw);
     if (!compact || compact.length < minCompactLength) return null;
-    return { raw, compact };
+    return { raw, compact, tokenized };
 }
 
 function buildBlockTerms(terms, minCompactLength = 2) {
@@ -178,6 +201,23 @@ function buildBlockTerms(terms, minCompactLength = 2) {
         .map((term) => toBlockTerm(term, minCompactLength))
         .filter(Boolean);
 }
+
+function buildExcludedCompactSet(terms) {
+    const blockedTerms = buildBlockTerms(terms, 2);
+    return new Set(
+        blockedTerms
+            .map((term) => term.compact)
+            .filter(Boolean)
+    );
+}
+
+const BLOCKLIST_EXCLUDED_COMPACTS = buildExcludedCompactSet([
+    // Guardrail against known false-positive in Vietnamese educational text: "Giai đoạn".
+    'giai',
+    // "cac" is highly ambiguous in Vietnamese after diacritic stripping (e.g. "các").
+    'cac',
+    ...parseExtraBlocklist(process.env.AI_MODERATION_EXCLUDED_TERMS)
+]);
 
 const BASE_BLOCK_TERMS = buildBlockTerms([
     ...HARD_BLOCKLIST,
@@ -258,8 +298,8 @@ async function refreshRemoteBlockTerms(force = false) {
             }
 
             const capped = fetchedTerms.slice(0, REMOTE_MAX_TERMS);
-            // Remote lists can contain noisy short tokens; require >=3 chars after normalization.
-            remoteBlockTerms = buildBlockTerms(capped, 3);
+            // Remote lists can contain noisy short tokens; require >=4 chars after normalization.
+            remoteBlockTerms = buildBlockTerms(capped, 4);
             remoteBlocklistLastRefreshAt = Date.now();
             console.log(`[AI Moderation] Remote blocklist refreshed: ${remoteBlockTerms.length} terms`);
         } catch (error) {
@@ -280,17 +320,43 @@ function getActiveBlockTerms() {
     return [...BASE_BLOCK_TERMS, ...remoteBlockTerms];
 }
 
+function hasCjkLikeScript(term) {
+    return /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/u.test(String(term || ''));
+}
+
+function hasWholeTermMatch(term, textVariants) {
+    const normalizedTerm = normalizeForTokenMatch(term);
+    if (!normalizedTerm) return false;
+
+    if (hasCjkLikeScript(normalizedTerm)) {
+        return textVariants.some((sample) => sample.includes(normalizedTerm));
+    }
+
+    const pattern = new RegExp(
+        `(^|[^\\p{L}\\p{N}])${escapeRegex(normalizedTerm)}([^\\p{L}\\p{N}]|$)`,
+        'iu'
+    );
+    return textVariants.some((sample) => pattern.test(sample));
+}
+
 function findTermInVariants(terms, variants, options = {}) {
     const skipCompacts = options.skipCompacts instanceof Set ? options.skipCompacts : null;
+    const textVariants = Array.isArray(variants?.textVariants) ? variants.textVariants : [];
+    const compactText = typeof variants?.compact === 'string' ? variants.compact : '';
 
     for (const term of terms) {
         if (!term.raw && !term.compact) continue;
+        if (term.compact && BLOCKLIST_EXCLUDED_COMPACTS.has(term.compact)) continue;
         if (skipCompacts && term.compact && skipCompacts.has(term.compact)) continue;
 
-        const matched = variants.some((sample) => (
-            (term.raw && sample.includes(term.raw))
-            || (term.compact && sample.includes(term.compact))
-        ));
+        const rawMatched = term.raw ? hasWholeTermMatch(term.raw, textVariants) : false;
+        const compactMatched = Boolean(
+            term.compact
+            && compactText
+            && term.compact.length >= MIN_COMPACT_TERM_MATCH_LENGTH
+            && compactText.includes(term.compact)
+        );
+        const matched = rawMatched || compactMatched;
 
         if (matched) return term.raw || term.compact;
     }
@@ -988,29 +1054,14 @@ Return JSON only.`;
     } catch (error) {
         console.error('[AI Moderation] System error:', error.message);
         const classified = classifyProviderError(error);
-        if (classified.code === 'provider_overload') {
-            // For media posts, fail-safe to manual review when provider is unavailable.
-            if (hasMediaInput) {
-                return {
-                    status: 'REJECT',
-                    reason: buildProviderFailureReason(
-                        'AI tam qua tai',
-                        classified,
-                        {
-                            image: imageInputCount,
-                            video: videoInputCount,
-                            mediaReadable: mediaReadableCount,
-                            mediaTotal: mediaInputCount
-                        }
-                    )
-                };
-            }
 
-            // Text-only fallback: rely on local block rules checked above.
-            return {
-                status: 'PASS',
-                reason: buildProviderFailureReason(
-                    'AI tam qua tai - Dang dung bo loc noi bo',
+        // Text-only fallback: local block rules were already checked before AI call.
+        // Do not block publishing because of provider/runtime failures.
+        if (!hasMediaInput) {
+            console.warn(
+                '[AI Moderation] Text-only fallback PASS:',
+                buildProviderFailureReason(
+                    'AI gap su co - Dang dung bo loc noi bo',
                     classified,
                     {
                         image: imageInputCount,
@@ -1019,14 +1070,16 @@ Return JSON only.`;
                         mediaTotal: mediaInputCount
                     }
                 )
-            };
+            );
+            return { status: 'PASS', reason: '' };
         }
 
-        if (hasMediaInput) {
+        if (classified.code === 'provider_overload') {
+            // For media posts, fail-safe to manual review when provider is unavailable.
             return {
                 status: 'REJECT',
                 reason: buildProviderFailureReason(
-                    'AI gap su co',
+                    'AI tam qua tai',
                     classified,
                     {
                         image: imageInputCount,
@@ -1041,7 +1094,7 @@ Return JSON only.`;
         return {
             status: 'REJECT',
             reason: buildProviderFailureReason(
-                'Loi he thong xu ly noi dung',
+                'AI gap su co',
                 classified,
                 {
                     image: imageInputCount,
