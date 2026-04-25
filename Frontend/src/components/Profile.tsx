@@ -342,17 +342,25 @@ export function Profile({ currentUser, viewedUserId, onPostClick, onAvatarChange
       .catch((err) => console.error('Loi khi tai thong tin ho so tong hop:', err));
   }, [effectiveUserId, isOwnProfile, buildAuthHeaders]);
 
-  const handleReactUpdate = (postId: string, action: string, _type: string) => {
+  const handleReactUpdate = (_postId: string, action: string, _type: string) => {
     // Cập nhật lạc quan (Optimistic update)
+    const shouldIncreaseLikes = action === 'like' || action === 'up';
+    const shouldDecreaseLikes = action === 'unlike';
     setUserStats(prev => ({
       ...prev,
-      totalLikes: action === 'like' ? prev.totalLikes + 1 : (action === 'unlike' ? Math.max(0, prev.totalLikes - 1) : prev.totalLikes)
+      totalLikes: shouldIncreaseLikes
+        ? prev.totalLikes + 1
+        : (shouldDecreaseLikes ? Math.max(0, prev.totalLikes - 1) : prev.totalLikes)
     }));
 
     // Tải lại dữ liệu chính xác từ server sau một khoảng trễ ngắn
     setTimeout(() => {
-      if (effectiveUserId) {
-        apiRequest<{ posts?: number; totalLikes?: number }>(`${API_URL}/auth/stats/${effectiveUserId}`, { cache: 'no-store' })
+      const statsUserId = String(profileData.id || profileData._id || effectiveUserId || '').trim();
+      if (statsUserId) {
+        apiRequest<{ posts?: number; totalLikes?: number }>(`${API_URL}/auth/stats/${encodeURIComponent(statsUserId)}`, {
+          cache: 'no-store',
+          headers: buildAuthHeaders(false)
+        })
           .then((data) => {
             if (isApiSuccess(data)) {
               setUserStats({

@@ -143,6 +143,108 @@ const getPostBatchEngagementData = async (posts) => {
     return { commentAndThreadCountByPostId, recentCommentsByPostId };
 };
 
+const resolvePostProcessingMode = () => {
+    const rawMode = String(process.env.POST_PROCESSING_MODE || 'auto').trim().toLowerCase();
+    if (rawMode === 'sync' || rawMode === 'await') return 'sync';
+    if (rawMode === 'async' || rawMode === 'background') return 'async';
+    return 'auto';
+};
+
+const isLikelyServerlessRuntime = () => (
+    !!process.env.VERCEL
+    || !!process.env.AWS_LAMBDA_FUNCTION_NAME
+    || !!process.env.K_SERVICE
+    || !!process.env.FUNCTION_TARGET
+    || !!process.env.NETLIFY
+);
+
+const shouldProcessPostSynchronously = () => {
+    const mode = resolvePostProcessingMode();
+    if (mode === 'sync') return true;
+    if (mode === 'async') return false;
+    return isLikelyServerlessRuntime();
+};
+
+const emitPostAiResult = ({ authorId, post, uploadedUrls = [] }) => {
+    try {
+        const io = socketModule.getIO();
+        if (!io) return;
+
+        const roomId = String(authorId || '').trim();
+        if (!roomId) return;
+
+        io.to(roomId).emit('post_ai_result', {
+            postId: post._id,
+            status: post.status,
+            reason: post.ai_system_note,
+            image_urls: uploadedUrls,
+            video_url: post.video_url
+        });
+        console.log(`[AI_RESULT] Gui toi Room: ${roomId}`);
+    } catch (socketError) {
+        console.error('[POST SERVICE] Loi Socket:', socketError.message);
+    }
+};
+
+const processPostMediaAndModeration = async ({
+    newPost,
+    authorId,
+    title,
+    content,
+    imageFiles,
+    imageUrls,
+    videoFile,
+    videoUrl
+}) => {
+    try {
+        const uploadImagesPromise = imageFiles.length > 0
+            ? Promise.all(imageFiles.map((file) => uploadStreamToCloudinary(file.buffer, { resourceType: 'image' })))
+            : Promise.resolve(imageUrls);
+        const uploadVideoPromise = videoFile?.buffer
+            ? uploadStreamToCloudinary(videoFile.buffer, { resourceType: 'video' })
+            : Promise.resolve(videoUrl || '');
+
+        const [uploadedUrls, uploadedVideoUrl] = await Promise.all([uploadImagesPromise, uploadVideoPromise]);
+        const aiImageInputs = imageFiles.length > 0
+            ? imageFiles.map((file, index) => ({
+                buffer: file.buffer,
+                mimeType: file.mimetype,
+                url: uploadedUrls[index] || ''
+            }))
+            : uploadedUrls;
+
+        const aiDecision = await aiModerationService.checkContent(
+            title,
+            content,
+            aiImageInputs,
+            uploadedVideoUrl ? [uploadedVideoUrl] : []
+        );
+
+        newPost.image_urls = uploadedUrls;
+        newPost.image_url = uploadedUrls.length > 0 ? uploadedUrls[0] : '';
+        newPost.video_url = uploadedVideoUrl || '';
+
+        if (aiDecision.status === 'PASS') {
+            newPost.status = 'approved';
+            newPost.ai_system_note = '';
+        } else {
+            newPost.status = 'pending';
+            newPost.ai_system_note = aiDecision.reason || 'Bi AI tu choi chan';
+        }
+
+        await newPost.save();
+        emitPostAiResult({ authorId, post: newPost, uploadedUrls });
+    } catch (error) {
+        console.error('[POST SERVICE] Loi xu ly media/AI:', error.message);
+        const sanitizedError = String(error?.message || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+        newPost.ai_system_note = sanitizedError
+            ? `Loi trong qua trinh xu ly media/AI: ${sanitizedError}`
+            : 'Loi trong qua trinh xu ly media.';
+        await newPost.save();
+        emitPostAiResult({ authorId, post: newPost, uploadedUrls: newPost.image_urls || [] });
+    }
+};
+
 const createPostService = async (postDataInput, mediaFiles = {}) => {
     // 🛡️ PHÒNG THỦ TỐI ĐA: Ép kiểu về Object ngay lập tức
     const postData = postDataInput || {};
@@ -189,74 +291,24 @@ const createPostService = async (postDataInput, mediaFiles = {}) => {
     await newPost.save();
 
     // 2️⃣ KÍCH HOẠT SONG SONG: KIỂM DUYỆT AI & TẢI ẢNH LÊN CLOUDINARY (ASYNCHRONOUS)
-    (async () => {
-        try {
-            // Chuẩn bị dữ liệu cho AI (Nếu có file thô thì dùng Buffer cho nhanh)
-            // AI se dung uploadedUrls va frame trich tu video sau khi upload xong
-            
-            // Chạy song song: (1) AI quét ảnh & (2) Up ảnh lên Cloudinary
-            const uploadImagesPromise = imageFiles.length > 0
-                ? Promise.all(imageFiles.map(f => uploadStreamToCloudinary(f.buffer, { resourceType: 'image' })))
-                : Promise.resolve(image_urls);
-            const uploadVideoPromise = videoFile?.buffer
-                ? uploadStreamToCloudinary(videoFile.buffer, { resourceType: 'video' })
-                : Promise.resolve(video_url || '');
+    const processingTask = processPostMediaAndModeration({
+        newPost,
+        authorId: author_id,
+        title,
+        content,
+        imageFiles,
+        imageUrls: image_urls,
+        videoFile,
+        videoUrl: video_url
+    });
+    const processSynchronously = shouldProcessPostSynchronously();
+    console.log(`[POST SERVICE] Moderation mode: ${processSynchronously ? 'sync' : 'async'} (env=${resolvePostProcessingMode()})`);
 
-            const [uploadedUrls, uploadedVideoUrl] = await Promise.all([uploadImagesPromise, uploadVideoPromise]);
-            const aiImageInputs = imageFiles.length > 0
-                ? imageFiles.map((file, index) => ({
-                    buffer: file.buffer,
-                    mimeType: file.mimetype,
-                    url: uploadedUrls[index] || ''
-                }))
-                : uploadedUrls;
-
-            const aiDecision = await aiModerationService.checkContent(
-                title,
-                content,
-                aiImageInputs,
-                uploadedVideoUrl ? [uploadedVideoUrl] : []
-            );
-
-            // 🚦 Cập nhật nội dung bài viết dựa trên phán quyết AI và Link ảnh thật
-            newPost.image_urls = uploadedUrls;
-            newPost.image_url = uploadedUrls.length > 0 ? uploadedUrls[0] : '';
-            newPost.video_url = uploadedVideoUrl || '';
-            
-            if (aiDecision.status === 'PASS') {
-                newPost.status = 'approved';
-                newPost.ai_system_note = '';
-            } else {
-                newPost.status = 'pending'; // Giữ pending nếu AI Reject
-                newPost.ai_system_note = aiDecision.reason || 'Bị AI từ chối chặn';
-            }
-
-            await newPost.save();
-
-            // 📡 Thông báo cho người dùng qua Socket.io (Room-based)
-            try {
-                const io = socketModule.getIO();
-                if (io) {
-                    const rIdStr = author_id.toString();
-                    io.to(rIdStr).emit('post_ai_result', {
-                        postId: newPost._id,
-                        status: newPost.status,
-                        reason: newPost.ai_system_note,
-                        image_urls: uploadedUrls,
-                        video_url: newPost.video_url
-                    });
-                    console.log(`📡 [AI_RESULT] Gửi tới Room: ${rIdStr}`);
-                }
-            } catch (sErr) {
-                console.error('[POST ASYNC SERVICE] Lỗi Socket:', sErr.message);
-            }
-
-        } catch (error) {
-            console.error('[POST ASYNC SERVICE] 🚨 Lỗi xử lý ngầm:', error.message);
-            newPost.ai_system_note = 'Lỗi trong quá trình xử lý media.';
-            await newPost.save();
-        }
-    })();
+    if (processSynchronously) {
+        await processingTask;
+    } else {
+        void processingTask;
+    }
 
     return newPost;
 };
@@ -409,6 +461,7 @@ const reactToPostService = async ({ id, user_id, action, type }) => {
     if (!post.reactions) post.reactions = [];
 
     const existingReactionIndex = post.reactions.findIndex(r => r.user_id && r.user_id.toString() === user_id);
+    const oldUpvotes = post.upvotes || 0;
 
     if (action === 'unlike' || action === 'undislike') {
         if (existingReactionIndex !== -1) {
@@ -427,6 +480,11 @@ const reactToPostService = async ({ id, user_id, action, type }) => {
     post.downvotes = post.reactions.filter(r => r.type === 'down').length;
     post.markModified('reactions');
     await post.save();
+
+    const diff = post.upvotes - oldUpvotes;
+    if (diff !== 0) {
+        await Account.updateOne({ _id: post.author }, { $inc: { total_upvotes: diff } });
+    }
 
     // Push notification logic using unified service
     if ((action === 'like' || action === 'up') && post.author.toString() !== user_id) {
@@ -644,3 +702,4 @@ module.exports = {
     getCommunityPostsAdminService,
     getPostByIdService
 };
+
